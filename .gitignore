@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# nicht ins öffentliche Repo:
+.claude/
+*.pdf
+UEBERGABE.md

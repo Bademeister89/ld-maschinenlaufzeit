@@ -1,0 +1,5 @@
+pyLSV2==1.7.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pyyaml>=6.0
+tzdata>=2024.1

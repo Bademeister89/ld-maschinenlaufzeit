@@ -1,0 +1,6 @@
+* text=auto
+# Windows-Skripte mit CRLF, damit cmd.exe/PowerShell sie auch nach einem Linux-Checkout sauber lesen
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- Unraid-Vorlage. Einbinden über Docker → Template Repositories (GitHub-Adresse des Repos)
+     oder ablegen unter \\<unraid>\flash\config\plugins\dockerMan\templates-user\
+     Danach: Docker → Add Container → Template "ld-maschinenlaufzeit". -->
+<Container version="2">
+  <Name>ld-maschinenlaufzeit</Name>
+  <Repository>ghcr.io/bademeister89/ld-maschinenlaufzeit:latest</Repository>
+  <Registry>https://github.com/Bademeister89/ld-maschinenlaufzeit/pkgs/container/ld-maschinenlaufzeit</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Bademeister89/ld-maschinenlaufzeit</Support>
+  <Project>https://github.com/Bademeister89/ld-maschinenlaufzeit</Project>
+  <TemplateURL>https://raw.githubusercontent.com/Bademeister89/ld-maschinenlaufzeit/main/unraid/ld-maschinenlaufzeit.xml</TemplateURL>
+  <Overview>Laufzeiterfassung für Heidenhain-Steuerungen (iTNC 530 / TNC 640) über LSV2, rein lesend. Live-Status, Auswertung, CSV-Export.</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <Config Name="Oberfläche" Target="8000" Default="8000" Mode="tcp" Description="Port der Weboberfläche" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="Daten" Target="/data" Default="/mnt/user/appdata/ld-maschinenlaufzeit" Mode="rw" Description="Datenbank, Maschinenbilder, Logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ld-maschinenlaufzeit</Config>
+  <Config Name="Zeitzone" Target="TZ" Default="Europe/Berlin" Description="Zeitzone für Tagesauswertung und Log (IANA-Name)" Type="Variable" Display="always" Required="true" Mask="false">Europe/Berlin</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Description="Besitzer der Dateien (Unraid: 99 = nobody)" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Gruppe der Dateien (Unraid: 100 = users)" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Simulation" Target="SIMULATE" Default="0" Description="1 = simulierte Maschinen zum Ausprobieren (eigene demo.db)" Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
+</Container>

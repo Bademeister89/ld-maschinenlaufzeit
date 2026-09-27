@@ -1,0 +1,39 @@
+# Konfiguration LD Maschinenlaufzeit
+#
+# Die Maschinen (Name, IP, Bild …) werden im Tab "Konfiguration" der Oberfläche gepflegt
+# und in der Datenbank gespeichert. Hier stehen nur allgemeine Einstellungen.
+#
+# Umgebungsvariablen überschreiben einzelne Werte:
+#   SIMULATE=1        simulierte Maschinen statt echter Steuerungen (eigene Demo-DB)
+#   LDM_DATA_DIR=...  Datenordner (Datenbank, Bilder, Logs)
+#   DB_PATH=...       Pfad zur SQLite-Datenbank
+#   CONFIG_PATH=...   andere Konfigurationsdatei verwenden
+
+server:
+  host: 0.0.0.0           # 0.0.0.0 = auch von anderen PCs im Netz erreichbar, 127.0.0.1 = nur lokal
+  port: 8000
+
+poll_interval_s: 2        # wie oft jede Steuerung abgefragt wird
+timeout_s: 5              # Timeout pro LSV2-Anfrage
+# timezone: Europe/Berlin # Zeitzone für die Tagesauswertung; ohne Angabe gilt die
+                          # Umgebungsvariable TZ (z. B. aus der Unraid-Vorlage), sonst Europe/Berlin
+
+# Satzanzahl: angewählte NC-Programme einmal je Lauf von der Steuerung lesen (nur lesend,
+# eigene Verbindung). Größere Programme werden übersprungen.
+fetch_programs: true
+program_max_mb: 20
+
+# Datenordner – Standard:
+#   portable Version:  <Ordner>\data\
+#   Entwicklung:       C:\Users\<Name>\ld-mainmachine\data\  (bewusst nicht im Nextcloud-Ordner)
+# db_path: D:/Laufzeit/data.db
+
+# Startbestand, nur für eine leere Datenbank (danach im Konfigurations-Tab pflegen):
+machines:
+  - id: dmg1
+    name: DMG 1
+    host: 192.168.0.10
+    # check_host: 192.168.0.1   # optional: Prüfadresse am Standort (Router vor Ort)
+  - id: dmg2
+    name: DMG 2
+    host: 192.168.0.11

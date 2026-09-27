@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laufzeit-Auswertung</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230ca30c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">LD Maschinenlaufzeit</div>
+      <nav class="nav" aria-label="Seiten">
+        <a href="./">Live</a>
+        <a href="auswertung.html" aria-current="page">Auswertung</a>
+        <a href="konfiguration.html">Konfiguration</a>
+      </nav>
+      <div class="topbar-status">
+        <span id="sim" class="sim-badge" hidden>Simulation – keine echten Maschinendaten</span>
+        <span id="range-label" class="num"></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="banner" class="banner error" hidden></div>
+
+    <div class="card filters" role="group" aria-label="Filter">
+      <div class="segmented" id="presets" role="group" aria-label="Zeitraum">
+        <button type="button" data-preset="today">Heute</button>
+        <button type="button" data-preset="yesterday">Gestern</button>
+        <button type="button" data-preset="7d">7 Tage</button>
+        <button type="button" data-preset="30d">30 Tage</button>
+        <button type="button" data-preset="month">Dieser Monat</button>
+      </div>
+      <label class="field">Von <input type="date" id="from"></label>
+      <label class="field">Bis <input type="date" id="to"></label>
+      <label class="field">Maschine
+        <select id="machine"><option value="">Alle</option></select>
+      </label>
+      <span class="spacer"></span>
+      <a class="btn" id="csv-intervals" download>CSV Zustände</a>
+      <a class="btn" id="csv-runs" download>CSV Läufe</a>
+    </div>
+
+    <div id="content">
+      <section class="section">
+        <div class="kpi-grid" id="kpis"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>Tagesübersicht</h2>
+          <div class="segmented" id="view" role="group" aria-label="Darstellung">
+            <button type="button" data-view="sum">Summen</button>
+            <button type="button" data-view="timeline">Zeitleiste</button>
+          </div>
+          <div id="legend"></div>
+        </div>
+        <div class="small-multiples" id="days"></div>
+      </section>
+
+      <section class="section card">
+        <div class="section-head"><h2>Programme</h2>
+          <p class="muted">Ø-Zeiten nur aus vollständig erfassten, fertigen Läufen</p></div>
+        <div class="table-wrap" id="programs"></div>
+      </section>
+
+      <section class="section card">
+        <details>
+          <summary>Tageswerte als Tabelle</summary>
+          <div class="table-wrap" id="day-table"></div>
+        </details>
+      </section>
+
+      <section class="section card">
+        <details>
+          <summary>Programmdurchläufe</summary>
+          <div class="table-wrap" id="runs"></div>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="auswertung.js"></script>
+</body>
+</html>

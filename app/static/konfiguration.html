@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Konfiguration</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230ca30c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">LD Maschinenlaufzeit</div>
+      <nav class="nav" aria-label="Seiten">
+        <a href="./">Live</a>
+        <a href="auswertung.html">Auswertung</a>
+        <a href="konfiguration.html" aria-current="page">Konfiguration</a>
+      </nav>
+      <div class="topbar-status">
+        <span id="sim" class="sim-badge" hidden>Simulation – keine echten Maschinendaten</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="banner" class="banner error" hidden></div>
+
+    <section class="card">
+      <div class="section-head">
+        <h2>Maschinen</h2>
+        <p class="muted">Änderungen gelten sofort, ein Neustart ist nicht nötig.</p>
+        <span class="spacer" style="flex: 1"></span>
+        <button type="button" class="btn primary" id="add">+ Maschine hinzufügen</button>
+      </div>
+      <div id="machine-list" class="config-list"></div>
+    </section>
+
+    <section class="card section">
+      <h2 style="margin-bottom: 12px">Allgemein</h2>
+      <dl class="settings-list" id="settings"></dl>
+      <p class="muted" id="settings-note" style="margin: 0"></p>
+    </section>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="editor-form" novalidate>
+      <header><h2 id="editor-title">Maschine hinzufügen</h2></header>
+      <div class="form-body">
+        <div class="image-field">
+          <span id="img-preview"></span>
+          <div class="buttons">
+            <label class="btn file-button">Bild wählen …
+              <input type="file" id="img-input" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <button type="button" class="btn" id="img-remove">Bild entfernen</button>
+          </div>
+        </div>
+        <label class="form-field">Name *
+          <input type="text" id="f-name" maxlength="60" required autocomplete="off" placeholder="z. B. DMG DMU 50">
+        </label>
+        <div class="form-row">
+          <label class="form-field">IP-Adresse / Hostname der Steuerung *
+            <input type="text" id="f-host" maxlength="253" required autocomplete="off" placeholder="z. B. 192.168.0.10">
+          </label>
+          <label class="form-field">Port
+            <input type="number" id="f-port" min="1" max="65535" value="19000">
+          </label>
+        </div>
+        <label class="form-field">Standort / Notiz
+          <input type="text" id="f-note" maxlength="200" autocomplete="off" placeholder="z. B. Halle 2, Baujahr 2016">
+        </label>
+        <label class="form-field">Prüfadresse am Standort (optional)
+          <input type="text" id="f-check" maxlength="260" autocomplete="off" placeholder="z. B. 192.168.0.1 (Router vor Ort)">
+          <span class="field-hint">Antworten weder die Steuerung noch diese Adresse, ist die Verbindung zum Standort weg
+            (z. B. VPN). Die Zeit wird dann als „Keine Daten“ gebucht statt als „Offline“.</span>
+        </label>
+        <div id="f-error" class="form-error" role="alert" hidden></div>
+        <div id="f-probe" class="probe-result" aria-live="polite"></div>
+      </div>
+      <footer>
+        <button type="button" class="btn" id="f-test">Verbindung testen</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="f-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary" id="f-save">Speichern</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script type="module" src="konfiguration.js"></script>
+</body>
+</html>

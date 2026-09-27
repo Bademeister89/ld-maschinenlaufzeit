@@ -1,0 +1,18 @@
+# Alternative zur Unraid-Oberfläche, z. B. auf einem Linux-Server:  docker compose up -d
+# Voraussetzung: Der Server erreicht die Steuerungen auf TCP 19000.
+services:
+  laufzeit:
+    image: ghcr.io/bademeister89/ld-maschinenlaufzeit:latest
+    # oder lokal bauen:  build: .
+    container_name: ld-maschinenlaufzeit
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: Europe/Berlin
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ./data:/data
+      # optional eigene Einstellungen:
+      # - ./config.yaml:/config/config.yaml:ro

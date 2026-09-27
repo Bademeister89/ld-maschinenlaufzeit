@@ -1,0 +1,14 @@
+.git
+.github
+tests
+**/__pycache__
+.pytest_cache
+*.pdf
+*.db
+data
+start.ps1
+start.cmd
+portable
+unraid
+tools/build_portable.ps1
+.claude

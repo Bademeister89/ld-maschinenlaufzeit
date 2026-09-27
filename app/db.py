@@ -1,0 +1,389 @@
+"""SQLite-Speicher. Alle Zeitstempel sind Unix-Sekunden (UTC).
+
+Offene Intervalle/Läufe haben ``ended_at IS NULL``. ``last_seen`` wird bei jeder Abfrage
+fortgeschrieben; als Ende eines offenen Intervalls gilt immer ``last_seen``. So bleibt die
+Auswertung auch nach einem Absturz des Tools korrekt (keine erfundene Laufzeit).
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+SCHEMA_VERSION = 4
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS machines (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    host       TEXT NOT NULL,
+    port       INTEGER NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    image      TEXT,
+    removed    INTEGER NOT NULL DEFAULT 0,
+    check_host TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS program_runs (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id     TEXT NOT NULL REFERENCES machines(id),
+    program        TEXT,
+    started_at     REAL NOT NULL,
+    ended_at       REAL,
+    result         TEXT,
+    had_error      INTEGER NOT NULL DEFAULT 0,
+    start_observed INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS ix_runs_machine_time ON program_runs(machine_id, started_at);
+CREATE TABLE IF NOT EXISTS state_intervals (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    state      TEXT NOT NULL,
+    pgm_state  TEXT,
+    exec_mode  TEXT,
+    program    TEXT,
+    run_id     INTEGER REFERENCES program_runs(id),
+    started_at REAL NOT NULL,
+    ended_at   REAL,
+    last_seen  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_intervals_machine_time ON state_intervals(machine_id, started_at);
+CREATE INDEX IF NOT EXISTS ix_intervals_run ON state_intervals(run_id);
+CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    ts         REAL NOT NULL,
+    type       TEXT NOT NULL,
+    payload    TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS ix_events_machine_time ON events(machine_id, ts);
+CREATE INDEX IF NOT EXISTS ix_runs_machine_program ON program_runs(machine_id, program, started_at);
+CREATE TABLE IF NOT EXISTS run_progress (
+    run_id  INTEGER NOT NULL REFERENCES program_runs(id),
+    t_run   REAL NOT NULL,
+    program TEXT,
+    line_no INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_progress_run ON run_progress(run_id, t_run);
+CREATE TABLE IF NOT EXISTS program_files (
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    path       TEXT NOT NULL,
+    size       INTEGER,
+    mtime      REAL,
+    blocks     INTEGER,
+    error      TEXT,
+    checked_at REAL NOT NULL,
+    PRIMARY KEY (machine_id, path)
+);
+"""
+
+_END = "COALESCE(i.ended_at, i.last_seen)"
+
+
+class Database:
+    def __init__(self, path: Path | str):
+        path = str(path)
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
+        self._con = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        self._con.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        self._tx_depth = 0
+        with self._lock:
+            self._con.execute("PRAGMA journal_mode=WAL")
+            self._con.execute("PRAGMA synchronous=NORMAL")
+            self._con.execute("PRAGMA foreign_keys=ON")
+            self._con.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        # v1 → v2: Maschinen werden in der Datenbank gepflegt (Notiz, Reihenfolge, Bild, entfernt)
+        # v3 → v4: Prüfadresse am Standort
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(machines)")}
+        for name, ddl in (
+            ("note", "TEXT NOT NULL DEFAULT ''"),
+            ("sort_order", "INTEGER NOT NULL DEFAULT 0"),
+            ("image", "TEXT"),
+            ("removed", "INTEGER NOT NULL DEFAULT 0"),
+            ("check_host", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if name not in columns:
+                self._con.execute(f"ALTER TABLE machines ADD COLUMN {name} {ddl}")
+        self.set_meta("schema_version", str(SCHEMA_VERSION))
+
+    def get_meta(self, key: str) -> str | None:
+        rows = self._query("SELECT value FROM meta WHERE key = ?", (key,))
+        return rows[0]["value"] if rows else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self._execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+    def close(self) -> None:
+        with self._lock:
+            self._con.close()
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Transaktion; verschachtelte Aufrufe laufen in der äußeren mit."""
+        with self._lock:
+            if self._tx_depth:
+                self._tx_depth += 1
+                try:
+                    yield
+                finally:
+                    self._tx_depth -= 1
+                return
+            self._con.execute("BEGIN")
+            self._tx_depth = 1
+            try:
+                yield
+            except BaseException:
+                self._con.execute("ROLLBACK")
+                raise
+            else:
+                self._con.execute("COMMIT")
+            finally:
+                self._tx_depth = 0
+
+    def _execute(self, sql: str, params: Any = ()) -> sqlite3.Cursor:
+        with self._lock:
+            return self._con.execute(sql, params)
+
+    def _query(self, sql: str, params: Any = ()) -> list[dict[str, Any]]:
+        with self._lock:
+            return [dict(row) for row in self._con.execute(sql, params).fetchall()]
+
+    # --- Maschinen -----------------------------------------------------------------
+
+    _MACHINE_COLUMNS = "id, name, host, port, note, sort_order, image, removed, check_host"
+
+    def ensure_machine(self, machine_id: str, name: str, host: str, port: int) -> None:
+        """Maschine anlegen, falls es sie noch nicht gibt (bestehende Einträge bleiben unverändert)."""
+        self._execute(
+            "INSERT INTO machines(id, name, host, port) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
+            (machine_id, name, host, port),
+        )
+
+    def machines(self, include_removed: bool = False) -> list[dict[str, Any]]:
+        where = "" if include_removed else "WHERE removed = 0 "
+        return self._query(f"SELECT {self._MACHINE_COLUMNS} FROM machines {where}ORDER BY sort_order, name, id")
+
+    def machine(self, machine_id: str) -> dict[str, Any] | None:
+        rows = self._query(f"SELECT {self._MACHINE_COLUMNS} FROM machines WHERE id = ?", (machine_id,))
+        return rows[0] if rows else None
+
+    def insert_machine(
+        self,
+        machine_id: str,
+        name: str,
+        host: str,
+        port: int,
+        note: str = "",
+        sort_order: int = 0,
+        check_host: str = "",
+    ) -> None:
+        self._execute(
+            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (machine_id, name, host, port, note, sort_order, check_host),
+        )
+
+    def update_machine(
+        self, machine_id: str, name: str, host: str, port: int, note: str, check_host: str = ""
+    ) -> None:
+        self._execute(
+            "UPDATE machines SET name = ?, host = ?, port = ?, note = ?, check_host = ? WHERE id = ?",
+            (name, host, port, note, check_host, machine_id),
+        )
+
+    def set_machine_order(self, machine_ids: list[str]) -> None:
+        with self.transaction():
+            for index, machine_id in enumerate(machine_ids):
+                self._execute("UPDATE machines SET sort_order = ? WHERE id = ?", (index * 10, machine_id))
+
+    def set_machine_image(self, machine_id: str, image: str | None) -> None:
+        self._execute("UPDATE machines SET image = ? WHERE id = ?", (image, machine_id))
+
+    def remove_machine(self, machine_id: str) -> None:
+        """Aus der Konfiguration entfernen; erfasste Daten bleiben erhalten."""
+        self._execute("UPDATE machines SET removed = 1, image = NULL WHERE id = ?", (machine_id,))
+
+    # --- Zustandsintervalle --------------------------------------------------------
+
+    def open_interval(
+        self,
+        machine_id: str,
+        state: str,
+        pgm_state: str | None,
+        exec_mode: str | None,
+        program: str | None,
+        run_id: int | None,
+        started_at: float,
+        last_seen: float,
+    ) -> int:
+        cur = self._execute(
+            "INSERT INTO state_intervals(machine_id, state, pgm_state, exec_mode, program, run_id, started_at, last_seen) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (machine_id, state, pgm_state, exec_mode, program, run_id, started_at, last_seen),
+        )
+        return int(cur.lastrowid)
+
+    def touch_interval(self, interval_id: int, t: float) -> None:
+        self._execute("UPDATE state_intervals SET last_seen = ? WHERE id = ?", (t, interval_id))
+
+    def close_interval(self, interval_id: int, t: float) -> None:
+        self._execute("UPDATE state_intervals SET ended_at = ?, last_seen = ? WHERE id = ?", (t, t, interval_id))
+
+    def close_stale_intervals(self, machine_id: str) -> int:
+        """Nach Neustart/Absturz: offene Intervalle am letzten Lebenszeichen schließen."""
+        cur = self._execute(
+            "UPDATE state_intervals SET ended_at = last_seen WHERE machine_id = ? AND ended_at IS NULL", (machine_id,)
+        )
+        return cur.rowcount
+
+    def intervals(self, t0: float, t1: float, machine_id: str | None = None) -> list[dict[str, Any]]:
+        """Alle Intervalle, die [t0, t1) überlappen; ``end`` ist das effektive Ende."""
+        sql = (
+            f"SELECT i.id, i.machine_id, i.state, i.pgm_state, i.exec_mode, i.program, i.run_id, "
+            f"i.started_at AS start, {_END} AS end, i.ended_at IS NULL AS open "
+            f"FROM state_intervals i WHERE i.started_at < ? AND {_END} > ?"
+        )
+        params: list[Any] = [t1, t0]
+        if machine_id:
+            sql += " AND i.machine_id = ?"
+            params.append(machine_id)
+        return self._query(sql + " ORDER BY i.machine_id, i.started_at", params)
+
+    # --- Programmdurchläufe --------------------------------------------------------
+
+    def start_run(self, machine_id: str, program: str | None, t: float, start_observed: bool) -> int:
+        cur = self._execute(
+            "INSERT INTO program_runs(machine_id, program, started_at, start_observed) VALUES (?, ?, ?, ?)",
+            (machine_id, program, t, int(start_observed)),
+        )
+        return int(cur.lastrowid)
+
+    def end_run(self, run_id: int, t: float, result: str) -> None:
+        self._execute("UPDATE program_runs SET ended_at = ?, result = ? WHERE id = ?", (t, result, run_id))
+
+    def mark_run_error(self, run_id: int) -> None:
+        self._execute("UPDATE program_runs SET had_error = 1 WHERE id = ?", (run_id,))
+
+    _RUN_SELECT = (
+        "SELECT r.id, r.machine_id, r.program, r.started_at, r.ended_at, r.result, r.had_error, r.start_observed, "
+        f"COALESCE(SUM(CASE WHEN i.state = 'RUNNING' THEN {_END} - i.started_at END), 0) AS run_s, "
+        f"COALESCE(SUM(CASE WHEN i.state IN ('STOPPED', 'ERROR') THEN {_END} - i.started_at END), 0) AS stop_s, "
+        f"COALESCE(MAX({_END}), r.started_at) AS last_active "
+        "FROM program_runs r LEFT JOIN state_intervals i ON i.run_id = r.id "
+    )
+
+    def open_run(self, machine_id: str) -> dict[str, Any] | None:
+        rows = self._query(
+            self._RUN_SELECT + "WHERE r.machine_id = ? AND r.ended_at IS NULL GROUP BY r.id ORDER BY r.id DESC LIMIT 1",
+            (machine_id,),
+        )
+        return rows[0] if rows else None
+
+    def runs(self, t0: float, t1: float, machine_id: str | None = None) -> list[dict[str, Any]]:
+        """Läufe, die [t0, t1) überlappen, inkl. reiner Lauf- und Stoppzeit."""
+        sql = self._RUN_SELECT + "WHERE r.started_at < ? AND COALESCE(r.ended_at, ?) > ?"
+        params: list[Any] = [t1, t1, t0]
+        if machine_id:
+            sql += " AND r.machine_id = ?"
+            params.append(machine_id)
+        return self._query(sql + " GROUP BY r.id ORDER BY r.started_at", params)
+
+    def reference_runs(self, machine_id: str, program: str, limit: int) -> list[dict[str, Any]]:
+        """Die letzten vollständig beobachteten, fertigen Läufe eines Programms (neueste zuerst)."""
+        return self._query(
+            self._RUN_SELECT
+            + "WHERE r.machine_id = ? AND r.program = ? AND r.result = 'finished' AND r.start_observed = 1 "
+            "GROUP BY r.id ORDER BY r.started_at DESC LIMIT ?",
+            (machine_id, program, limit),
+        )
+
+    # --- Satzverlauf (Grundlage der Restlaufzeit-Prognose) ------------------------------
+
+    def add_progress(self, run_id: int, t_run: float, program: str | None, line_no: int) -> None:
+        self._execute(
+            "INSERT INTO run_progress(run_id, t_run, program, line_no) VALUES (?, ?, ?, ?)",
+            (run_id, t_run, program, line_no),
+        )
+
+    def run_progress(self, run_id: int) -> list[tuple[float, str | None, int]]:
+        with self._lock:
+            rows = self._con.execute(
+                "SELECT t_run, program, line_no FROM run_progress WHERE run_id = ? ORDER BY t_run", (run_id,)
+            ).fetchall()
+        return [(row[0], row[1], row[2]) for row in rows]
+
+    def prune_progress(self, machine_id: str, program: str | None, keep: int) -> None:
+        """Satzverlauf nur für die letzten ``keep`` Referenzläufe eines Programms aufheben."""
+        self._execute(
+            "DELETE FROM run_progress WHERE run_id IN ("
+            " SELECT id FROM program_runs WHERE machine_id = ? AND program IS ? AND ended_at IS NOT NULL"
+            " AND id NOT IN (SELECT id FROM program_runs WHERE machine_id = ? AND program IS ?"
+            "  AND result = 'finished' AND start_observed = 1 ORDER BY started_at DESC LIMIT ?))",
+            (machine_id, program, machine_id, program, keep),
+        )
+
+    # --- Programmdateien -------------------------------------------------------------
+
+    def program_file(self, machine_id: str, path: str) -> dict[str, Any] | None:
+        rows = self._query(
+            "SELECT path, size, mtime, blocks, error, checked_at FROM program_files WHERE machine_id = ? AND path = ?",
+            (machine_id, path),
+        )
+        return rows[0] if rows else None
+
+    def save_program_file(
+        self, machine_id: str, path: str, size: int | None, mtime: float | None, blocks: int | None,
+        error: str | None, checked_at: float,
+    ) -> None:
+        self._execute(
+            "INSERT INTO program_files(machine_id, path, size, mtime, blocks, error, checked_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine_id, path) DO UPDATE SET "
+            "size = excluded.size, mtime = excluded.mtime, blocks = excluded.blocks, "
+            "error = excluded.error, checked_at = excluded.checked_at",
+            (machine_id, path, size, mtime, blocks, error, checked_at),
+        )
+
+    def touch_program_file(self, machine_id: str, path: str, checked_at: float) -> None:
+        self._execute(
+            "UPDATE program_files SET checked_at = ? WHERE machine_id = ? AND path = ?", (checked_at, machine_id, path)
+        )
+
+    def program_blocks(self) -> dict[tuple[str, str], int]:
+        rows = self._query("SELECT machine_id, path, blocks FROM program_files WHERE blocks IS NOT NULL")
+        return {(r["machine_id"], r["path"]): r["blocks"] for r in rows}
+
+    # --- Ereignisse ----------------------------------------------------------------
+
+    def add_event(self, machine_id: str, t: float, event_type: str, payload: dict[str, Any] | None = None) -> None:
+        self._execute(
+            "INSERT INTO events(machine_id, ts, type, payload) VALUES (?, ?, ?, ?)",
+            (machine_id, t, event_type, json.dumps(payload or {}, ensure_ascii=False)),
+        )
+
+    def events(self, t0: float, t1: float, machine_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        sql = "SELECT id, machine_id, ts, type, payload FROM events WHERE ts >= ? AND ts < ?"
+        params: list[Any] = [t0, t1]
+        if machine_id:
+            sql += " AND machine_id = ?"
+            params.append(machine_id)
+        rows = self._query(sql + " ORDER BY ts DESC LIMIT ?", [*params, limit])
+        for row in rows:
+            row["payload"] = json.loads(row["payload"])
+        return rows
