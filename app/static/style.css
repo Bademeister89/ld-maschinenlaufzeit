@@ -677,10 +677,24 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, button:focus-visi
 .link-button { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
 .tool-help { margin: 20px 0 0; font-size: 13px; max-width: 95ch; }
 .tool-form-row { grid-template-columns: minmax(0, 1fr) 140px; }
-.form-row.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.form-row.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
 .form-group { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .form-group legend { padding: 0; margin-bottom: 2px; font-size: 13px; font-weight: 650; color: var(--ink); }
 .tool-specs { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+dialog select { font-size: 15px; padding: 7px 10px; width: 100%; }
+a.field-hint { color: var(--accent); justify-self: start; }
+
+/* Werkzeughersteller (Konfiguration) */
+.mf-add, .mf-rename { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mf-add { margin-bottom: 12px; }
+.mf-add input, .mf-rename input { flex: 1 1 220px; max-width: 360px; }
+.mf-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.mf-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0; border-top: 1px solid var(--grid); }
+.mf-list li:first-child { border-top: 0; }
+.mf-list li.empty { color: var(--muted); }
+.mf-name { font-weight: 550; overflow-wrap: anywhere; }
+.mf-usage { font-size: 13px; }
+.mf-actions { display: flex; gap: 8px; margin-left: auto; }
 .tool-meter { position: relative; }
 /* Marke im Balken: ab hier Vorwarnung */
 .tool-warn-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink-2); opacity: 0.6; }

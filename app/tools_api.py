@@ -139,6 +139,7 @@ def list_tools(request: Request) -> dict[str, Any]:
         "warn_ratio": tools.WARN_RATIO,
         "default_limit_h": tools.DEFAULT_LIMIT_H,
         "default_warn_h": tools.DEFAULT_WARN_H,
+        "manufacturers": [m["name"] for m in ctx.db.manufacturers()],
         **tools.list_tools(ctx.db, machines, _spindle(ctx)),
     }
 

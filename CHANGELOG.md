@@ -15,6 +15,8 @@ Dort ist auch dieses Protokoll zu sehen.
 ### Neu
 - Werkzeugdaten beim Anlegen und Bearbeiten: Hersteller, Artikelnummer, Durchmesser und Radius (mm).
   Sie stehen in der Werkzeugliste, lassen sich suchen und sind im CSV-Export enthalten.
+- Herstellerliste im Tab Konfiguration („Werkzeughersteller“: hinzufügen, umbenennen, entfernen).
+  Im Werkzeug-Dialog wählst du den Hersteller per Dropdown aus der Liste.
 - Einstellbare Vorwarnzeit je Werkzeug („Vorwarnung bei“, z. B. 80 h bei 100 h Maximallaufzeit).
   Der Balken zeigt die Stelle mit einem Strich. Neue Werkzeuge bekommen 100 h mit Vorwarnung bei
   80 h.

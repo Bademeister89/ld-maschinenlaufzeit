@@ -1,10 +1,11 @@
 """API für den Konfigurations-Tab: Maschinen anlegen, ändern, entfernen, sortieren,
-Bild hochladen und Verbindung testen."""
+Bild hochladen und Verbindung testen; Werkzeughersteller pflegen."""
 
 from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from .main import AppContext
 
 router = APIRouter(prefix="/api/config")
+
+MANUFACTURER_MAX = 80  # wie das Feld „Hersteller“ am Werkzeug
 
 
 def _ctx(request: Request) -> AppContext:
@@ -119,3 +122,50 @@ async def test_connection(request: Request, payload: dict[str, Any] = Body(...))
         run_probe, fields["host"], fields["port"], _ctx(request).settings.timeout_s, fields["check_host"]
     )
     return result.as_dict()
+
+
+# --- Werkzeughersteller -------------------------------------------------------------------
+
+
+def _manufacturer_name(payload: dict[str, Any]) -> str:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Bitte einen Herstellernamen eintragen.")
+    if len(name) > MANUFACTURER_MAX:
+        raise HTTPException(400, f"Der Herstellername darf höchstens {MANUFACTURER_MAX} Zeichen lang sein.")
+    return name
+
+
+@router.get("/manufacturers")
+def list_manufacturers(request: Request) -> dict[str, Any]:
+    return {"manufacturers": _ctx(request).db.manufacturers()}
+
+
+@router.post("/manufacturers", status_code=201)
+def add_manufacturer(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    db = _ctx(request).db
+    name = _manufacturer_name(payload)
+    manufacturer_id = db.add_manufacturer(name, time.time())
+    if manufacturer_id is None:
+        raise HTTPException(409, f"„{name}“ ist schon in der Liste.")
+    return db.manufacturer(manufacturer_id)
+
+
+@router.put("/manufacturers/{manufacturer_id}")
+def rename_manufacturer(request: Request, manufacturer_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    db = _ctx(request).db
+    if db.manufacturer(manufacturer_id) is None:
+        raise HTTPException(404, "Unbekannter Hersteller")
+    name = _manufacturer_name(payload)
+    if not db.rename_manufacturer(manufacturer_id, name):
+        raise HTTPException(409, f"„{name}“ ist schon in der Liste.")
+    return db.manufacturer(manufacturer_id)
+
+
+@router.delete("/manufacturers/{manufacturer_id}", status_code=204)
+def delete_manufacturer(request: Request, manufacturer_id: int) -> Response:
+    db = _ctx(request).db
+    if db.manufacturer(manufacturer_id) is None:
+        raise HTTPException(404, "Unbekannter Hersteller")
+    db.delete_manufacturer(manufacturer_id)
+    return Response(status_code=204)

@@ -92,6 +92,14 @@ Voraussetzungen an jeder Steuerung:
 - LSV2 ist in der Firewall der Steuerung für den PC erlaubt (MOD → Firewall).
 - Der PC erreicht die Steuerung auf **TCP 19000**.
 
+**Werkzeughersteller:** Im Tab Konfiguration steht die Liste der Hersteller für das Dropdown
+„Hersteller“ im Werkzeug-Dialog.
+- Hinzufügen, Umbenennen und Entfernen. Beim Umbenennen ändert sich der Name auch bei allen
+  Werkzeugen mit diesem Hersteller.
+- Entfernen löscht nur den Listeneintrag. Werkzeuge behalten den Hersteller, er steht dann nur nicht
+  mehr zur Auswahl.
+- Hersteller, die schon an Werkzeugen eingetragen waren, stehen nach dem Update automatisch in der Liste.
+
 ## Restlaufzeit und Satzanzahl
 
 - **Satzanzahl:** Das angewählte NC-Programm wird einmal pro Lauf rein lesend von der Steuerung
@@ -159,7 +167,8 @@ zugeordnet, z. B. `26-21055-01-01`:
   Spindel ist. Stopps, Störungen, Einrichten und stehende Programme zählen nicht. Die Werkzeugnummer
   kommt alle 2 s von der Steuerung. Ein Wechsel wird also auf etwa 2 s genau erfasst.
 - **Werkzeugdaten** (Bearbeiten bzw. + Werkzeug anlegen): Hersteller, Artikelnummer, Durchmesser
-  und Radius in mm. Sie stehen in der Liste unter dem Werkzeug, z. B. „Ø 10 mm · R 0,5 mm · Garant ·
+  und Radius in mm. Den Hersteller wählst du aus einer Liste, die du im Tab Konfiguration unter
+  **Werkzeughersteller** pflegst. Sie stehen in der Liste unter dem Werkzeug, z. B. „Ø 10 mm · R 0,5 mm · Garant ·
   Art.-Nr. 202340“, und lassen sich suchen.
 - **Standzeit** (Bearbeiten → Stunden, z. B. `100` oder `2,5`):
   - **Maximallaufzeit:** Der Balken zeigt, wie viel davon verbraucht ist.

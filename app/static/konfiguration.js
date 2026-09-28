@@ -99,6 +99,100 @@ function renderSettings(s) {
   $("settings-note").textContent = `Diese Werte stehen in ${s.config_path}. Nach einer Änderung die App neu starten.`;
 }
 
+// --- Werkzeughersteller ------------------------------------------------------------------
+
+let manufacturers = [];
+let renaming = null; // id des Herstellers, der gerade umbenannt wird
+
+function setMfError(message) {
+  $("mf-error").textContent = message ?? "";
+  $("mf-error").hidden = !message;
+}
+
+async function loadManufacturers() {
+  manufacturers = (await api("/api/config/manufacturers")).manufacturers;
+  renderManufacturers();
+}
+
+function manufacturerRow(m) {
+  const usage = m.tools === 1 ? "in 1 Werkzeug" : m.tools ? `in ${m.tools} Werkzeugen` : "noch nicht verwendet";
+  if (renaming === m.id) {
+    const input = el("input", { type: "text", maxlength: "80", value: m.name, "aria-label": `${m.name} umbenennen` });
+    const submit = async (e) => {
+      e.preventDefault();
+      await saveManufacturer(m, input.value);
+    };
+    queueMicrotask(() => input.focus());
+    return el(
+      "li",
+      {},
+      el(
+        "form",
+        { class: "mf-rename", onsubmit: submit },
+        input,
+        el("button", { type: "submit", class: "btn primary", text: "Speichern" }),
+        el("button", { type: "button", class: "btn", onclick: () => ((renaming = null), renderManufacturers()), text: "Abbrechen" }),
+      ),
+    );
+  }
+  return el(
+    "li",
+    {},
+    el("span", { class: "mf-name", text: m.name }),
+    el("span", { class: "muted mf-usage", text: usage }),
+    el(
+      "span",
+      { class: "mf-actions" },
+      el("button", { type: "button", class: "btn", onclick: () => ((renaming = m.id), setMfError(null), renderManufacturers()), text: "Umbenennen" }),
+      el("button", { type: "button", class: "btn danger", onclick: () => removeManufacturer(m), text: "Entfernen" }),
+    ),
+  );
+}
+
+function renderManufacturers() {
+  $("mf-list").replaceChildren(
+    ...(manufacturers.length
+      ? manufacturers.map(manufacturerRow)
+      : [el("li", { class: "empty", text: "Noch keine Hersteller – oben eintragen und „Hinzufügen“." })]),
+  );
+}
+
+async function addManufacturer(e) {
+  e.preventDefault();
+  try {
+    await send("POST", "/api/config/manufacturers", { name: $("mf-name").value });
+    $("mf-name").value = "";
+    setMfError(null);
+    await loadManufacturers();
+  } catch (err) {
+    setMfError(err.message);
+  }
+}
+
+async function saveManufacturer(m, name) {
+  try {
+    await send("PUT", `/api/config/manufacturers/${m.id}`, { name });
+    renaming = null;
+    setMfError(null);
+    await loadManufacturers();
+  } catch (err) {
+    setMfError(err.message);
+  }
+}
+
+async function removeManufacturer(m) {
+  const note = m.tools
+    ? `\n\n${m.tools === 1 ? "1 Werkzeug behält" : `${m.tools} Werkzeuge behalten`} den Eintrag „${m.name}“; er steht dann nur nicht mehr zur Auswahl.`
+    : "";
+  if (!confirm(`„${m.name}“ aus der Herstellerliste entfernen?${note}`)) return;
+  try {
+    await send("DELETE", `/api/config/manufacturers/${m.id}`);
+    await loadManufacturers();
+  } catch (err) {
+    setMfError(err.message);
+  }
+}
+
 // --- Versionen ----------------------------------------------------------------------
 
 const isoToDe = (iso) => iso?.split("-").reverse().join(".");
@@ -345,9 +439,10 @@ async function main() {
     renderPreview();
   });
 
-  await Promise.all([reload(), loadChangelog()]);
+  $("mf-form").addEventListener("submit", addManufacturer);
+  await Promise.all([reload(), loadChangelog(), loadManufacturers()]);
   // Link „v1.2.0“ aus der Kopfzeile: erst nach dem Laden springen, die Liste darüber wächst noch
-  if (location.hash === "#versionen") $("versionen").scrollIntoView();
+  if (["#versionen", "#hersteller"].includes(location.hash)) $(location.hash.slice(1)).scrollIntoView();
   setInterval(refreshStatus, STATUS_MS);
 }
 

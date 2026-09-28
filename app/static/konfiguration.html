@@ -41,6 +41,19 @@
       <div id="machine-list" class="config-list"></div>
     </section>
 
+    <section class="card section" id="hersteller">
+      <div class="section-head">
+        <h2>Werkzeughersteller</h2>
+        <p class="muted">Auswahl für das Feld „Hersteller“ in der Werkzeugauswertung.</p>
+      </div>
+      <form id="mf-form" class="mf-add" novalidate>
+        <input type="text" id="mf-name" maxlength="80" autocomplete="off" placeholder="z. B. Garant" aria-label="Neuer Hersteller">
+        <button type="submit" class="btn primary">Hinzufügen</button>
+      </form>
+      <div id="mf-error" class="form-error" role="alert" hidden></div>
+      <ul id="mf-list" class="mf-list"></ul>
+    </section>
+
     <section class="card section">
       <h2 style="margin-bottom: 12px">Allgemein</h2>
       <dl class="settings-list" id="settings"></dl>

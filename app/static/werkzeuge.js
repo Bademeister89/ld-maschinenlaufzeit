@@ -283,6 +283,16 @@ function setError(message) {
   $("f-error").hidden = !message;
 }
 
+/** Auswahl aus der Herstellerliste (Konfiguration); ein alter Eintrag, der nicht mehr in der
+ * Liste steht, bleibt wählbar, damit Speichern ihn nicht stillschweigend löscht. */
+function manufacturerOptions(current) {
+  const names = data.manufacturers;
+  const options = [el("option", { value: "", text: names.length ? "– kein Hersteller –" : "– noch keine Hersteller angelegt –" })];
+  if (current && !names.includes(current)) options.push(el("option", { value: current, text: `${current} (nicht in der Liste)` }));
+  options.push(...names.map((name) => el("option", { value: name, text: name })));
+  return options;
+}
+
 function historyView(detail) {
   if (!detail.resets.length) return null;
   return el(
@@ -320,6 +330,7 @@ async function openEditor(t = null) {
   // Neue Werkzeuge starten mit Standard-Maximallaufzeit und -Vorwarnzeit
   $("f-limit").value = hoursInput(t ? t.limit_s : data.default_limit_h * 3600);
   $("f-warn").value = hoursInput(t ? t.warn_s : data.default_warn_h * 3600);
+  $("f-manufacturer").replaceChildren(...manufacturerOptions(t?.manufacturer ?? ""));
   $("f-manufacturer").value = t?.manufacturer ?? "";
   $("f-article").value = t?.article_no ?? "";
   $("f-diameter").value = mmInput(t?.diameter);

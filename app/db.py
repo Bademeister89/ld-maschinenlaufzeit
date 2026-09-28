@@ -125,6 +125,11 @@ CREATE TABLE IF NOT EXISTS tool_resets (
     limit_s    REAL
 );
 CREATE INDEX IF NOT EXISTS ix_tool_resets ON tool_resets(machine_id, number, reset_at);
+CREATE TABLE IF NOT EXISTS manufacturers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created_at REAL NOT NULL
+);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -178,6 +183,14 @@ class Database:
         ):
             if name not in columns:
                 self._con.execute(f"ALTER TABLE tools ADD COLUMN {name} {ddl}")
+        # Herstellerliste einmalig aus den schon eingetragenen Herstellern füllen (danach nicht mehr,
+        # sonst kämen gelöschte Hersteller beim nächsten Start zurück)
+        if self.get_meta("manufacturers_seeded") is None:
+            self._con.execute(
+                "INSERT OR IGNORE INTO manufacturers(name, created_at) "
+                "SELECT DISTINCT manufacturer, CAST(strftime('%s', 'now') AS REAL) FROM tools WHERE manufacturer != ''"
+            )
+            self.set_meta("manufacturers_seeded", "1")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:
@@ -586,6 +599,40 @@ class Database:
 
     def touch_tool_usage(self, usage_id: int, t: float) -> None:
         self._execute("UPDATE tool_usage SET ended_at = ? WHERE id = ?", (t, usage_id))
+
+    # --- Werkzeughersteller (Auswahlliste im Werkzeug-Dialog) ----------------------------
+    # Werkzeuge speichern den Namen als Text; Umbenennen zieht die Werkzeuge mit, Entfernen nicht.
+
+    def manufacturers(self) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT m.id, m.name, (SELECT COUNT(*) FROM tools t WHERE t.manufacturer = m.name) AS tools "
+            "FROM manufacturers m ORDER BY m.name COLLATE NOCASE"
+        )
+
+    def manufacturer(self, manufacturer_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT id, name FROM manufacturers WHERE id = ?", (manufacturer_id,))
+        return rows[0] if rows else None
+
+    def add_manufacturer(self, name: str, t: float) -> int | None:
+        """Neuer Hersteller; None, wenn es ihn schon gibt (Groß-/Kleinschreibung egal)."""
+        cur = self._execute("INSERT OR IGNORE INTO manufacturers(name, created_at) VALUES (?, ?)", (name, t))
+        return int(cur.lastrowid) if cur.rowcount else None
+
+    def rename_manufacturer(self, manufacturer_id: int, name: str) -> bool:
+        """Umbenennen, auch in allen Werkzeugen; False, wenn der neue Name schon vergeben ist."""
+        with self.transaction():
+            old = self.manufacturer(manufacturer_id)
+            clash = self._query(
+                "SELECT 1 FROM manufacturers WHERE name = ? AND id != ?", (name, manufacturer_id)
+            )
+            if old is None or clash:
+                return False
+            self._execute("UPDATE manufacturers SET name = ? WHERE id = ?", (name, manufacturer_id))
+            self._execute("UPDATE tools SET manufacturer = ? WHERE manufacturer = ?", (name, old["name"]))
+        return True
+
+    def delete_manufacturer(self, manufacturer_id: int) -> None:
+        self._execute("DELETE FROM manufacturers WHERE id = ?", (manufacturer_id,))
 
     # --- Satzverlauf (Grundlage der Restlaufzeit-Prognose) ------------------------------
 
