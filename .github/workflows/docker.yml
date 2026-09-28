@@ -55,6 +55,9 @@ jobs:
         with:
           # metadata-action schreibt den Namen klein (ghcr.io verlangt Kleinbuchstaben)
           images: ghcr.io/${{ github.repository_owner }}/ld-maschinenlaufzeit
+          # latest nur aus main (Regel unten) – sonst setzt jeder Versions-Tag latest mit, und bei
+          # mehreren gleichzeitig gepushten Tags gewinnt der Build, der zuletzt fertig wird
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
