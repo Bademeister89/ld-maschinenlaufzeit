@@ -69,7 +69,7 @@ Remove-Item -Recurse -Force (Join-Path $Lib "bin") -ErrorAction SilentlyContinue
 Step "App und Skripte kopieren"
 Copy-Item (Join-Path $Root "app") $Target -Recurse
 New-Item -ItemType Directory -Force (Join-Path $Target "tools") | Out-Null
-Copy-Item (Join-Path $Root "tools\probe.py"), (Join-Path $Root "tools\seed_demo.py"), (Join-Path $Root "portable\autostart.ps1") (Join-Path $Target "tools")
+Copy-Item (Join-Path $Root "tools\probe.py"), (Join-Path $Root "tools\seed_demo.py"), (Join-Path $Root "portable\autostart.ps1"), (Join-Path $Root "portable\verknuepfung.ps1") (Join-Path $Target "tools")
 Copy-Item (Join-Path $Root "portable\*.cmd") $Target
 Copy-Item (Join-Path $Root "config.yaml"), (Join-Path $Root "README.md"), (Join-Path $Root "CHANGELOG.md") $Target
 # Build-Kennung wie im Docker-Image (Datum + Commit); "+lokal", wenn nicht alles committet ist

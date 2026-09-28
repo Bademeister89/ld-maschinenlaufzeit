@@ -58,7 +58,10 @@ def main() -> None:
         print(f"Port {port} ist belegt – läuft LD Maschinenlaufzeit bereits (z. B. über den Autostart)?")
         print(f"Oberfläche: {url}")
         if args.open:
+            # Die Desktop-Verknüpfung startet start.cmd: Läuft die App schon, genügt das Öffnen
+            # der Oberfläche – ohne Fehlercode, damit kein wartendes Konsolenfenster offen bleibt.
             webbrowser.open(url)
+            sys.exit(0)
         sys.exit(1)
 
     if args.open:

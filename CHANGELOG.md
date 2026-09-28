@@ -10,6 +10,20 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.6.0] – 2026-09-28
+
+### Neu
+- Eigenes App-Symbol im Browser-Tab, bei Lesezeichen und oben neben dem Namen.
+- Die Oberfläche lässt sich auf Handy und Tablet mit dem App-Symbol auf den Startbildschirm legen.
+- Symbol im Unraid-Reiter DOCKER (über die Vorlage oder das Feld „Icon URL“).
+- Portable Version: `verknuepfung-erstellen.cmd` legt die Verknüpfung „LD Maschinenlaufzeit“ mit
+  Symbol auf dem Desktop und im Startmenü an. Ein Klick öffnet die Oberfläche und startet die App
+  vorher, falls sie nicht läuft.
+
+### Geändert
+- `start.cmd` öffnet nur den Browser, wenn die App schon läuft (z. B. über den Autostart). Das
+  Konsolenfenster bleibt dann nicht mehr mit einer Meldung stehen.
+
 ## [1.5.0] – 2026-09-28
 
 ### Neu

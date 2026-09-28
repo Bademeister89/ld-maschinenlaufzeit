@@ -39,6 +39,9 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 # womit Browser ES-Module verweigern.
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("image/x-icon", ".ico")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 class CacheControl:

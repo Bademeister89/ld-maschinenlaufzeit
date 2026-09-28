@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1a1a19"/>
+  <!-- Laufzeit-Ring -->
+  <circle cx="256" cy="256" r="178" fill="none" stroke="#3a3a37" stroke-width="28"/>
+  <path d="M 256 78 A 178 178 0 1 1 102 345" fill="none" stroke="#0ca30c" stroke-width="28" stroke-linecap="round"/>
+  <!-- Spindel -->
+  <rect x="200" y="120" width="112" height="70" rx="14" fill="#c3c2b7"/>
+  <path d="M 216 190 H 296 L 282 214 H 230 Z" fill="#898781"/>
+  <!-- Fräser -->
+  <rect x="240" y="214" width="32" height="30" fill="#e1e0d9"/>
+  <rect x="240" y="244" width="32" height="66" fill="#ffffff"/>
+  <path d="M 240 264 L 272 252 M 240 286 L 272 274 M 240 306 L 272 294" stroke="#1a1a19" stroke-width="8" stroke-linecap="round"/>
+  <!-- Rohling -->
+  <path d="M 150 300 H 226 V 318 H 286 V 300 H 362 V 372 Q 362 384 350 384 H 162 Q 150 384 150 372 Z" fill="#7a7873"/>
+</svg>

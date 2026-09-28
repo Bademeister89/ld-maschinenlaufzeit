@@ -35,6 +35,10 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
      Absturz neu gestartet.
    - Der Port der Oberfläche wird in der Windows-Firewall freigegeben.
    - Andere PCs im Netz erreichen die Oberfläche unter `http://<PC-Name>:8000`.
+5. `verknuepfung-erstellen.cmd` ausführen (ohne Adminrechte). Das legt auf dem Desktop und im
+   Startmenü die Verknüpfung **LD Maschinenlaufzeit** mit Symbol an. Ein Klick öffnet die
+   Oberfläche; läuft die App noch nicht, startet sie sie vorher. Nach dem Verschieben des Ordners
+   erneut ausführen.
 
 | Datei | Zweck |
 |---|---|
@@ -42,6 +46,7 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
 | `start-simulation.cmd` | Ausprobieren mit simulierten Maschinen (eigene Demo-Datenbank) |
 | `autostart-einrichten.cmd` | Dauerbetrieb im Hintergrund einrichten (Aufgabenplanung + Firewall) |
 | `autostart-entfernen.cmd` | Hintergrundbetrieb beenden und Autostart entfernen; die Daten bleiben |
+| `verknuepfung-erstellen.cmd` | Verknüpfung mit Symbol auf Desktop und im Startmenü anlegen |
 | `config.yaml` | Port, Abfrageintervall, Zeitzone (nach Änderung neu starten) |
 | `data\` | Datenbank, Maschinenbilder, Log-Dateien (`data\logs\laufzeit.log`) |
 
@@ -254,6 +259,7 @@ Das Image wird bei jedem Push auf `main` von GitHub Actions gebaut und liegt unt
    | Name | `ld-maschinenlaufzeit` |
    | Repository | `ghcr.io/bademeister89/ld-maschinenlaufzeit:latest` |
    | WebUI | `http://[IP]:[PORT:8000]/` (bleibt so, auch bei anderem Host-Port) |
+   | Icon-URL (*Icon URL*) | `https://raw.githubusercontent.com/Bademeister89/ld-maschinenlaufzeit/main/app/static/icons/icon-512.png` |
    | Netzwerktyp (*Network Type*) | `Bridge` (mit VPN-Tunnel siehe unten) |
 
 5. **Port:** unten „Einen weiteren Pfad, Port, Variable, Label oder Gerät hinzufügen“ →
@@ -283,6 +289,8 @@ schreibt in eine eigene `demo.db`; echte Daten landen in `data.db`.
   „Update“ (ggf. unten *Nach Updates suchen*). Ein Klick aktualisiert – kein Terminal, kein Script.
   Daten und Maschinen bleiben beim Update erhalten. Welche Version läuft, steht oben neben dem
   Namen (z. B. `v1.2.0`), siehe [Versionen](#versionen).
+- **Symbol bei einem schon angelegten Container:** Icon → **Bearbeiten** → erweiterte Ansicht →
+  bei *Icon URL* die Adresse aus der Tabelle oben eintragen → **Anwenden**.
 - **Version festhalten oder zurück:** Icon → **Bearbeiten**, bei *Repository* statt `:latest` die
   Versionsnummer eintragen, z. B. `ghcr.io/bademeister89/ld-maschinenlaufzeit:1.2.0` (feste Images
   gibt es ab Version 1.2.0), **Anwenden**.
@@ -387,7 +395,8 @@ Demo-Historie (drei Wochen, Schichtbetrieb) und Tests:
 | `app/api.py`, `app/config_api.py`, `app/main.py` | Web-API und Start (`python -m app`) |
 | `app/__init__.py`, `CHANGELOG.md` | Versionsnummer und Änderungsprotokoll |
 | `app/static/` | Oberfläche (HTML/CSS/JS ohne Build-Schritt) |
-| `portable/` | Start- und Autostart-Skripte der portablen Version |
+| `portable/` | Start-, Autostart- und Verknüpfungs-Skripte der portablen Version |
+| `app/static/icons/` | App-Symbol (Browser, Startbildschirm, Unraid, Windows-Verknüpfung) |
 | `tools/` | `probe.py`, `seed_demo.py`, `build_portable.ps1` |
 | `docker/`, `Dockerfile` | Container (Start ohne Root-Rechte) |
 | `unraid/` | Vorlage für die Unraid-Oberfläche |

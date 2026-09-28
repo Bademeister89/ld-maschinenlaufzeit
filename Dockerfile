@@ -1,7 +1,9 @@
 FROM python:3.14-slim
 
+# net.unraid.docker.icon: Symbol im Unraid-Reiter DOCKER, auch ohne Vorlage
 LABEL org.opencontainers.image.title="LD Maschinenlaufzeit" \
-      org.opencontainers.image.description="Laufzeiterfassung für Heidenhain-Steuerungen über LSV2"
+      org.opencontainers.image.description="Laufzeiterfassung für Heidenhain-Steuerungen über LSV2" \
+      net.unraid.docker.icon="https://raw.githubusercontent.com/Bademeister89/ld-maschinenlaufzeit/main/app/static/icons/icon-512.png"
 
 # Build-Kennung (Datum + Commit) setzt GitHub Actions; die Versionsnummer steht in app/__init__.py.
 ARG BUILD=
