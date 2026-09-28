@@ -10,6 +10,20 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.7.0] – 2026-09-28
+
+### Geändert
+- Live-Ansicht überarbeitet:
+  - Größere Maschinenkarten mit großem Maschinenbild (bzw. Kürzel ohne Bild).
+  - Der Zustand steht als großer farbiger Balken mit Symbol neben dem Bild, zum Beispiel
+    „▶ Läuft · 1 min seit 15:42 Uhr“.
+  - Darunter aufgeräumt: Programm mit Auftrag und Laufdauer, Fortschritt und Restlaufzeit,
+    Kennzahlen, Tagesverlauf.
+  - Auf dem Handy steht das Bild klein neben dem Namen, der Statusbalken geht über die volle Breite.
+
+### Behoben
+- Bei stehender Maschine (z. B. „Bereit“) stand auf der Live-Karte das Wort „null“.
+
 ## [1.6.3] – 2026-09-28
 
 ### Neu

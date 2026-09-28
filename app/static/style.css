@@ -212,44 +212,98 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 
 .machine-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
+  gap: 20px;
 }
 
-.machine-card { display: flex; flex-direction: column; gap: 16px; border-top: 4px solid var(--st-color, var(--border)); }
-.live-part { display: flex; flex-direction: column; gap: 14px; }
-.today-part { border-top: 1px solid var(--grid); padding-top: 14px; }
+.machine-card { display: flex; flex-direction: column; gap: 18px; padding: 20px; container-type: inline-size; }
+.live-part { display: flex; flex-direction: column; gap: 16px; }
+.today-part { border-top: 1px solid var(--grid); padding-top: 16px; display: grid; gap: 10px; }
 
-.machine-head { display: flex; align-items: flex-start; gap: 12px; }
-.machine-head .title { flex: 1; min-width: 0; }
-.machine-name { font-size: 18px; font-weight: 650; }
-.machine-host { font-size: 13px; color: var(--muted); }
+/* Kopf: großes Bild links, Name und Statusbalken rechts */
+.mc-head {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "img title" "img status";
+  gap: 12px 20px;
+}
+.mc-image { grid-area: img; }
+.mc-title { grid-area: title; display: grid; gap: 2px; min-width: 0; }
+.machine-name { margin: 0; font-size: 24px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.machine-host { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 
-.hero {
+/* Statusbalken: fällt sofort ins Auge. Hintergrund in der Zustandsfarbe (für weiße Schrift etwas
+   abgedunkelt), immer mit Symbol und Text – nie Farbe allein. */
+.mc-status {
+  grid-area: status;
+  align-self: end;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 6px 14px;
+  min-height: 72px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--st-color) 82%, #000);
+  color: #fff;
 }
+.mc-status.st-STOPPED { background: var(--st-stopped); color: #1a1a19; }
+.mc-status.st-UNKNOWN, .mc-status.st-NETWORK, .mc-status.pending {
+  background: var(--surface-2);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.mc-status-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 16px;
+  font-weight: 700;
+}
+.mc-status.st-STOPPED .mc-status-icon,
+.mc-status.st-UNKNOWN .mc-status-icon,
+.mc-status.st-NETWORK .mc-status-icon { background: rgba(0, 0, 0, 0.12); }
+.mc-status-label { font-size: 28px; font-weight: 750; line-height: 1.1; }
+.mc-status-time { margin-left: auto; display: grid; justify-items: end; line-height: 1.15; }
+.mc-status-duration { font-size: 22px; font-weight: 700; }
+.mc-status-since { font-size: 13px; font-weight: 600; opacity: 0.92; }
 
-.hero-value { font-size: 40px; font-weight: 650; line-height: 1.1; }
-.hero-label { color: var(--ink-2); }
+.mc-message { margin: 0; color: var(--ink-2); }
 
 .program {
-  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
   background: var(--surface-2);
-  border-radius: 8px;
+  border-radius: 10px;
   min-width: 0;
 }
 
-.program-name { font-weight: 650; font-size: 17px; overflow-wrap: anywhere; }
+.program-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+.program-name { font-weight: 650; font-size: 18px; overflow-wrap: anywhere; }
+.program-run { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .program-path { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.program .order-link { margin-top: 2px; }
 
 .facts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 10px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px 20px;
   margin: 0;
+}
+
+/* Schmale Karte (Handy): kleines Bild neben dem Namen, Statusbalken über die volle Breite */
+@container (max-width: 520px) {
+  .mc-head { grid-template-columns: 96px minmax(0, 1fr); grid-template-rows: auto auto; grid-template-areas: "img title" "status status"; gap: 12px 14px; }
+  .machine-name { font-size: 20px; }
+  .mc-status { min-height: 0; }
+  .mc-status-label { font-size: 24px; }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 }
 
 .facts div { min-width: 0; }
@@ -468,6 +522,9 @@ details[open] > summary { margin-bottom: 12px; }
 
 .thumb.small.thumb-placeholder { font-size: 13px; }
 .thumb.large.thumb-placeholder { font-size: 32px; }
+.thumb.xl { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; border-radius: 12px; }
+.thumb.xl.thumb-placeholder { display: grid; font-size: 44px; }
+@container (max-width: 520px) { .thumb.xl.thumb-placeholder { font-size: 28px; } }
 
 .card-title { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .card-title h2 { margin: 0; }
@@ -755,7 +812,7 @@ input[type="search"] {
 }
 
 @media (max-width: 640px) {
-  .hero-value { font-size: 32px; }
+  .machine-card { padding: 16px; }
   input[type="search"] { min-width: 0; width: 100%; }
   .nav { max-width: 100%; overflow-x: auto; }
   .nav a { padding: 6px 8px; }

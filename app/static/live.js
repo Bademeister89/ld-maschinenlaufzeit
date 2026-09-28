@@ -19,7 +19,7 @@ import {
   machineThumb,
   pgmStateLabel,
   startOfDay,
-  stateBadge,
+  stateIcon,
   stateLabel,
   timelineTrack,
   tooltip,
@@ -71,7 +71,7 @@ function syncCards(machines) {
 function thumbFor(c, m) {
   const key = `${m.image_url}|${m.name}`;
   if (c.thumbKey !== key) {
-    c.thumb = machineThumb(m);
+    c.thumb = machineThumb(m, "xl");
     c.thumbKey = key;
   }
   return c.thumb;
@@ -163,29 +163,34 @@ function overrideText(o) {
   return `F ${p(o.feed)} · S ${p(o.spindle)} · FMAX ${p(o.rapid)}`;
 }
 
-function hero(m, now) {
-  const run = m.run;
-  if (run && RUN_STATES.has(m.state)) {
-    const prefix = run.start_observed ? "" : "≥ ";
-    let label = `Programm läuft seit ${fmtTime(run.started_at)} Uhr`;
-    if (m.state !== "RUNNING" && m.state_since) {
-      label += ` · ${stateLabel(m.state).toLowerCase()} seit ${fmtDuration(now - m.state_since)}`;
-    }
-    if (!run.start_observed) label += " (Start vor Beginn der Erfassung)";
-    return el(
-      "div",
-      { class: "hero" },
-      el("span", { class: "hero-value", text: prefix + fmtDuration(now - run.started_at) }),
-      el("span", { class: "hero-label", text: label }),
-    );
+/** Großer Statusbalken: Symbol + Zustand, rechts wie lange schon. */
+function statusBand(m, now) {
+  if (!m.state) {
+    return el("div", { class: "mc-status pending" }, el("span", { class: "mc-status-label", text: "Verbinde …" }));
   }
-  if (!m.state) return el("div", { class: "hero" }, el("span", { class: "hero-label", text: "Verbindung wird aufgebaut …" }));
   return el(
     "div",
-    { class: "hero" },
-    el("span", { class: "hero-value", text: fmtDuration(now - m.state_since) }),
-    el("span", { class: "hero-label", text: `${stateLabel(m.state)} seit ${fmtTime(m.state_since)} Uhr` }),
+    { class: `mc-status st-${m.state}` },
+    el("span", { class: "mc-status-icon", "aria-hidden": "true", text: stateIcon(m.state) }),
+    el("span", { class: "mc-status-label", text: stateLabel(m.state) }),
+    m.state_since != null
+      ? el(
+          "span",
+          { class: "mc-status-time" },
+          el("span", { class: "mc-status-duration num", text: fmtDuration(now - m.state_since) }),
+          el("span", { class: "mc-status-since num", text: `seit ${fmtTime(m.state_since)} Uhr` }),
+        )
+      : null,
   );
+}
+
+/** Laufzeit des Programmlaufs – nur wenn sie von der Zustandsdauer abweicht (z. B. nach einem Stopp). */
+function runText(m, now) {
+  const run = m.run;
+  if (!run || !RUN_STATES.has(m.state)) return null;
+  if (m.state === "RUNNING" && run.start_observed && Math.abs(run.started_at - (m.state_since ?? 0)) < 5) return null;
+  const prefix = run.start_observed ? "" : "≥ ";
+  return `Lauf ${prefix}${fmtDuration(now - run.started_at)} · seit ${fmtTime(run.started_at)} Uhr`;
 }
 
 function renderLive(m, now) {
@@ -195,43 +200,47 @@ function renderLive(m, now) {
   const control = [m.control?.control, m.control?.nc_sw].filter(Boolean).join(" · ");
   const parts = [
     el(
-      "div",
-      { class: "machine-head" },
-      thumbFor(c, m),
+      "header",
+      { class: "mc-head" },
+      el("div", { class: "mc-image" }, thumbFor(c, m)),
       el(
         "div",
-        { class: "title" },
-        el("div", { class: "machine-name", text: m.name }),
+        { class: "mc-title" },
+        el("h2", { class: "machine-name", text: m.name }),
         m.note ? el("div", { class: "machine-host", text: m.note }) : null,
         el("div", { class: "machine-host", text: [`${m.host}:${m.port}`, control].filter(Boolean).join(" · ") }),
       ),
-      stateBadge(m.state),
+      statusBand(m, now),
     ),
-    hero(m, now),
-    progressBlock(m),
   ];
 
   if (m.state === "NETWORK") {
     parts.push(
       el(
         "p",
-        { class: "secondary", style: { margin: 0 } },
+        { class: "mc-message" },
         `Weder die Steuerung noch die Prüfadresse ${m.check_host} antworten – die Verbindung zum Standort ist gestört (VPN?). `
           + "Diese Zeit wird als „Keine Daten“ gebucht, nicht als „Offline“.",
       ),
     );
   } else if (m.state === "OFFLINE" || !m.connected) {
     parts.push(
-      el("p", { class: "secondary", style: { margin: 0 } }, m.connection_error ? `Keine Verbindung: ${m.connection_error}` : "Keine Verbindung zur Steuerung."),
+      el("p", { class: "mc-message" }, m.connection_error ? `Keine Verbindung: ${m.connection_error}` : "Keine Verbindung zur Steuerung."),
     );
   } else {
     const programName = baseName(m.program);
     const current = m.current_program && m.current_program !== m.program ? `aktuell: ${baseName(m.current_program)}` : null;
+    const run = runText(m, now);
     parts.push(
       el(
         "div",
         { class: "program" },
-        el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
+        el(
+          "div",
+          { class: "program-top" },
+          el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
+          run ? el("div", { class: "program-run num", text: run, title: m.run.start_observed ? null : "Start vor Beginn der Erfassung" }) : null,
+        ),
         m.program ? el("div", { class: "program-path", text: [m.program, current].filter(Boolean).join(" · ") }) : null,
         m.order
           ? el(
@@ -241,6 +250,7 @@ function renderLive(m, now) {
             )
           : null,
       ),
+      progressBlock(m),
       el(
         "dl",
         { class: "facts" },
@@ -258,7 +268,8 @@ function renderLive(m, now) {
       parts.push(el("ul", { class: "errors" }, m.errors.map((text) => el("li", { text }))));
     }
   }
-  c.live.replaceChildren(...parts);
+  // Leere Bausteine (z. B. kein Fortschritt ohne laufendes Programm) auslassen – sonst stünde „null“ da
+  c.live.replaceChildren(...parts.filter(Boolean));
 }
 
 async function refreshLive() {
@@ -291,7 +302,7 @@ async function refreshToday() {
         cards.get(id).today.replaceChildren(
           el(
             "div",
-            { class: "today-kpis", style: { marginBottom: "10px" } },
+            { class: "today-kpis" },
             kpi("Laufzeit heute", fmtHours(s.totals.RUNNING)),
             kpi("Auslastung heute", fmtPct(s.utilization), "bezogen auf Einschaltzeit"),
             kpi("Fertige Läufe heute", String(finished)),

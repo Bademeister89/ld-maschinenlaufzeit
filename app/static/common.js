@@ -103,6 +103,9 @@ export function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** Symbol eines Zustands (▶, ❚❚, ! …) – Farbe allein reicht nie. */
+export const stateIcon = (state) => STATE_ICONS[state] ?? "…";
+
 export function stateBadge(state) {
   const cls = `st-${state ?? "UNKNOWN"}`;
   return el(
