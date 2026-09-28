@@ -121,7 +121,7 @@ def export_tools(request: Request) -> Response:
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
     writer.writerow(
-        ["Maschine", "Werkzeug", "Name (Steuerung)", "Notiz", "Einsatzzeit (h)", "Maximallaufzeit (h)",
+        ["Maschine", "Werkzeug", "Name", "Notiz", "Einsatzzeit (h)", "Maximallaufzeit (h)",
          "Auslastung (%)", "Status", "Zurückgesetzt am", "Zuletzt im Einsatz"]
     )
     for row in rows:

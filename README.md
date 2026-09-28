@@ -8,7 +8,7 @@ spätere Laufzeitauswertungen:
   CSV-Export für Excel.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
-- **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T600) und Maschine, Maximallaufzeit mit
+- **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T1000) und Maschine, Maximallaufzeit mit
   Vorwarnung und roter Meldung, Zurücksetzen beim Werkzeugwechsel, Standzeit-Historie.
 - **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
   testen; zeigt die laufende Version und das Änderungsprotokoll.
@@ -145,7 +145,7 @@ zugeordnet, z. B. `26-21055-01-01`:
 ## Werkzeugauswertung (Tab „Werkzeugauswertung“)
 
 - **Werkzeuge werden automatisch angelegt**, sobald ein Werkzeug an einer Maschine zum ersten Mal in
-  der Spindel ist. Mit **+ Werkzeug anlegen** lässt sich ein Werkzeug (T1–T600) auch vorab anlegen,
+  der Spindel ist. Mit **+ Werkzeug anlegen** lässt sich ein Werkzeug (T1–T1000) auch vorab anlegen,
   um die Maximallaufzeit schon vor dem ersten Einsatz einzutragen.
 - **Je Maschine getrennt:** T100 an der einen und T100 an der anderen Maschine sind zwei Werkzeuge
   mit eigener Zeit, eigenem Limit und eigenem Zurücksetzen.
@@ -162,6 +162,9 @@ zugeordnet, z. B. `26-21055-01-01`:
   „Standzeiten bisher“, mit Ø Standzeit).
 - **Entfernen** löscht den Eintrag samt Historie. Taucht das Werkzeug wieder auf, wird es neu
   angelegt und zählt ab dann.
+- **Name und Notiz:** Die Steuerung liefert über die Abfrage „Werkzeug in der Spindel“ nur die
+  Nummer (dazu Index, Achse, Länge, Radius), keinen Namen. Eine eigene Bezeichnung, z. B.
+  „VHM-Fräser D10“, steht unter Bearbeiten → **Notiz**. Die Namen in der Simulation sind erfunden.
 - Filter nach Maschine und Status, Suche nach T-Nummer, Name oder Notiz, CSV-Export.
 
 Die Werkzeugnummer liest die App über die DNC-Abfrage „Werkzeug in der Spindel“. Ob die iTNC 530 sie

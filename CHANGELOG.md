@@ -10,6 +10,14 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.3.1] – 2026-09-28
+
+### Geändert
+- Werkzeugnummern gehen bis T1000 (bisher T600).
+- Der Werkzeugname wird nur noch angezeigt, wenn es einen gibt. Die Steuerung liefert über die
+  Abfrage „Werkzeug in der Spindel“ nur die Nummer, keinen Namen. Die Namen in der Simulation sind
+  erfunden, eigene Bezeichnungen gehören in die Notiz.
+
 ## [1.3.0] – 2026-09-28
 
 ### Neu

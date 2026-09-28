@@ -23,6 +23,7 @@ from .conftest import feed, snap
         ("T100 FRAESER_D10", (100, "FRAESER_D10")),
         ("T5", (5, "")),
         ("  T600 KUGEL R3 ", (600, "KUGEL R3")),
+        ("T1000", (1000, "")),
         ("T0", None),
         ("", None),
         (None, None),
@@ -146,7 +147,7 @@ def client(tmp_path):
 def test_api_list(client):
     data = client.get("/api/tools").json()
     assert [m["id"] for m in data["machines"]] == ["m1", "m2"]
-    assert data["range"] == [1, 600]
+    assert data["range"] == [1, 1000]
     [tool] = data["tools"]
     assert (tool["machine"], tool["number"], tool["name"], tool["status"]) == ("DMG 1", 100, "FRAESER_D10", "none")
     assert tool["used_s"] == pytest.approx(7200)
@@ -187,7 +188,8 @@ def test_api_create_and_delete(client):
     assert (r.json()["number"], r.json()["limit_s"], r.json()["used_s"]) == (250, 360000, 0)
     assert client.post("/api/tools", json={"machine_id": "m2", "number": 250}).status_code == 409
     assert client.post("/api/tools", json={"machine_id": "m2", "number": 0}).status_code == 400
-    assert client.post("/api/tools", json={"machine_id": "m2", "number": 601}).status_code == 400
+    assert client.post("/api/tools", json={"machine_id": "m2", "number": 1001}).status_code == 400
+    assert client.post("/api/tools", json={"machine_id": "m2", "number": 1000}).status_code == 201
     assert client.post("/api/tools", json={"machine_id": "m2", "number": "x"}).status_code == 400
     assert client.post("/api/tools", json={"machine_id": "zz", "number": 5}).status_code == 404
     assert client.delete("/api/tools/m2/250").status_code == 204
@@ -209,7 +211,7 @@ def test_api_export(client):
     client.put("/api/tools/m1/100", json={"limit_h": 4})
     text = client.get("/api/tools/export.csv").content.decode("utf-8").lstrip("﻿")
     header, row = text.strip().split("\r\n")
-    assert header.split(";")[:5] == ["Maschine", "Werkzeug", "Name (Steuerung)", "Notiz", "Einsatzzeit (h)"]
+    assert header.split(";")[:5] == ["Maschine", "Werkzeug", "Name", "Notiz", "Einsatzzeit (h)"]
     assert row.split(";")[:8] == ["DMG 1", "T100", "FRAESER_D10", "", "2,00", "4,00", "50", "ok"]
 
 

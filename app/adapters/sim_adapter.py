@@ -36,7 +36,7 @@ ORDER_SETUPS = {
     for order, setups in ORDERS
 }
 PROGRAMS = tuple(p for setups in ORDER_SETUPS.values() for programs in setups for p in programs)
-# Werkzeugnummern im Betrieb: 1–600
+# Werkzeugnummern im Betrieb: 1–1000
 TOOLS = (
     (1, "NC-ANBOHRER"),
     (5, "BOHRER_D8.5"),
@@ -50,6 +50,7 @@ TOOLS = (
     (342, "BOHRER_D10.2"),
     (407, "PLANFRAESER_D80"),
     (563, "ENTGRATER"),
+    (872, "GEWINDEBOHRER_M8"),
 )
 ERRORS = (
     "Kühlmitteldruck zu gering",

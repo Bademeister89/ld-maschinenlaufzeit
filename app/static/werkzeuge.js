@@ -113,7 +113,7 @@ function toolRow(t) {
       el(
         "div",
         { class: "tool-names" },
-        el("div", { class: "tool-name", text: t.name || "—", title: "Name aus der Werkzeugtabelle der Steuerung" }),
+        t.name ? el("div", { class: "tool-name", text: t.name }) : null,
         t.note ? el("div", { class: "tool-note", text: t.note }) : null,
       ),
     ),

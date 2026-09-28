@@ -2,6 +2,9 @@
 
 - Ein Werkzeug wird automatisch angelegt, sobald es an einer Maschine in der Spindel auftaucht
   (oder von Hand im Tab „Werkzeugauswertung“, um das Limit schon vorher einzutragen).
+- Die DNC-Abfrage „Werkzeug in der Spindel“ liefert Nummer, Index, Achse, Länge und Radius, aber
+  keinen Namen. ``name`` ist deshalb bei echten Steuerungen leer (die Simulation vergibt Namen);
+  eigene Bezeichnungen stehen in ``note``.
 - **Einsatzzeit** ist die Zeit, in der ein Programm läuft (Zustand „Läuft“) und das Werkzeug in der
   Spindel ist. Stopps, Störungen, Einrichten und angewählte, aber stehende Programme zählen nicht.
 - T100 an Maschine 1 und T100 an Maschine 2 sind verschiedene Werkzeuge (eigene Magazine).
@@ -17,7 +20,7 @@ from typing import Any
 
 from .db import Database
 
-TOOL_MIN, TOOL_MAX = 1, 600  # Nummernkreis im Betrieb (Anlegen von Hand)
+TOOL_MIN, TOOL_MAX = 1, 1000  # Nummernkreis im Betrieb (Anlegen von Hand)
 WARN_RATIO = 0.9  # Vorwarnung ab 90 % der Maximallaufzeit
 
 _TOOL = re.compile(r"^T(\d+)(?:\s+(.*))?$")
