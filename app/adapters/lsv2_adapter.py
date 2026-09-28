@@ -15,6 +15,7 @@ import pyLSV2
 
 from ..nc_program import ProgramFile, count_blocks
 from ..netcheck import reachable
+from ..tool_table import TOOL_TABLE, TOOL_TABLE_MAX_BYTES, ToolTableFile, parse_tool_table
 from .base import AdapterError, Snapshot
 
 log = logging.getLogger(__name__)
@@ -126,6 +127,35 @@ class Lsv2Adapter:
             return ProgramFile(path, size, mtime, blocks, None if blocks is not None else "Satzanzahl nicht erkennbar")
         except Exception as exc:
             raise AdapterError(f"Lesen von {path} fehlgeschlagen ({exc})") from exc
+        finally:
+            self._disconnect(con)
+
+    def fetch_tool_table(self, known: tuple[int, float] | None) -> ToolTableFile | None:
+        """Werkzeugnamen aus TOOL.T lesen (eigene, rein lesende Verbindung wie bei den Programmen).
+        None = seit dem letzten Lesen unverändert."""
+        try:
+            con = pyLSV2.LSV2(self.host, port=self.port, timeout=max(self.timeout, 10.0), safe_mode=True)
+            con.connect()
+        except Exception as exc:
+            raise AdapterError(f"Keine LSV2-Verbindung zum Lesen von {TOOL_TABLE} ({exc})") from exc
+        try:
+            info = con.file_info(TOOL_TABLE)
+            if info is None:
+                return ToolTableFile(error=f"{TOOL_TABLE} nicht gefunden")
+            size, mtime = int(info.size), info.timestamp.timestamp()
+            if known is not None and known == (size, mtime):
+                return None
+            if size > TOOL_TABLE_MAX_BYTES:
+                return ToolTableFile(size, mtime, error=f"Werkzeugtabelle zu groß ({size / 1e6:.1f} MB)")
+            with tempfile.TemporaryDirectory() as tmp:
+                local = Path(tmp) / "tool.t"
+                if not con.recive_file(TOOL_TABLE, local, override_file=True, binary_mode=False):
+                    return ToolTableFile(size, mtime, error=f"Übertragung fehlgeschlagen ({con.last_error})")
+                text = local.read_text(encoding="latin-1")
+            names = parse_tool_table(text)
+            return ToolTableFile(size, mtime, names, None if names else "keine Werkzeugnamen gefunden")
+        except Exception as exc:
+            raise AdapterError(f"Lesen von {TOOL_TABLE} fehlgeschlagen ({exc})") from exc
         finally:
             self._disconnect(con)
 

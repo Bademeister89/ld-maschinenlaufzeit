@@ -137,11 +137,13 @@ function toolFact(m) {
   const life = info
     ? `${fmtToolTime(info.used_s)}${info.limit_s ? ` von ${fmtToolTime(info.limit_s)}` : ""} im Einsatz`
     : null;
+  // Die Steuerung meldet nur "T12"; der Name kommt aus der Werkzeugtabelle (TOOL.T)
+  const label = info ? `T${info.number}${info.name ? ` ${info.name}` : ""}` : m.tool;
   return el(
     "div",
     {},
     el("dt", { text: "Werkzeug" }),
-    el("dd", {}, m.tool ?? "—", life ? el("span", { class: "tool-life num", text: life }) : null),
+    el("dd", {}, label ?? "—", life ? el("span", { class: "tool-life num", text: life }) : null),
   );
 }
 

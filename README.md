@@ -68,8 +68,9 @@ Das Ergebnis liegt in `C:\Users\<Name>\ld-mainmachine\dist\`: der Ordner (ca. 45
 - **+ Maschine hinzufügen:** Name, IP-Adresse der Steuerung, Port (Standard 19000), Standort/Notiz und
   Bild. Große Fotos werden beim Hochladen automatisch verkleinert.
 - **Verbindung testen:** prüft rein lesend Schritt für Schritt: Netzwerk → LSV2-Anmeldung und
-  Steuerungsversion → Option 18 → Statusabfrage. Bei Fehlern nennt der Test mögliche Ursachen. Der
-  Test funktioniert auch schon vor dem Speichern.
+  Steuerungsversion → Option 18 → Statusabfrage, danach (optional) angewähltes Programm und
+  Werkzeugtabelle lesen. Bei Fehlern nennt der Test mögliche Ursachen. Der Test funktioniert auch
+  schon vor dem Speichern.
 - **Prüfadresse am Standort** (optional), z. B. der Router vor Ort: Antworten weder die Steuerung
   noch diese Adresse, ist die Verbindung zum Standort weg (etwa das VPN). Die Karte zeigt dann
   „Standort nicht erreichbar“, und die Zeit wird als „Keine Daten“ gebucht statt als „Offline“.
@@ -162,14 +163,21 @@ zugeordnet, z. B. `26-21055-01-01`:
   „Standzeiten bisher“, mit Ø Standzeit).
 - **Entfernen** löscht den Eintrag samt Historie. Taucht das Werkzeug wieder auf, wird es neu
   angelegt und zählt ab dann.
-- **Name und Notiz:** Die Steuerung liefert über die Abfrage „Werkzeug in der Spindel“ nur die
-  Nummer (dazu Index, Achse, Länge, Radius), keinen Namen. Eine eigene Bezeichnung, z. B.
-  „VHM-Fräser D10“, steht unter Bearbeiten → **Notiz**. Die Namen in der Simulation sind erfunden.
+- **Name aus der Werkzeugtabelle:** Die Abfrage „Werkzeug in der Spindel“ liefert nur die Nummer.
+  Den Namen liest die App aus der Werkzeugtabelle `TNC:\TOOL.T` der Steuerung (Spalte `NAME`).
+  - Das geschieht nur lesend über eine zweite Verbindung, wie bei den Programmdateien.
+  - Nach dem Start und dann alle 10 Minuten prüft die App, ob sich die Tabelle geändert hat, und
+    liest sie nur dann neu ein.
+  - Taucht ein Werkzeug ohne bekannten Namen auf, prüft sie schon nach einer Minute wieder.
+  - Indizierte Werkzeuge (T5.1 …) zählen zur Nummer des Hauptwerkzeugs.
+- **Notiz:** eigene Bezeichnung, z. B. „VHM D10, Hersteller X“, unter Bearbeiten.
 - Filter nach Maschine und Status, Suche nach T-Nummer, Name oder Notiz, CSV-Export.
 
-Die Werkzeugnummer liest die App über die DNC-Abfrage „Werkzeug in der Spindel“. Ob die iTNC 530 sie
-liefert, zeigt der Verbindungstest: Unter „Statusabfrage“ steht dann z. B. `Werkzeug T12 FRAESER_D16`,
-sonst „Werkzeug: keine Angabe“.
+Ob beides an der iTNC 530 funktioniert, zeigt der Verbindungstest:
+
+- Unter „Statusabfrage“ steht `Werkzeug T12` oder „Werkzeug: keine Angabe“.
+- Unter „Werkzeugtabelle lesen“ steht z. B. „245 Werkzeuge mit Namen, in der Spindel: T12
+  FRAESER_D16“.
 
 ## Begriffe der Auswertung
 

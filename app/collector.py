@@ -38,6 +38,8 @@ log = logging.getLogger(__name__)
 BACKOFF_S = (5, 10, 20, 40, 60)
 PROGRESS_SAMPLE_S = 10  # höchstens ein Satzverlauf-Punkt je 10 s reiner Laufzeit
 PROGRESS_KEEP_RUNS = 10  # Satzverlauf der letzten 10 Referenzläufe je Programm aufheben
+TOOL_TABLE_CHECK_S = 600  # Werkzeugtabelle (Namen) alle 10 min auf Änderungen prüfen …
+TOOL_TABLE_RETRY_S = 60  # … und früher, wenn ein Werkzeug ohne bekannten Namen auftaucht
 
 
 @dataclass
@@ -99,7 +101,11 @@ class MachineCollector:
         self._last_sample: tuple[int, float, tuple[str | None, int]] | None = None
         self._programs: dict[str, dict[str, Any] | None] = {}
         self._program_checked: dict[str, int | None] = {}  # Pfad → Lauf, für den geprüft wurde
-        self._fetch_task: asyncio.Task[None] | None = None
+        self._fetch_task: asyncio.Task[None] | None = None  # Programm- bzw. Werkzeugtabellen-Lesen
+        self._tool_names: dict[int, str] = {}  # aus TOOL.T
+        self._tool_table: tuple[int, float] | None = None  # (Größe, Änderungszeit) beim letzten Lesen
+        self._tool_table_checked: float | None = None
+        self._tool_name_missing = False
 
     def _load_open_run(self) -> _Run | None:
         row = self._db.open_run(self.machine.id)
@@ -218,8 +224,11 @@ class MachineCollector:
         parsed = parse_tool(snap.tool) if snap is not None else None
         number = parsed[0] if parsed else None
         if parsed is not None and number != self._seen_tool:
-            if self._db.ensure_tool(self.machine.id, number, parsed[1], now):
-                self._db.add_event(self.machine.id, now, "tool_created", {"tool": number, "name": parsed[1]})
+            # Die Spindelabfrage der echten Steuerung liefert keinen Namen – dann aus TOOL.T
+            name = parsed[1] or self._tool_names.get(number, "")
+            self._tool_name_missing = self._tool_name_missing or not name
+            if self._db.ensure_tool(self.machine.id, number, name, now):
+                self._db.add_event(self.machine.id, now, "tool_created", {"tool": number, "name": name})
                 log.info("%s: Werkzeug T%d angelegt", self.machine.name, number)
             self._seen_tool = number
         active = number if state is MachineState.RUNNING else None
@@ -322,6 +331,35 @@ class MachineCollector:
             self._programs.pop(path, None)
             self._program_checked[path] = marker
 
+    # --- Werkzeugtabelle (Namen) ----------------------------------------------------
+
+    def _maybe_fetch_tool_table(self) -> None:
+        fetch = getattr(self._adapter, "fetch_tool_table", None)
+        if not self._fetch_programs or fetch is None or (self._fetch_task and not self._fetch_task.done()):
+            return
+        now = self._clock()
+        last = self._tool_table_checked
+        if last is None or now - last >= TOOL_TABLE_CHECK_S or (self._tool_name_missing and now - last >= TOOL_TABLE_RETRY_S):
+            self._tool_table_checked = now
+            self._tool_name_missing = False
+            self._fetch_task = asyncio.create_task(self._fetch_tool_table(fetch))
+
+    async def _fetch_tool_table(self, fetch: Callable[..., Any]) -> None:
+        try:
+            result = await asyncio.to_thread(fetch, self._tool_table)
+        except Exception as exc:
+            log.warning("%s: Werkzeugtabelle nicht lesbar: %s", self.machine.name, exc)
+            return
+        if result is None:
+            return  # unverändert
+        if not result.names:
+            log.warning("%s: Werkzeugtabelle ohne Namen: %s", self.machine.name, result.error)
+            return
+        self._tool_table = (result.size, result.mtime)
+        self._tool_names = dict(result.names)
+        changed = self._db.set_tool_names(self.machine.id, self._tool_names)
+        log.info("%s: Werkzeugtabelle gelesen – %d Namen, %d übernommen", self.machine.name, len(result.names), changed)
+
     # --- Live-Status ---------------------------------------------------------------
 
     def live(self) -> dict[str, Any]:
@@ -404,6 +442,7 @@ class MachineCollector:
                 try:
                     self.process(snap, self._clock())
                     self._maybe_fetch_programs(snap)
+                    self._maybe_fetch_tool_table()
                 except Exception:
                     log.exception("%s: Verbuchen fehlgeschlagen", self.machine.name)
                 await asyncio.sleep(self.poll_interval_s)

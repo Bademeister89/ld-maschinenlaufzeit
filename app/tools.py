@@ -3,8 +3,8 @@
 - Ein Werkzeug wird automatisch angelegt, sobald es an einer Maschine in der Spindel auftaucht
   (oder von Hand im Tab „Werkzeugauswertung“, um das Limit schon vorher einzutragen).
 - Die DNC-Abfrage „Werkzeug in der Spindel“ liefert Nummer, Index, Achse, Länge und Radius, aber
-  keinen Namen. ``name`` ist deshalb bei echten Steuerungen leer (die Simulation vergibt Namen);
-  eigene Bezeichnungen stehen in ``note``.
+  keinen Namen. ``name`` kommt deshalb aus der Werkzeugtabelle TOOL.T der Steuerung (siehe
+  tool_table.py, gelesen vom Collector); eigene Bezeichnungen stehen in ``note``.
 - **Einsatzzeit** ist die Zeit, in der ein Programm läuft (Zustand „Läuft“) und das Werkzeug in der
   Spindel ist. Stopps, Störungen, Einrichten und angewählte, aber stehende Programme zählen nicht.
 - T100 an Maschine 1 und T100 an Maschine 2 sind verschiedene Werkzeuge (eigene Magazine).
@@ -88,7 +88,7 @@ def tool_info(db: Database, machine_id: str, tool: str | None) -> dict[str, Any]
     if row is None:
         return None
     public = _public(row)
-    return {key: public[key] for key in ("number", "used_s", "limit_s", "ratio", "status")}
+    return {key: public[key] for key in ("number", "name", "used_s", "limit_s", "ratio", "status")}
 
 
 def alert_count(db: Database, machine_ids: set[str]) -> int:

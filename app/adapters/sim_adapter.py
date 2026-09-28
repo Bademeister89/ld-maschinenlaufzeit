@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..nc_program import ProgramFile
+from ..tool_table import ToolTableFile, parse_tool_table
 from .base import AdapterError, Snapshot
 
 # Aufträge nach dem Namensschema JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM:
@@ -164,7 +165,8 @@ class SimulatedMachine:
         for i, (number, name) in enumerate(tools):
             last = first + max(1, round(blocks * block_w[i] / sum(block_w))) - 1
             last = max(first, blocks - 1 if i == len(tools) - 1 else min(last, blocks - 1))
-            plan.append((f"T{number} {name}", time_w[i] / total, first, last))
+            # Wie die echte Steuerung: die Spindelabfrage liefert nur die Nummer, der Name steht in TOOL.T
+            plan.append((f"T{number}", time_w[i] / total, first, last))
             first = last + 1
         return plan
 
@@ -236,6 +238,13 @@ class SimAdapter:
     def site_reachable(self, address: str) -> bool:
         return True  # in der Simulation ist eine ausgeschaltete Maschine nie ein Netzausfall
 
+    def fetch_tool_table(self, known: tuple[int, float] | None) -> ToolTableFile | None:
+        text = tool_table_text()
+        size, mtime = len(text), 1_750_000_000.0
+        if known == (size, mtime):
+            return None
+        return ToolTableFile(size, mtime, parse_tool_table(text))
+
     def fetch_program(self, path: str, known: tuple[int, float] | None, max_bytes: int) -> ProgramFile | None:
         blocks = self._machine.program_blocks.get(path)
         if blocks is None:
@@ -244,3 +253,16 @@ class SimAdapter:
         if known == (size, mtime):
             return None
         return ProgramFile(path, size, mtime, blocks)
+
+
+def tool_table_text() -> str:
+    """TOOL.T der Simulation im Format der iTNC 530 (feste Spaltenbreiten, gekürzt)."""
+    rows = [(0, "NULLWERKZEUG", 0.0, 0.0), *((n, name, 60 + n % 70, 1 + n % 25) for n, name in TOOLS)]
+    lines = [
+        "BEGIN TOOL     .T     MM",
+        f"{'T':<5}{'NAME':<17}{'L':<12}{'R':<12}{'TL':<3}{'RT':<4}{'TIME1':<6}{'CUR.TIME':<9}DOC",
+    ]
+    for number, name, length, radius in rows:
+        lines.append(f"{number:<5}{name:<17}{length:<+12.3f}{radius:<+12.3f}{'':<3}{'':<4}{0:<6}{0:<9}")
+    lines.append("[END]")
+    return "\n".join(lines) + "\n"

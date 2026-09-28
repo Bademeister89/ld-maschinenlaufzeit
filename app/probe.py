@@ -1,7 +1,8 @@
 """Verbindungstest für eine Heidenhain-Steuerung – rein lesend.
 
 Schritte: TCP-Port erreichbar → LSV2-Anmeldung und Steuerungsversion → DNC-Login (Option 18)
-→ eine Statusabfrage über denselben Adapter, den auch die Erfassung verwendet.
+→ eine Statusabfrage über denselben Adapter, den auch die Erfassung verwendet
+→ (optional) angewähltes Programm und Werkzeugtabelle lesen.
 Genutzt von tools/probe.py und vom Button "Verbindung testen" im Konfigurations-Tab.
 """
 
@@ -17,6 +18,7 @@ from .adapters.base import AdapterError
 from .adapters.lsv2_adapter import Lsv2Adapter
 from .netcheck import reachable
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, STATE_LABELS, classify
+from .tools import parse_tool
 
 
 @dataclass
@@ -142,6 +144,7 @@ def run_probe(host: str, port: int = 19000, timeout: float = 5.0, check_host: st
     steps.append(Step("Statusabfrage", True, " · ".join(parts)))
     if snap.program:
         steps.append(_program_step(adapter, snap.current_program or snap.program, snap.line_no))
+    steps.append(_tool_table_step(adapter, snap.tool))
     return result
 
 
@@ -155,3 +158,21 @@ def _program_step(adapter: Lsv2Adapter, path: str, line_no: int | None) -> Step:
         return Step("Programm lesen", False, f"{path}: {info.error if info else 'unbekannt'}", required=False)
     current = f", aktuell Satz {line_no}" if line_no is not None else ""
     return Step("Programm lesen", True, f"{path}: {info.blocks} Sätze{current}", required=False)
+
+
+def _tool_table_step(adapter: Lsv2Adapter, tool: str | None) -> Step:
+    """Werkzeugtabelle lesen: Namen für die Werkzeugauswertung."""
+    title = "Werkzeugtabelle lesen"
+    try:
+        info = adapter.fetch_tool_table(None)
+    except AdapterError as exc:
+        return Step(title, False, str(exc), required=False)
+    if info is None or not info.names:
+        return Step(title, False, info.error if info else "unbekannt", required=False)
+    parsed = parse_tool(tool)
+    if parsed and parsed[0] in info.names:
+        example = f"in der Spindel: T{parsed[0]} {info.names[parsed[0]]}"
+    else:
+        number = min(info.names)
+        example = f"z. B. T{number} {info.names[number]}"
+    return Step(title, True, f"{len(info.names)} Werkzeuge mit Namen, {example}", required=False)

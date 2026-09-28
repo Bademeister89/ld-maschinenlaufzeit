@@ -483,6 +483,18 @@ class Database:
             )
         return False
 
+    def set_tool_names(self, machine_id: str, names: dict[int, str]) -> int:
+        """Namen aus der Werkzeugtabelle der Steuerung übernehmen; liefert die Zahl der Änderungen."""
+        changed = 0
+        with self.transaction():
+            for number, name in names.items():
+                cur = self._execute(
+                    "UPDATE tools SET name = ? WHERE machine_id = ? AND number = ? AND name != ?",
+                    (name, machine_id, number, name),
+                )
+                changed += cur.rowcount
+        return changed
+
     def insert_tool(self, machine_id: str, number: int, note: str, limit_s: float | None, t: float) -> bool:
         cur = self._execute(
             "INSERT INTO tools(machine_id, number, note, limit_s, reset_at, created_at) VALUES (?, ?, ?, ?, ?, ?) "

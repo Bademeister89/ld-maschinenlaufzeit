@@ -10,6 +10,19 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.4.0] – 2026-09-28
+
+### Neu
+- Werkzeugnamen aus der Werkzeugtabelle `TOOL.T` der Steuerung (Spalte NAME). Die App liest die
+  Tabelle nur lesend nach dem Start und prüft dann alle 10 Minuten, ob sie sich geändert hat.
+  Taucht ein Werkzeug ohne bekannten Namen auf, prüft sie schon nach einer Minute.
+- Die Live-Karte zeigt den Werkzeugnamen.
+- Der Verbindungstest hat einen neuen Schritt „Werkzeugtabelle lesen“.
+
+### Geändert
+- Die Simulation verhält sich wie die echte Steuerung: Die Spindelabfrage liefert nur die Nummer,
+  die Namen kommen aus einer simulierten Werkzeugtabelle.
+
 ## [1.3.1] – 2026-09-28
 
 ### Geändert
