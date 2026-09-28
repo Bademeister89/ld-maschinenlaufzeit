@@ -1,9 +1,9 @@
 // Konfigurations-Tab: Maschinen anlegen, bearbeiten, sortieren, entfernen, Verbindung testen.
 
-import { api, el, loadMeta, machineThumb, send, stateBadge } from "./common.js";
+import { api, el, loadMeta, machineThumb, send, shrinkImage, stateBadge } from "./common.js";
 
 const STATUS_MS = 5000;
-const IMAGE_MAX_PX = 1024;
+const MACHINE_IMAGE = { maxPx: 1024, quality: 0.85 };
 const $ = (id) => document.getElementById(id);
 
 let machines = [];
@@ -352,27 +352,6 @@ function openEditor(m = null) {
   $("f-name").focus();
 }
 
-/** Große Fotos im Browser verkleinern (max. 1024 px, JPEG) – spart Speicher und Ladezeit. */
-async function shrinkImage(file) {
-  let bitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    throw new Error("Dieses Bildformat wird nicht unterstützt. Bitte JPG, PNG oder WebP verwenden.");
-  }
-  const scale = Math.min(1, IMAGE_MAX_PX / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#ffffff"; // transparente PNGs auf weißem Grund
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Bild konnte nicht verarbeitet werden."))), "image/jpeg", 0.85),
-  );
-}
-
 async function save(event) {
   event.preventDefault();
   setError(null);
@@ -424,7 +403,8 @@ async function main() {
     const file = e.target.files[0];
     if (!file) return;
     try {
-      editor.image = await shrinkImage(file);
+      // Große Fotos im Browser verkleinern – spart Speicher und Ladezeit
+      [editor.image] = await shrinkImage(file, [MACHINE_IMAGE]);
       editor.removeImage = false;
       setError(null);
     } catch (err) {

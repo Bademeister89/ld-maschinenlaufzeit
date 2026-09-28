@@ -10,6 +10,24 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.8.0] – 2026-09-28
+
+### Neu
+- Ein Bild je Auftrag (fertiges Bauteil):
+  - Im Auftragsdetail „Bild hinzufügen“, „Bild ersetzen“ und „Bild entfernen“. Am Handy bietet
+    der Browser Kamera oder Galerie an.
+  - Der Browser verkleinert das Foto vor dem Hochladen auf höchstens 1280 px (ca. 150–250 KB)
+    und erzeugt ein Vorschaubild mit 256 px (ca. 10–20 KB).
+  - Handyfotos erscheinen richtig herum. Die Kameradaten (EXIF, auch GPS) werden entfernt.
+  - Das Vorschaubild steht in der Auftragsliste und klein auf der Live-Karte, solange der Auftrag
+    an der Maschine angewählt ist.
+  - Die Bilder liegen als Dateien im Datenordner unter `images/orders/`, nicht in der Datenbank.
+    600 Aufträge mit Bild brauchen etwa 100–150 MB. Zur Sicherung den ganzen Datenordner sichern.
+
+### Geändert
+- Maschinenbilder nutzen dieselbe Verkleinerung. Handyfotos werden dabei ausdrücklich nach der
+  Ausrichtung der Kamera gedreht.
+
 ## [1.7.0] – 2026-09-28
 
 ### Geändert

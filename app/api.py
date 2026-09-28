@@ -97,6 +97,9 @@ def machines(request: Request) -> dict[str, Any]:
     for collector in ctx.manager.ordered_collectors():
         live = collector.live()
         live["tool_info"] = tools.tool_info(ctx.db, live["id"], live["tool"])
+        if live["order"] and (order := ctx.db.order(live["order"]["key"])):
+            # Vorschaubild des Bauteils für die Live-Karte (das große Bild lädt die Live-Ansicht nie)
+            live["order"]["thumb_url"] = ctx.order_images.public(order)["thumb_url"]
         machines.append(live)
     return {"now": time.time(), "machines": machines}
 

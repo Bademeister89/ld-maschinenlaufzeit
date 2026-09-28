@@ -289,6 +289,19 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 .program-run { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .program-path { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .program .order-link { margin-top: 2px; }
+/* Vorschaubild des Bauteils rechts im Programmfeld – klein, das Layout der Karte bleibt */
+.program.has-image { grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
+.program.has-image > :not(.program-image) { grid-column: 1; }
+.program-image { grid-column: 2; grid-row: 1 / span 3; align-self: center; display: block; line-height: 0; }
+.program-image img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+@container (max-width: 520px) { .program-image img { width: 52px; height: 52px; } }
 
 .facts {
   display: grid;
@@ -795,6 +808,67 @@ tr.selectable[aria-selected="true"] { background: var(--accent-wash); }
 tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .order-head { display: grid; gap: 12px; }
 .order-head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Bild je Auftrag: Vorschau in der Liste (feste Größe, nichts springt), groß im Detail */
+.order-cell { display: flex; align-items: center; gap: 12px; }
+.order-thumb {
+  display: block;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.order-thumb.placeholder { border-style: dashed; }
+.order-top {
+  display: grid;
+  grid-template-columns: minmax(200px, 320px) minmax(0, 1fr);
+  grid-template-areas: "figure info";
+  gap: 16px 24px;
+  align-items: start;
+}
+.order-info { grid-area: info; display: grid; gap: 12px; min-width: 0; }
+.order-figure { grid-area: figure; margin: 0; display: grid; gap: 8px; }
+.order-image {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.order-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.order-image.empty {
+  aspect-ratio: auto;
+  min-height: 96px;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border-style: dashed;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.order-image-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.order-image-note { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 760px) {
+  .order-top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "info" "figure"; }
+  .order-figure { max-width: 420px; }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 .order-title-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .order-title-form input { flex: 1; min-width: 200px; max-width: 520px; }
 .active-list { display: grid; gap: 6px; }

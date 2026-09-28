@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS orders (
     title      TEXT NOT NULL DEFAULT '',
     status     TEXT NOT NULL DEFAULT 'open',
     created_at REAL NOT NULL,
-    closed_at  REAL
+    closed_at  REAL,
+    image      TEXT
 );
 CREATE TABLE IF NOT EXISTS program_files (
     machine_id TEXT NOT NULL REFERENCES machines(id),
@@ -191,6 +192,10 @@ class Database:
                 "SELECT DISTINCT manufacturer, CAST(strftime('%s', 'now') AS REAL) FROM tools WHERE manufacturer != ''"
             )
             self.set_meta("manufacturers_seeded", "1")
+        # v7 → v8: Bild je Auftrag (Dateiname des großen Bildes; die Datei liegt in images/orders/)
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(orders)")}
+        if "image" not in columns:
+            self._con.execute("ALTER TABLE orders ADD COLUMN image TEXT")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:
@@ -407,7 +412,7 @@ class Database:
                 return "reopened"
         return None
 
-    _ORDER_COLUMNS = "key, year, number, title, status, created_at, closed_at"
+    _ORDER_COLUMNS = "key, year, number, title, status, created_at, closed_at, image"
 
     def orders(self, status: str = "all") -> list[dict[str, Any]]:
         where, params = ("", ()) if status == "all" else ("WHERE status = ? ", (status,))
@@ -423,6 +428,9 @@ class Database:
             "closed_at = CASE WHEN ? = 'closed' THEN COALESCE(closed_at, ?) ELSE NULL END WHERE key = ?",
             (title, status, status, t, key),
         )
+
+    def set_order_image(self, key: str, image: str | None) -> None:
+        self._execute("UPDATE orders SET image = ? WHERE key = ?", (image, key))
 
     def programs_without_order(self) -> list[str]:
         with self._lock:

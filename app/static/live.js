@@ -77,6 +77,22 @@ function thumbFor(c, m) {
   return c.thumb;
 }
 
+/** Vorschaubild des Bauteils zum Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
+function orderThumbFor(c, m) {
+  const url = m.order?.thumb_url;
+  if (!url) return null;
+  if (c.orderThumbUrl !== url) {
+    // Der Link daneben führt schon zum Auftrag: Bild nur für die Maus, nicht doppelt für Tastatur/Screenreader
+    c.orderThumb = el(
+      "a",
+      { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}`, tabindex: "-1", "aria-hidden": "true", title: `Bauteil zu Auftrag ${m.order.order}` },
+      el("img", { src: url, alt: "", width: 64, height: 64, decoding: "async" }),
+    );
+    c.orderThumbUrl = url;
+  }
+  return c.orderThumb;
+}
+
 const METHOD_TEXT = {
   profile: (f) => `Prognose aus dem Satzverlauf von ${f.basis_runs} früheren ${f.basis_runs === 1 ? "Lauf" : "Läufen"}`,
   history: (f) => `Prognose aus der Laufzeit von ${f.basis_runs} früheren ${f.basis_runs === 1 ? "Lauf" : "Läufen"}`,
@@ -231,10 +247,11 @@ function renderLive(m, now) {
     const programName = baseName(m.program);
     const current = m.current_program && m.current_program !== m.program ? `aktuell: ${baseName(m.current_program)}` : null;
     const run = runText(m, now);
+    const orderThumb = orderThumbFor(c, m);
     parts.push(
       el(
         "div",
-        { class: "program" },
+        { class: `program${orderThumb ? " has-image" : ""}` },
         el(
           "div",
           { class: "program-top" },
@@ -249,6 +266,7 @@ function renderLive(m, now) {
               `Auftrag ${m.order.order} (${m.order.year}) · Aufspannung ${m.order.setup} · Programm ${String(m.order.program).padStart(2, "0")}`,
             )
           : null,
+        orderThumb,
       ),
       progressBlock(m),
       el(

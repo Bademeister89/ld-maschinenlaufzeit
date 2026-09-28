@@ -79,6 +79,10 @@ class Settings:
     def images_dir(self) -> Path:
         return self.data_dir / "images"
 
+    @property
+    def order_images_dir(self) -> Path:
+        return self.images_dir / "orders"
+
 
 def _timezone(raw: dict) -> str:
     """config.yaml → Umgebungsvariable TZ (z. B. aus der Unraid-Vorlage) → Europe/Berlin."""

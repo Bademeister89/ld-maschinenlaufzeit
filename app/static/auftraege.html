@@ -54,6 +54,10 @@
     </section>
 
     <section class="section" id="detail" hidden></section>
+
+    <!-- Bild zum Auftrag: bleibt beim Neuzeichnen des Details bestehen, damit die Auswahl nicht
+         verloren geht. Ohne "capture", damit das Handy Kamera oder Galerie anbietet. -->
+    <input type="file" id="image-input" class="visually-hidden" accept="image/*" tabindex="-1" aria-hidden="true">
   </main>
 
   <script type="module" src="auftraege.js"></script>

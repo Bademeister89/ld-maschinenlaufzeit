@@ -26,8 +26,8 @@ export async function api(path, params = {}) {
 }
 
 /** Schreibende Anfrage: JSON-Objekt oder Blob (Bild) als Body. */
-export async function send(method, path, body) {
-  const options = { method, headers: {} };
+export async function send(method, path, body, headers = {}) {
+  const options = { method, headers: { ...headers } };
   if (body instanceof Blob) {
     options.body = body;
     options.headers["Content-Type"] = body.type || "application/octet-stream";
@@ -127,6 +127,72 @@ export function machineThumb(machine, size = "") {
     .map((w) => w[0].toUpperCase())
     .join("");
   return el("span", { class: `${cls} thumb-placeholder`, "aria-hidden": "true", text: initials || "?" });
+}
+
+// --- Bilder verkleinern (Maschinenbild, Auftragsbild) ---------------------------------------
+
+/** Foto lesen, Handyfotos richtig herum (Ausrichtung aus den EXIF-Daten). */
+async function decodeImage(file) {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+  } catch {
+    // Rückfall für Browser ohne diese Option: ein <img> beachtet die Ausrichtung ebenfalls
+  }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.src = url;
+  try {
+    await img.decode();
+  } catch {
+    URL.revokeObjectURL(url);
+    throw new Error(
+      `„${file.name}“ kann dieser Browser nicht als Bild lesen. Bitte ein JPG oder PNG wählen. ` +
+        "iPhone-Fotos (HEIC) am besten direkt am Handy hochladen.",
+    );
+  }
+  return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => URL.revokeObjectURL(url) };
+}
+
+function toJpeg(canvas, quality) {
+  return new Promise((resolve, reject) =>
+    canvas.toBlob(
+      // Immer JPEG prüfen: Kann ein Browser ein Format nicht kodieren, liefert er stillschweigend PNG
+      (blob) => (blob?.type === "image/jpeg" ? resolve(blob) : reject(new Error("Der Browser konnte das Bild nicht als JPEG speichern."))),
+      "image/jpeg",
+      quality,
+    ),
+  );
+}
+
+/**
+ * Foto im Browser verkleinern und als JPEG neu kodieren: je Eintrag in ``sizes`` ein Blob,
+ * z. B. [{ maxPx: 1280, quality: 0.8 }, { maxPx: 256, quality: 0.7 }] – größte Variante zuerst,
+ * jede weitere wird aus der vorigen gerechnet. Das Neu-Kodieren entfernt die EXIF-Daten
+ * (auch GPS), das ist gewollt. Kein WebP: Safari kann es über Canvas nicht kodieren.
+ */
+export async function shrinkImage(file, sizes) {
+  const image = await decodeImage(file);
+  try {
+    let { source, width, height } = image;
+    const blobs = [];
+    for (const { maxPx, quality } of sizes) {
+      const scale = Math.min(1, maxPx / Math.max(width, height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff"; // transparente PNGs auf weißem Grund
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      blobs.push(await toJpeg(canvas, quality));
+      [source, width, height] = [canvas, canvas.width, canvas.height];
+    }
+    return blobs;
+  } finally {
+    image.close();
+  }
 }
 
 export function legend(states = STATE_ORDER) {

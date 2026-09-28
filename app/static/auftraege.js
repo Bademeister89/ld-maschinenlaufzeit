@@ -1,4 +1,4 @@
-// Aufträge: Liste mit Summen, Detail je Auftrag (Aufspannungen, Programme, Tage, Läufe).
+// Aufträge: Liste mit Summen, Detail je Auftrag (Bild, Aufspannungen, Programme, Tage, Läufe).
 
 import {
   api,
@@ -13,6 +13,7 @@ import {
   machineName,
   resultLabel,
   send,
+  shrinkImage,
   stateBadge,
   tipContent,
   tooltip,
@@ -20,6 +21,10 @@ import {
 
 const REFRESH_MS = 20000;
 const STATUS_LABELS = { open: "offen", closed: "abgeschlossen" };
+// Bild je Auftrag: der Browser verkleinert das Foto auf beide Größen (ca. 150–250 KB und 10–20 KB)
+const ORDER_IMAGE = { maxPx: 1280, quality: 0.8 };
+const ORDER_THUMB = { maxPx: 256, quality: 0.7 };
+const LIST_THUMB_PX = 44;
 const $ = (id) => document.getElementById(id);
 
 const query = new URLSearchParams(location.search);
@@ -54,6 +59,27 @@ function spanText(first, last) {
 function statusBadge(o, active) {
   if (active?.length) return stateBadge(active[0].state);
   return el("span", { class: `order-status ${o.status}`, text: STATUS_LABELS[o.status] ?? o.status });
+}
+
+// Bild-Elemente je Adresse wiederverwenden: Liste und Detail werden alle 20 s neu aufgebaut,
+// ein neues <img> würde dabei kurz leer blinken. Ein neues Bild hat eine neue Adresse (?v=).
+const images = new Map();
+function cachedImg(url, props) {
+  if (!images.has(url)) images.set(url, el("img", { src: url, ...props }));
+  return images.get(url);
+}
+
+/** Vorschaubild in der Liste; das große Bild lädt die Liste nie. */
+function listThumb(o) {
+  if (!o.thumb_url) return el("span", { class: "order-thumb placeholder", "aria-hidden": "true" });
+  return cachedImg(o.thumb_url, {
+    class: "order-thumb",
+    width: LIST_THUMB_PX,
+    height: LIST_THUMB_PX,
+    alt: "",
+    loading: "lazy",
+    decoding: "async",
+  });
 }
 
 // --- Liste -------------------------------------------------------------------------------
@@ -100,10 +126,15 @@ function renderList() {
       value: (o) =>
         el(
           "div",
-          {},
-          el("a", { href: `?order=${encodeURIComponent(o.key)}`, class: "order-key", text: o.number, onclick: (e) => e.preventDefault() }),
-          el("span", { class: "muted", text: ` · ${o.year}` }),
-          o.title ? el("div", { class: "order-title", text: o.title }) : null,
+          { class: "order-cell" },
+          listThumb(o),
+          el(
+            "div",
+            {},
+            el("a", { href: `?order=${encodeURIComponent(o.key)}`, class: "order-key", text: o.number, onclick: (e) => e.preventDefault() }),
+            el("span", { class: "muted", text: ` · ${o.year}` }),
+            o.title ? el("div", { class: "order-title", text: o.title }) : null,
+          ),
         ),
       cls: "wrap",
     },
@@ -229,9 +260,87 @@ async function saveOrder(key, changes) {
   }
 }
 
+// --- Bild des Auftrags (fertiges Bauteil) ------------------------------------------------------
+
+let current = null; // angezeigter Auftrag
+const imageState = { key: null, text: null, error: false, busy: false }; // Hinweis zum Hochladen
+
+function imageBlock(o) {
+  const own = imageState.key === o.key;
+  const picture = o.image_url
+    ? el(
+        "a",
+        { class: "order-image", href: o.image_url, target: "_blank", rel: "noopener", title: "Bild in voller Größe öffnen" },
+        cachedImg(o.image_url, { alt: `Bauteil zu Auftrag ${o.number}`, decoding: "async" }),
+      )
+    : el("div", { class: "order-image empty", text: "Noch kein Bild vom Bauteil" });
+  return el(
+    "figure",
+    { class: "order-figure", id: "order-figure" },
+    picture,
+    el(
+      "figcaption",
+      { class: "order-image-actions" },
+      el("button", { type: "button", class: "btn", disabled: own && imageState.busy, onclick: () => pickImage(o.key) }, o.image_url ? "Bild ersetzen" : "Bild hinzufügen"),
+      o.image_url
+        ? el("button", { type: "button", class: "btn danger", disabled: own && imageState.busy, onclick: () => removeImage(o) }, "Bild entfernen")
+        : null,
+    ),
+    own && imageState.text
+      ? el("div", { class: imageState.error ? "form-error" : "order-image-note", role: "status", text: imageState.text })
+      : null,
+  );
+}
+
+function setImageState(key, text = null, { error = false, busy = false } = {}) {
+  Object.assign(imageState, { key, text, error, busy });
+  if (current) $("order-figure")?.replaceWith(imageBlock(current));
+}
+
+function pickImage(key) {
+  const input = $("image-input");
+  input.value = "";
+  input.dataset.key = key;
+  input.click(); // am Handy: Kamera oder Galerie
+}
+
+const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+async function uploadImage(e) {
+  const file = e.target.files[0];
+  const key = e.target.dataset.key;
+  if (!file || !key) return;
+  setImageState(key, "Bild wird verkleinert …", { busy: true });
+  try {
+    const [full, thumb] = await shrinkImage(file, [ORDER_IMAGE, ORDER_THUMB]);
+    setImageState(key, `Bild wird hochgeladen (${kb(full.size + thumb.size)}) …`, { busy: true });
+    // Beide Größen in einer Anfrage, damit nie ein Bild ohne Vorschau gespeichert wird
+    await send("PUT", `/api/orders/${encodeURIComponent(key)}/image`, new Blob([full, thumb], { type: "application/octet-stream" }), {
+      "X-Image-Length": String(full.size),
+    });
+    setImageState(null);
+    await refresh();
+  } catch (err) {
+    setImageState(key, err.message, { error: true });
+  }
+}
+
+async function removeImage(o) {
+  if (!confirm(`Bild von Auftrag ${o.number} entfernen?`)) return;
+  setImageState(o.key, "Bild wird entfernt …", { busy: true });
+  try {
+    await send("DELETE", `/api/orders/${encodeURIComponent(o.key)}/image`);
+    setImageState(null);
+    await refresh();
+  } catch (err) {
+    setImageState(o.key, err.message, { error: true });
+  }
+}
+
 function renderDetail(d) {
   const o = d.order;
   const t = d.totals;
+  current = o;
   const titleInput = el("input", { type: "text", id: "order-title", maxlength: "120", value: o.title, placeholder: "z. B. Kunde, Bauteil, Zeichnungsnummer" });
   const section = $("detail");
   section.hidden = false;
@@ -241,35 +350,44 @@ function renderDetail(d) {
       { class: "card order-head" },
       el(
         "div",
-        { class: "order-head-row" },
+        { class: "order-top" },
         el(
           "div",
-          { style: { flex: "1 1 260px", minWidth: "0" } },
-          el("h1", { style: { margin: 0 } }, orderTitle(o), " ", el("span", { class: "muted", text: `· ${o.year}` })),
-          el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}` : ""}` }),
+          { class: "order-info" },
+          el(
+            "div",
+            { class: "order-head-row" },
+            el(
+              "div",
+              { style: { flex: "1 1 260px", minWidth: "0" } },
+              el("h1", { style: { margin: 0 } }, orderTitle(o), " ", el("span", { class: "muted", text: `· ${o.year}` })),
+              el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}` : ""}` }),
+            ),
+            statusBadge(o, d.active),
+            el(
+              "button",
+              { type: "button", class: "btn", onclick: () => saveOrder(o.key, { status: o.status === "closed" ? "open" : "closed" }) },
+              o.status === "closed" ? "Wieder öffnen" : "Abschließen",
+            ),
+            el("a", { class: "btn", href: `/api/orders/${encodeURIComponent(o.key)}/export.csv`, download: true, text: "CSV Läufe" }),
+          ),
+          el(
+            "form",
+            {
+              class: "order-title-form",
+              onsubmit: (e) => {
+                e.preventDefault();
+                saveOrder(o.key, { title: titleInput.value });
+              },
+            },
+            el("label", { class: "field", for: "order-title", text: "Bezeichnung" }),
+            titleInput,
+            el("button", { type: "submit", class: "btn", text: "Speichern" }),
+          ),
+          activeBanner(d.active),
         ),
-        statusBadge(o, d.active),
-        el(
-          "button",
-          { type: "button", class: "btn", onclick: () => saveOrder(o.key, { status: o.status === "closed" ? "open" : "closed" }) },
-          o.status === "closed" ? "Wieder öffnen" : "Abschließen",
-        ),
-        el("a", { class: "btn", href: `/api/orders/${encodeURIComponent(o.key)}/export.csv`, download: true, text: "CSV Läufe" }),
+        imageBlock(o),
       ),
-      el(
-        "form",
-        {
-          class: "order-title-form",
-          onsubmit: (e) => {
-            e.preventDefault();
-            saveOrder(o.key, { title: titleInput.value });
-          },
-        },
-        el("label", { class: "field", for: "order-title", text: "Bezeichnung" }),
-        titleInput,
-        el("button", { type: "submit", class: "btn", text: "Speichern" }),
-      ),
-      activeBanner(d.active),
       el(
         "div",
         { class: "kpi-tiles", style: { marginTop: "16px" } },
@@ -304,6 +422,7 @@ function renderDetail(d) {
 
 async function loadDetail() {
   if (!state.selected) {
+    current = null;
     $("detail").hidden = true;
     return;
   }
@@ -326,8 +445,8 @@ async function select(key) {
 async function refresh() {
   try {
     await loadList();
-    // Eingaben im Bezeichnungsfeld nicht beim automatischen Aktualisieren überschreiben
-    if (document.activeElement?.id !== "order-title") await loadDetail();
+    // Eingaben im Bezeichnungsfeld und den Hinweis beim Hochladen nicht beim Aktualisieren überschreiben
+    if (document.activeElement?.id !== "order-title" && !imageState.busy) await loadDetail();
     $("banner").hidden = true;
   } catch (err) {
     showError(err);
@@ -347,6 +466,7 @@ async function main() {
     state.search = e.target.value;
     renderList();
   });
+  $("image-input").addEventListener("change", uploadImage);
   await refresh();
   if (state.selected) $("detail").scrollIntoView({ block: "start" });
   setInterval(refresh, REFRESH_MS);

@@ -128,7 +128,7 @@ def test_schema_upgrade_adds_tool_tables(tmp_path):
     )
     con.close()
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "7"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     assert db.tools() == []
     db.close()
 

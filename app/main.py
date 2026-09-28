@@ -12,7 +12,7 @@ import time
 import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -28,6 +28,7 @@ from .adapters.sim_adapter import SimAdapter, SimulatedMachine
 from .collector import MachineCollector
 from .config import MachineConfig, Settings, load_settings
 from .db import Database
+from .order_images import OrderImages
 from .registry import MachineManager
 
 log = logging.getLogger(__name__)
@@ -77,6 +78,10 @@ class AppContext:
     db: Database
     manager: MachineManager
     tz: ZoneInfo
+    order_images: OrderImages = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.order_images = OrderImages(self.db, self.settings.order_images_dir)
 
     @property
     def collectors(self) -> dict[str, MachineCollector]:

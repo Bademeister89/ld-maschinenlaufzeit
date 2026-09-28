@@ -48,7 +48,7 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
 | `autostart-entfernen.cmd` | Hintergrundbetrieb beenden und Autostart entfernen; die Daten bleiben |
 | `verknuepfung-erstellen.cmd` | Verknüpfung mit Symbol auf Desktop und im Startmenü anlegen |
 | `config.yaml` | Port, Abfrageintervall, Zeitzone (nach Änderung neu starten) |
-| `data\` | Datenbank, Maschinenbilder, Log-Dateien (`data\logs\laufzeit.log`) |
+| `data\` | Datenbank, Maschinen- und Auftragsbilder (`data\images\`), Log-Dateien (`data\logs\laufzeit.log`) |
 
 **Update auf eine neue Version:**
 
@@ -57,7 +57,7 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
    Maschinen stehen in der Datenbank, nicht in der `config.yaml`.
 3. `autostart-einrichten.cmd` erneut ausführen.
 
-**Sicherung:** den Ordner `data\` kopieren, am besten bei beendeter App.
+**Sicherung:** den ganzen Ordner `data\` kopieren (Datenbank und Bilder), am besten bei beendeter App.
 
 **Portable Version bauen** (auf dem Entwicklungsrechner, lädt einmalig Python von python.org):
 
@@ -153,6 +153,19 @@ zugeordnet, z. B. `26-21055-01-01`:
   - **Ø Bearbeitungszeit je Teil:** die Summe der Ø-Laufzeiten aller Programme über alle
     Aufspannungen, gerechnet nur aus vollständig erfassten, fertigen Läufen.
   - Laufzeit je Tag, alle Läufe, CSV-Export.
+- **Bild je Auftrag** (fertiges Bauteil):
+  - Im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“. Am Handy bietet
+    der Browser Kamera oder Galerie an.
+  - Der Browser verkleinert das Foto vor dem Hochladen:
+    - großes Bild: höchstens 1280 px an der längsten Kante, ca. 150–250 KB
+    - Vorschaubild: 256 px, ca. 10–20 KB
+  - Handyfotos erscheinen richtig herum. Die Kameradaten (EXIF, auch der GPS-Standort) werden
+    dabei entfernt.
+  - iPhone-Fotos (HEIC) wandelt der Browser in JPEG um. Kann ein Browser ein Format nicht lesen
+    (z. B. HEIC am Windows-PC), erscheint ein Hinweis. Dann das Foto direkt am Handy hochladen.
+  - Das Vorschaubild steht in der Auftragsliste und auf der Live-Karte, solange der Auftrag an
+    einer Maschine angewählt ist. Das große Bild erscheint nur im Detail; ein Klick öffnet es in
+    voller Größe.
 - Läuft ein abgeschlossener Auftrag wieder an, wird er automatisch wieder geöffnet.
 - Daten, die vor der Auftragsauswertung erfasst wurden, werden beim Start einmalig nachgetragen.
 
@@ -265,6 +278,15 @@ andere Werte liefert, wird nur dort angepasst.
 - In der Datenbank stehen die Maschinen (`machines`), Zustandsabschnitte (`state_intervals`),
   Programmdurchläufe (`program_runs`) und Ereignisse (`events`: Werkzeugwechsel, NC-Fehlermeldungen,
   Verbindung auf/ab, Konfigurationsänderungen).
+- **Bilder** liegen als Dateien im Datenordner, nicht in der Datenbank; dort steht nur der
+  Dateiname:
+  - `images/`: Maschinenbilder
+  - `images/orders/`: Auftragsbilder, je Auftrag ein großes Bild und ein Vorschaubild,
+    z. B. `26-21055-1a2b3c4d.jpg` und `26-21055-1a2b3c4d-thumb.jpg`
+  - Größenordnung: 600 Aufträge mit Bild ≈ 100–150 MB.
+  - Fehlt eine Bilddatei, gilt der Auftrag als „ohne Bild“; es entsteht kein Fehler.
+- **Sicherung:** immer den ganzen Datenordner sichern, also Datenbank **und** `images/`. Eine
+  gesicherte `data.db` allein enthält nur die Dateinamen der Bilder.
 
 ## API
 
@@ -278,6 +300,8 @@ andere Werte liefert, wird nur dort angepasst.
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
+| `GET /api/orders/{key}/image?size=full\|thumb` | Bild des Auftrags (großes Bild bzw. Vorschaubild) |
+| `PUT/DELETE /api/orders/{key}/image` | Bild setzen/ersetzen bzw. entfernen. Upload: großes Bild und Vorschaubild (beide JPEG) hintereinander in einem Rumpf, Kopfzeile `X-Image-Length` = Länge des großen Bildes |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |
 | `GET /api/tools`, `POST /api/tools` | Werkzeuge (Liste, von Hand anlegen) |
 | `PUT/DELETE /api/tools/{maschine}/{nr}`, `POST …/reset` | Werkzeugdaten/Standzeit, Entfernen, Zurücksetzen |
@@ -343,7 +367,8 @@ schreibt in eine eigene `demo.db`; echte Daten landen in `data.db`.
   gibt es ab Version 1.2.0), **Anwenden**.
   Zurück zu automatischen Updates mit `:latest`. Vor einem Wechsel auf eine ältere Version
   `appdata/ld-maschinenlaufzeit` sichern.
-- **Sicherung:** `appdata/ld-maschinenlaufzeit` sichern, z. B. mit dem Plugin „Appdata Backup“.
+- **Sicherung:** `appdata/ld-maschinenlaufzeit` komplett sichern (Datenbank und Ordner `images/`),
+  z. B. mit dem Plugin „Appdata Backup“.
 - **Keine Anmeldung:** Die Oberfläche hat keinen Login. Nicht ins Internet freigeben;
   Fernzugriff z. B. über Tailscale.
 
