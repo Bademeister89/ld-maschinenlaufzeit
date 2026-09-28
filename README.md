@@ -241,7 +241,8 @@ schreibt in eine eigene `demo.db`; echte Daten landen in `data.db`.
   Daten und Maschinen bleiben beim Update erhalten. Welche Version läuft, steht oben neben dem
   Namen (z. B. `v1.2.0`), siehe [Versionen](#versionen).
 - **Version festhalten oder zurück:** Icon → **Bearbeiten**, bei *Repository* statt `:latest` die
-  Versionsnummer eintragen, z. B. `ghcr.io/bademeister89/ld-maschinenlaufzeit:1.1.0`, **Anwenden**.
+  Versionsnummer eintragen, z. B. `ghcr.io/bademeister89/ld-maschinenlaufzeit:1.2.0` (feste Images
+  gibt es ab Version 1.2.0), **Anwenden**.
   Zurück zu automatischen Updates mit `:latest`. Vor einem Wechsel auf eine ältere Version
   `appdata/ld-maschinenlaufzeit` sichern.
 - **Sicherung:** `appdata/ld-maschinenlaufzeit` sichern, z. B. mit dem Plugin „Appdata Backup“.
