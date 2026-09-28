@@ -13,6 +13,7 @@ import {
   fmtInt,
   fmtPct,
   fmtTime,
+  fmtToolTime,
   legend,
   loadMeta,
   machineThumb,
@@ -130,6 +131,31 @@ function fact(label, value) {
   return el("div", {}, el("dt", { text: label }), el("dd", { text: value ?? "—" }));
 }
 
+/** Werkzeug mit Einsatzzeit (und Limit, falls eingetragen). */
+function toolFact(m) {
+  const info = m.tool_info;
+  const life = info
+    ? `${fmtToolTime(info.used_s)}${info.limit_s ? ` von ${fmtToolTime(info.limit_s)}` : ""} im Einsatz`
+    : null;
+  return el(
+    "div",
+    {},
+    el("dt", { text: "Werkzeug" }),
+    el("dd", {}, m.tool ?? "—", life ? el("span", { class: "tool-life num", text: life }) : null),
+  );
+}
+
+/** Warnung, wenn das Werkzeug in der Spindel über (oder kurz vor) der Maximallaufzeit ist. */
+function toolWarning(m) {
+  const info = m.tool_info;
+  if (!info || (info.status !== "over" && info.status !== "warn")) return null;
+  const link = el("a", { href: `werkzeuge.html#tool-${m.id}-${info.number}`, text: "Werkzeugauswertung" });
+  const values = `${fmtToolTime(info.used_s)} von ${fmtToolTime(info.limit_s)}`;
+  return info.status === "over"
+    ? el("p", { class: "tool-warning over", role: "alert" }, `✕ Achtung: T${info.number} ist über der Maximallaufzeit (${values}) · `, link)
+    : el("p", { class: "tool-warning warn" }, `⚠ T${info.number} bei ${Math.round(info.ratio * 100)} % der Maximallaufzeit (${values}) · `, link);
+}
+
 function overrideText(o) {
   const p = (v) => (v == null ? "—" : `${Math.round(v)} %`);
   return `F ${p(o.feed)} · S ${p(o.spindle)} · FMAX ${p(o.rapid)}`;
@@ -219,11 +245,13 @@ function renderLive(m, now) {
         fact("Betriebsart", execLabel(m.exec_mode)),
         fact("Programmstatus", pgmStateLabel(m.pgm_state)),
         fact("Satz", m.blocks ? blocksText(m.blocks).replace("Satz ", "") : null),
-        fact("Werkzeug", m.tool),
+        toolFact(m),
         fact("Override", overrideText(m.override)),
         fact("Lauf-Nr.", m.run ? String(m.run.id) : null),
       ),
     );
+    const warning = toolWarning(m);
+    if (warning) parts.push(warning);
     if (m.errors.length) {
       parts.push(el("ul", { class: "errors" }, m.errors.map((text) => el("li", { text }))));
     }

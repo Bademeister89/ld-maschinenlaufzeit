@@ -31,6 +31,7 @@ from .db import Database
 from .forecast import Forecaster
 from .orders import parse_program
 from .state import RUN_ACTIVE_STATES, MachineState, classify, run_result
+from .tools import parse_tool
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ class MachineCollector:
         self._state_since: float | None = None
         self._snapshot: Snapshot | None = None
         self._last_tool: str | None = None
+        self._seen_tool: int | None = None  # zuletzt gesehene T-Nummer (Anlegen neuer Werkzeuge)
+        self._tool_use: tuple[int, int] | None = None  # offener Einsatzabschnitt: (id, T-Nummer)
         self._last_update: float | None = None
         self._connected = False
         self._control: dict[str, str] = {}
@@ -125,6 +128,7 @@ class MachineCollector:
             if snap is not None:
                 self._update_run(snap, state, now)
             self._update_interval(snap, state, now)
+            self._update_tool(snap, state, now)
             self._record_events(snap, state, now, reason)
             self._update_progress(snap, state)
         self._prev_state = state
@@ -208,6 +212,34 @@ class MachineCollector:
             self.machine.id, *key[:4], run_id, start, now, order_key=code.key if code else None
         )
         self._interval = _Interval(interval_id, key, now)
+
+    def _update_tool(self, snap: Snapshot | None, state: MachineState, now: float) -> None:
+        """Werkzeug in der Spindel: neu anlegen, Einsatzzeit bei laufendem Programm fortschreiben."""
+        parsed = parse_tool(snap.tool) if snap is not None else None
+        number = parsed[0] if parsed else None
+        if parsed is not None and number != self._seen_tool:
+            if self._db.ensure_tool(self.machine.id, number, parsed[1], now):
+                self._db.add_event(self.machine.id, now, "tool_created", {"tool": number, "name": parsed[1]})
+                log.info("%s: Werkzeug T%d angelegt", self.machine.name, number)
+            self._seen_tool = number
+        active = number if state is MachineState.RUNNING else None
+        use = self._tool_use
+        if use is not None:
+            # Bis zu dieser Abfrage lief das Werkzeug; ohne Verbindung endet der Abschnitt
+            # bei der letzten Abfrage (wie die Zustandsabschnitte).
+            if snap is not None:
+                self._db.touch_tool_usage(use[0], now)
+            if use[1] == active:
+                return
+            self._tool_use = None
+        if active is not None:
+            self._tool_use = (self._db.open_tool_usage(self.machine.id, active, now), active)
+
+    def forget_tool(self, number: int) -> None:
+        """Nach dem Entfernen eines Werkzeugs: steckt es noch in der Spindel, bei der nächsten
+        Abfrage neu anlegen."""
+        if self._seen_tool == number:
+            self._seen_tool = None
 
     def _record_events(self, snap: Snapshot | None, state: MachineState, now: float, reason: str | None) -> None:
         mid = self.machine.id

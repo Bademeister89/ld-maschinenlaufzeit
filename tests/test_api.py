@@ -68,7 +68,7 @@ def test_runs_and_events(client):
     [run] = client.get("/api/runs", params={"from": b, "machine": "m1"}).json()
     assert (run["result"], run["run_s"]) == ("finished", pytest.approx(1200))
     events = client.get("/api/events", params={"from": b, "machine": "m1"}).json()
-    assert [e["type"] for e in events] == ["tool_change"]
+    assert sorted(e["type"] for e in events) == ["tool_change", "tool_created", "tool_created"]
 
 
 def test_iso_time_parameters(client):

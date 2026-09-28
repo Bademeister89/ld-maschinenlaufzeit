@@ -120,6 +120,7 @@ a { color: var(--accent); }
   text-decoration: none;
   padding: 6px 12px;
   border-radius: 8px;
+  white-space: nowrap;
 }
 
 .nav a:hover { background: var(--surface-2); }
@@ -595,6 +596,104 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, button:focus-visi
 }
 .release-section h3 { margin: 8px 0 4px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
 .release-section ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; max-width: 90ch; }
+
+/* --- Werkzeuge ---------------------------------------------------------------- */
+
+.nav-badge {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--st-error);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.tool-alert {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--st-error) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--st-error) 10%, var(--surface));
+}
+.tool-alert-head { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 650; color: var(--critical-text); }
+.tool-alert-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--st-error);
+  color: #fff;
+  font-size: 12px;
+}
+.tool-alert ul { margin: 8px 0 0; padding-left: 32px; display: grid; gap: 2px; font-size: 14px; }
+.tool-alert a { color: var(--critical-text); font-weight: 600; }
+
+/* Gemeinsames Raster (subgrid), damit die Balken aller Zeilen bündig stehen */
+.tool-list { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(220px, 2fr) auto auto; }
+.tool-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-template-areas: "id usage flags actions" "id meta meta actions";
+  align-items: center;
+  gap: 4px 16px;
+  padding: 12px 8px;
+  border-top: 1px solid var(--grid);
+  scroll-margin-top: 80px;
+}
+.tool-row:first-child { border-top: 0; }
+.tool-row.st-over { background: color-mix(in srgb, var(--st-error) 6%, transparent); box-shadow: inset 3px 0 0 var(--st-error); }
+.tool-row:target { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.tool-id { grid-area: id; display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.tool-number { font-size: 20px; font-weight: 650; min-width: 58px; }
+.tool-names { min-width: 0; }
+.tool-name { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.tool-note { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.tool-usage { grid-area: usage; display: grid; gap: 4px; min-width: 0; }
+.tool-usage-text { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
+.tool-used { font-size: 15px; font-weight: 650; }
+.tool-pct { color: var(--ink-2); }
+.tool-over { color: var(--critical-text); font-weight: 600; }
+.st-warn .tool-meter { background: color-mix(in srgb, var(--st-stopped) 24%, transparent); }
+.st-warn .tool-meter .meter-fill { background: var(--st-stopped); }
+.st-over .tool-meter { background: color-mix(in srgb, var(--st-error) 20%, transparent); }
+.st-over .tool-meter .meter-fill { background: var(--st-error); }
+.tool-flags { grid-area: flags; display: flex; flex-wrap: wrap; gap: 6px; }
+.tool-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.tool-meta { grid-area: meta; font-size: 12px; }
+.tool-badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tool-badge.over { background: color-mix(in srgb, var(--st-error) 16%, transparent); color: var(--critical-text); }
+.tool-badge.warn { background: color-mix(in srgb, var(--st-stopped) 28%, transparent); color: var(--ink); }
+.tool-badge.spindle { background: var(--surface-2); color: var(--ink-2); }
+.tool-badge.spindle.running { background: color-mix(in srgb, var(--st-running) 18%, transparent); color: var(--ink); }
+.link-button { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
+.tool-help { margin: 20px 0 0; font-size: 13px; max-width: 95ch; }
+.tool-form-row { grid-template-columns: minmax(0, 1fr) 140px; }
+.tool-history h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
+.tool-history table { font-size: 13px; }
+.tool-history p { margin: 6px 0 0; font-size: 13px; }
+.tool-warning { margin: 0; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 550; }
+.tool-warning.over { background: color-mix(in srgb, var(--st-error) 12%, transparent); color: var(--critical-text); }
+.tool-warning.warn { background: color-mix(in srgb, var(--st-stopped) 22%, transparent); color: var(--ink); }
+.tool-warning a { color: inherit; }
+.facts .tool-life { display: block; font-size: 12px; font-weight: 400; color: var(--ink-2); }
+
+@media (max-width: 720px) {
+  .tool-list { grid-template-columns: minmax(0, 1fr); }
+  .tool-row {
+    grid-template-areas: "id" "flags" "usage" "meta" "actions";
+    gap: 8px;
+  }
+  .tool-flags:empty { display: none; }
+  .tool-actions { justify-content: flex-start; }
+}
 
 /* --- Aufträge ---------------------------------------------------------------- */
 

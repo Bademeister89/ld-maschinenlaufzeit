@@ -135,6 +135,9 @@ def test_events(db, make_collector):
         (10, None),
     )
     ev = sorted(db.events(0, 100), key=lambda e: e["ts"])
+    created = [(e["ts"], e["payload"]["tool"]) for e in ev if e["type"] == "tool_created"]
+    assert created == [(0, 1), (2, 5)]
+    ev = [e for e in ev if e["type"] != "tool_created"]
     assert [(e["ts"], e["type"]) for e in ev] == [(2, "tool_change"), (4, "nc_error"), (8, "offline")]
     assert ev[0]["payload"] == {"from": "T1 BOHRER", "to": "T5 FRAESER", "program": "P1"}
 

@@ -8,6 +8,8 @@ spätere Laufzeitauswertungen:
   CSV-Export für Excel.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
+- **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T600) und Maschine, Maximallaufzeit mit
+  Vorwarnung und roter Meldung, Zurücksetzen beim Werkzeugwechsel, Standzeit-Historie.
 - **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
   testen; zeigt die laufende Version und das Änderungsprotokoll.
 
@@ -140,6 +142,32 @@ zugeordnet, z. B. `26-21055-01-01`:
 - Läuft ein abgeschlossener Auftrag wieder an, wird er automatisch wieder geöffnet.
 - Daten, die vor der Auftragsauswertung erfasst wurden, werden beim Start einmalig nachgetragen.
 
+## Werkzeugauswertung (Tab „Werkzeugauswertung“)
+
+- **Werkzeuge werden automatisch angelegt**, sobald ein Werkzeug an einer Maschine zum ersten Mal in
+  der Spindel ist. Mit **+ Werkzeug anlegen** lässt sich ein Werkzeug (T1–T600) auch vorab anlegen,
+  um die Maximallaufzeit schon vor dem ersten Einsatz einzutragen.
+- **Je Maschine getrennt:** T100 an der einen und T100 an der anderen Maschine sind zwei Werkzeuge
+  mit eigener Zeit, eigenem Limit und eigenem Zurücksetzen.
+- **Einsatzzeit** = Zeit, in der ein Programm läuft (Zustand „Läuft“) und das Werkzeug in der
+  Spindel ist. Stopps, Störungen, Einrichten und stehende Programme zählen nicht. Die Werkzeugnummer
+  kommt alle 2 s von der Steuerung. Ein Wechsel wird also auf etwa 2 s genau erfasst.
+- **Maximallaufzeit** (Bearbeiten → Stunden, z. B. `100` oder `2,5`): Der Balken zeigt, wie viel
+  davon verbraucht ist.
+  - Ab 90 % erscheint eine gelbe **Vorwarnung**.
+  - Ab 100 % erscheint **„Über Limit“** in Rot: als Meldung oben auf der Seite, als rote Zahl am
+    Reiter und auf der Live-Karte, solange das Werkzeug in der Spindel ist.
+- **Zurücksetzen** nach dem Einspannen eines neuen Werkzeugs: Die Einsatzzeit beginnt wieder bei 0.
+  Limit und Notiz bleiben. Der alte Stand kommt als **Standzeit** in die Historie (Bearbeiten →
+  „Standzeiten bisher“, mit Ø Standzeit).
+- **Entfernen** löscht den Eintrag samt Historie. Taucht das Werkzeug wieder auf, wird es neu
+  angelegt und zählt ab dann.
+- Filter nach Maschine und Status, Suche nach T-Nummer, Name oder Notiz, CSV-Export.
+
+Die Werkzeugnummer liest die App über die DNC-Abfrage „Werkzeug in der Spindel“. Ob die iTNC 530 sie
+liefert, zeigt der Verbindungstest: Unter „Statusabfrage“ steht dann z. B. `Werkzeug T12 FRAESER_D16`,
+sonst „Werkzeug: keine Angabe“.
+
 ## Begriffe der Auswertung
 
 | Zustand | Bedeutung (Heidenhain-Programmstatus) |
@@ -187,6 +215,9 @@ andere Werte liefert, wird nur dort angepasst.
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |
+| `GET /api/tools`, `POST /api/tools` | Werkzeuge (Liste, von Hand anlegen) |
+| `PUT/DELETE /api/tools/{maschine}/{nr}`, `POST …/reset` | Limit/Notiz, Entfernen, Zurücksetzen |
+| `GET /api/tools/export.csv` | Werkzeugliste als CSV |
 | `GET /api/version` | Versionsnummer, Build-Kennung, Änderungsprotokoll |
 
 `from`/`to` sind Unix-Sekunden oder ISO-Zeitpunkte. Ohne Angabe gilt: heute 0 Uhr bis jetzt.
@@ -340,6 +371,7 @@ Demo-Historie (drei Wochen, Schichtbetrieb) und Tests:
 | `app/probe.py` | Verbindungstest |
 | `app/stats.py` | Auswertung |
 | `app/orders.py`, `app/orders_api.py` | Aufträge aus Programmnamen |
+| `app/tools.py`, `app/tools_api.py` | Werkzeugauswertung |
 | `app/api.py`, `app/config_api.py`, `app/main.py` | Web-API und Start (`python -m app`) |
 | `app/__init__.py`, `CHANGELOG.md` | Versionsnummer und Änderungsprotokoll |
 | `app/static/` | Oberfläche (HTML/CSS/JS ohne Build-Schritt) |

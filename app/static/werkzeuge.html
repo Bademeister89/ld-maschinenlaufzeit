@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Werkzeugauswertung</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230ca30c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">LD Maschinenlaufzeit</div>
+      <nav class="nav" aria-label="Seiten">
+        <a href="./">Live</a>
+        <a href="auswertung.html">Auswertung</a>
+        <a href="auftraege.html">Aufträge</a>
+        <a href="werkzeuge.html" aria-current="page">Werkzeugauswertung</a>
+        <a href="konfiguration.html">Konfiguration</a>
+      </nav>
+      <div class="topbar-status">
+        <span id="sim" class="sim-badge" hidden>Simulation – keine echten Maschinendaten</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="banner" class="banner error" hidden></div>
+    <div id="alert" class="tool-alert" role="alert" hidden></div>
+
+    <div class="card filters" role="group" aria-label="Filter">
+      <label class="field">Maschine
+        <select id="machine"><option value="">Alle</option></select>
+      </label>
+      <div class="segmented" id="status" role="group" aria-label="Status">
+        <button type="button" data-status="all">Alle</button>
+        <button type="button" data-status="limit">Mit Limit</button>
+        <button type="button" data-status="warn">Vorwarnung</button>
+        <button type="button" data-status="over">Über Limit</button>
+      </div>
+      <label class="field">Suche
+        <input type="search" id="search" placeholder="T-Nummer, Name oder Notiz" autocomplete="off">
+      </label>
+      <span class="spacer"></span>
+      <a class="btn" href="/api/tools/export.csv" download>CSV</a>
+      <button type="button" class="btn primary" id="add">+ Werkzeug anlegen</button>
+    </div>
+
+    <section class="section">
+      <div class="kpi-tiles" id="kpis"></div>
+    </section>
+
+    <div id="lists"></div>
+
+    <p class="muted tool-help">
+      <strong>Einsatzzeit</strong> = Zeit, in der ein Programm läuft und das Werkzeug in der Spindel ist
+      (Stopps, Störungen und Einrichten zählen nicht). Werkzeuge werden automatisch angelegt, sobald sie
+      an einer Maschine in der Spindel auftauchen. Nach dem Einspannen eines neuen Werkzeugs
+      <strong>Zurücksetzen</strong> drücken – die bisherige Standzeit bleibt in der Historie.
+    </p>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="editor-form" novalidate>
+      <header><h2 id="editor-title">Werkzeug anlegen</h2></header>
+      <div class="form-body">
+        <div class="form-row tool-form-row">
+          <label class="form-field">Maschine
+            <select id="f-machine"></select>
+          </label>
+          <label class="form-field">Werkzeug (T)
+            <input type="number" id="f-number" min="1" max="600" step="1" required placeholder="z. B. 100">
+          </label>
+        </div>
+        <label class="form-field">Maximallaufzeit in Stunden (optional)
+          <input type="text" id="f-limit" inputmode="decimal" autocomplete="off" placeholder="z. B. 100">
+          <span class="field-hint">Ab 90 % erscheint eine Vorwarnung, ab 100 % die Meldung „Über Limit“ in Rot.
+            Leer lassen = kein Limit.</span>
+        </label>
+        <label class="form-field">Notiz (optional)
+          <input type="text" id="f-note" maxlength="120" autocomplete="off" placeholder="z. B. VHM-Fräser D10, Hersteller">
+        </label>
+        <div id="f-history"></div>
+        <div id="f-error" class="form-error" role="alert" hidden></div>
+      </div>
+      <footer>
+        <button type="button" class="btn danger" id="f-delete" hidden>Entfernen</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="f-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary" id="f-save">Speichern</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script type="module" src="werkzeuge.js"></script>
+</body>
+</html>

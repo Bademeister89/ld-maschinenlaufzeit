@@ -45,7 +45,22 @@ export async function loadMeta() {
   const sim = document.getElementById("sim");
   if (sim) sim.hidden = !meta.simulate;
   showVersion(meta);
+  setToolAlerts(meta.tool_alerts);
   return meta;
+}
+
+/** Rote Zahl am Reiter „Werkzeugauswertung“: Werkzeuge über der Maximallaufzeit. */
+export function setToolAlerts(count) {
+  const link = document.querySelector('.nav a[href="werkzeuge.html"]');
+  if (!link) return;
+  let badge = link.querySelector(".nav-badge");
+  if (!count) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) link.append((badge = el("span", { class: "nav-badge num" })));
+  badge.textContent = String(count);
+  badge.title = count === 1 ? "1 Werkzeug über der Maximallaufzeit" : `${count} Werkzeuge über der Maximallaufzeit`;
 }
 
 /** Softwarestand oben neben dem Namen, mit Link zum Änderungsprotokoll. */
@@ -133,6 +148,12 @@ export function fmtDuration(sec) {
 }
 
 export const fmtHours = (sec) => (sec == null ? "—" : `${nf1.format(sec / 3600)} h`);
+/** Einsatzzeit eines Werkzeugs: unter einer Stunde in Minuten (unter einer Minute in s), sonst in Stunden. */
+export function fmtToolTime(sec) {
+  if (sec == null) return "—";
+  if (sec < 60) return `${Math.round(sec)} s`;
+  return sec < 3600 ? `${Math.floor(sec / 60)} min` : fmtHours(sec);
+}
 export const fmtInt = (n) => (n == null ? "—" : Math.round(n).toLocaleString("de-DE"));
 export const fmtPct = (x) => (x == null ? "—" : `${Math.round(x * 100)} %`);
 

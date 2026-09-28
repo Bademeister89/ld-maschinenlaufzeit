@@ -110,7 +110,8 @@ def test_api_is_not_stored(client):
 
 def test_every_page_links_all_tabs():
     static = Path(app.__file__).with_name("static")
-    for page in ["index.html", "auswertung.html", "auftraege.html", "konfiguration.html"]:
+    pages = ["index.html", "auswertung.html", "auftraege.html", "werkzeuge.html", "konfiguration.html"]
+    for page in pages:
         html = (static / page).read_text(encoding="utf-8")
-        for target in ['href="./"', 'href="auswertung.html"', 'href="auftraege.html"', 'href="konfiguration.html"']:
+        for target in ['href="./"', *(f'href="{p}"' for p in pages[1:])]:
             assert target in html, f"{page}: Link {target} fehlt"

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -93,6 +93,33 @@ CREATE TABLE IF NOT EXISTS program_files (
     checked_at REAL NOT NULL,
     PRIMARY KEY (machine_id, path)
 );
+CREATE TABLE IF NOT EXISTS tools (
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    number     INTEGER NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    note       TEXT NOT NULL DEFAULT '',
+    limit_s    REAL,
+    reset_at   REAL NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (machine_id, number)
+);
+CREATE TABLE IF NOT EXISTS tool_usage (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    number     INTEGER NOT NULL,
+    started_at REAL NOT NULL,
+    ended_at   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_tool_usage ON tool_usage(machine_id, number, ended_at);
+CREATE TABLE IF NOT EXISTS tool_resets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    number     INTEGER NOT NULL,
+    reset_at   REAL NOT NULL,
+    used_s     REAL NOT NULL,
+    limit_s    REAL
+);
+CREATE INDEX IF NOT EXISTS ix_tool_resets ON tool_resets(machine_id, number, reset_at);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -426,6 +453,92 @@ class Database:
 
     def order_runs(self, key: str) -> list[dict[str, Any]]:
         return self._query(self._RUN_SELECT + "WHERE r.order_key = ? GROUP BY r.id ORDER BY r.started_at", (key,))
+
+    # --- Werkzeuge -------------------------------------------------------------------------
+    # Je Maschine und T-Nummer. tool_usage hält die Abschnitte, in denen das Werkzeug bei laufendem
+    # Programm in der Spindel war (ended_at wird bei jeder Abfrage fortgeschrieben). Die Einsatzzeit
+    # ist die Summe dieser Abschnitte seit reset_at (Anlage bzw. letztes Zurücksetzen).
+
+    _TOOL_SELECT = (
+        "SELECT t.machine_id, t.number, t.name, t.note, t.limit_s, t.reset_at, t.created_at, "
+        "COALESCE((SELECT SUM(u.ended_at - MAX(u.started_at, t.reset_at)) FROM tool_usage u "
+        "WHERE u.machine_id = t.machine_id AND u.number = t.number AND u.ended_at > t.reset_at), 0) AS used_s, "
+        "(SELECT MAX(u.ended_at) FROM tool_usage u WHERE u.machine_id = t.machine_id AND u.number = t.number) "
+        "AS last_used_at FROM tools t "
+    )
+
+    def ensure_tool(self, machine_id: str, number: int, name: str, t: float) -> bool:
+        """Werkzeug anlegen, falls neu (True); sonst nur den Namen aus der Steuerung nachführen."""
+        cur = self._execute(
+            "INSERT INTO tools(machine_id, number, name, reset_at, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(machine_id, number) DO NOTHING",
+            (machine_id, number, name, t, t),
+        )
+        if cur.rowcount:
+            return True
+        if name:
+            self._execute(
+                "UPDATE tools SET name = ? WHERE machine_id = ? AND number = ? AND name != ?",
+                (name, machine_id, number, name),
+            )
+        return False
+
+    def insert_tool(self, machine_id: str, number: int, note: str, limit_s: float | None, t: float) -> bool:
+        cur = self._execute(
+            "INSERT INTO tools(machine_id, number, note, limit_s, reset_at, created_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(machine_id, number) DO NOTHING",
+            (machine_id, number, note, limit_s, t, t),
+        )
+        return bool(cur.rowcount)
+
+    def tools(self, machine_id: str | None = None) -> list[dict[str, Any]]:
+        where, params = ("WHERE t.machine_id = ? ", (machine_id,)) if machine_id else ("", ())
+        return self._query(self._TOOL_SELECT + where + "ORDER BY t.machine_id, t.number", params)
+
+    def tool(self, machine_id: str, number: int) -> dict[str, Any] | None:
+        rows = self._query(self._TOOL_SELECT + "WHERE t.machine_id = ? AND t.number = ?", (machine_id, number))
+        return rows[0] if rows else None
+
+    def update_tool(self, machine_id: str, number: int, note: str, limit_s: float | None) -> None:
+        self._execute(
+            "UPDATE tools SET note = ?, limit_s = ? WHERE machine_id = ? AND number = ?",
+            (note, limit_s, machine_id, number),
+        )
+
+    def reset_tool(self, machine_id: str, number: int, t: float) -> float:
+        """Einsatzzeit auf 0 setzen; der bisherige Stand kommt in die Historie. Liefert ihn zurück."""
+        with self.transaction():
+            tool = self.tool(machine_id, number)
+            used = tool["used_s"] if tool else 0.0
+            self._execute(
+                "INSERT INTO tool_resets(machine_id, number, reset_at, used_s, limit_s) VALUES (?, ?, ?, ?, ?)",
+                (machine_id, number, t, used, tool["limit_s"] if tool else None),
+            )
+            self._execute("UPDATE tools SET reset_at = ? WHERE machine_id = ? AND number = ?", (t, machine_id, number))
+        return used
+
+    def delete_tool(self, machine_id: str, number: int) -> None:
+        """Eintrag und Historie entfernen; die Einsatzabschnitte bleiben (Grundlage der Auswertung)."""
+        with self.transaction():
+            self._execute("DELETE FROM tool_resets WHERE machine_id = ? AND number = ?", (machine_id, number))
+            self._execute("DELETE FROM tools WHERE machine_id = ? AND number = ?", (machine_id, number))
+
+    def tool_resets(self, machine_id: str, number: int) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT reset_at, used_s, limit_s FROM tool_resets WHERE machine_id = ? AND number = ? "
+            "ORDER BY reset_at DESC",
+            (machine_id, number),
+        )
+
+    def open_tool_usage(self, machine_id: str, number: int, t: float) -> int:
+        cur = self._execute(
+            "INSERT INTO tool_usage(machine_id, number, started_at, ended_at) VALUES (?, ?, ?, ?)",
+            (machine_id, number, t, t),
+        )
+        return int(cur.lastrowid)
+
+    def touch_tool_usage(self, usage_id: int, t: float) -> None:
+        self._execute("UPDATE tool_usage SET ended_at = ? WHERE id = ?", (t, usage_id))
 
     # --- Satzverlauf (Grundlage der Restlaufzeit-Prognose) ------------------------------
 

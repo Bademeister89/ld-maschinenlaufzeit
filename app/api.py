@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import BUILD, __version__, changelog, stats
+from . import BUILD, __version__, changelog, stats, tools
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, RUN_RESULT_LABELS, STATE_LABELS
 
 if TYPE_CHECKING:
@@ -74,6 +74,7 @@ def meta(request: Request) -> dict[str, Any]:
         "simulate": ctx.settings.simulate,
         "version": __version__,
         "build": BUILD,
+        "tool_alerts": tools.alert_count(ctx.db, set(ctx.collectors)),
         "poll_interval_s": ctx.settings.poll_interval_s,
         "labels": {
             "state": {**{s.value: label for s, label in STATE_LABELS.items()}, stats.NO_DATA: "Keine Daten"},
@@ -92,7 +93,12 @@ def version() -> dict[str, Any]:
 @router.get("/machines")
 def machines(request: Request) -> dict[str, Any]:
     ctx = _ctx(request)
-    return {"now": time.time(), "machines": [c.live() for c in ctx.manager.ordered_collectors()]}
+    machines = []
+    for collector in ctx.manager.ordered_collectors():
+        live = collector.live()
+        live["tool_info"] = tools.tool_info(ctx.db, live["id"], live["tool"])
+        machines.append(live)
+    return {"now": time.time(), "machines": machines}
 
 
 @router.get("/machines/{machine_id}/image")

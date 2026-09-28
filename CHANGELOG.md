@@ -10,6 +10,25 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.3.0] – 2026-09-28
+
+### Neu
+- Tab „Werkzeugauswertung“. Er zeigt die Einsatzzeit je Werkzeug (T1–T600), getrennt je Maschine.
+  Gezählt wird die Zeit, in der ein Programm läuft und das Werkzeug in der Spindel ist. Ein Werkzeug
+  wird automatisch angelegt, sobald es zum ersten Mal in der Spindel auftaucht. Man kann es auch von
+  Hand anlegen, um das Limit schon vorher einzutragen.
+- Maximallaufzeit je Werkzeug in Stunden. Der Balken zeigt, wie viel davon verbraucht ist. Ab 90 %
+  erscheint eine Vorwarnung, ab 100 % die Meldung „Über Limit“ in Rot, auch als Zahl am Reiter und
+  auf der Live-Karte, solange das Werkzeug in der Spindel ist.
+- Knopf „Zurücksetzen“ für ein neu eingespanntes Werkzeug. Die Einsatzzeit beginnt wieder bei 0,
+  der alte Stand bleibt als Standzeit in der Historie (mit Ø Standzeit).
+- Die Live-Karte zeigt beim Werkzeug die bisherige Einsatzzeit.
+- CSV-Export der Werkzeugliste.
+
+### Geändert
+- Datenbank-Schema 6 (neue Tabellen für Werkzeuge). Das Update läuft beim Start automatisch.
+- Die Simulation nutzt mehr Werkzeuge aus dem Bereich 1–600.
+
 ## [1.2.0] – 2026-09-28
 
 ### Neu

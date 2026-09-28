@@ -137,8 +137,8 @@ def run_probe(host: str, port: int = 19000, timeout: float = 5.0, check_host: st
         EXEC_MODE_LABELS.get(snap.exec_mode, snap.exec_mode),
         snap.program or "kein Programm angewählt",
     ]
-    if snap.tool:
-        parts.append(snap.tool)
+    # Grundlage der Werkzeugauswertung – deshalb auch das Fehlen ausdrücklich nennen
+    parts.append(f"Werkzeug {snap.tool}" if snap.tool else "Werkzeug: keine Angabe (Abfrage nicht unterstützt oder T0)")
     steps.append(Step("Statusabfrage", True, " · ".join(parts)))
     if snap.program:
         steps.append(_program_step(adapter, snap.current_program or snap.program, snap.line_no))

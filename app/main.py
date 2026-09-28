@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import BUILD, __version__, api, config_api, orders_api
+from . import BUILD, __version__, api, config_api, orders_api, tools_api
 from .adapters.base import MachineAdapter
 from .adapters.lsv2_adapter import Lsv2Adapter
 from .adapters.sim_adapter import SimAdapter, SimulatedMachine
@@ -135,6 +135,7 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
     app.include_router(api.router)
     app.include_router(config_api.router)
     app.include_router(orders_api.router)
+    app.include_router(tools_api.router)
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
 
