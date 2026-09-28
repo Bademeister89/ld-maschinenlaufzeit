@@ -4,6 +4,7 @@ __pycache__/
 *.db-wal
 *.db-shm
 data/
+app/BUILD
 
 # nicht ins öffentliche Repo:
 .claude/

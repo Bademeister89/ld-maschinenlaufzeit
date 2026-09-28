@@ -15,12 +15,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, api, config_api, orders_api
+from . import BUILD, __version__, api, config_api, orders_api
 from .adapters.base import MachineAdapter
 from .adapters.lsv2_adapter import Lsv2Adapter
 from .adapters.sim_adapter import SimAdapter, SimulatedMachine
@@ -38,6 +39,33 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 # womit Browser ES-Module verweigern.
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
+
+
+class CacheControl:
+    """Browser sollen Seiten und Skripte bei jedem Aufruf auf Änderungen prüfen (ETag → 304).
+
+    Ohne Vorgabe halten Browser Dateien nach eigener Schätzung oft stundenlang vor – nach einem
+    Update erschienen dann alte Seiten neben neuen. API-Antworten werden gar nicht gespeichert.
+    Antworten mit eigener Vorgabe (z. B. Maschinenbilder) bleiben unverändert.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        value = b"no-store" if scope["path"].startswith("/api/") else b"no-cache"
+
+        async def send_with_header(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                if not any(name.lower() == b"cache-control" for name, _ in headers):
+                    message = {**message, "headers": [*headers, (b"cache-control", value)]}
+            await send(message)
+
+        await self.app(scope, receive, send_with_header)
 
 
 @dataclass
@@ -89,8 +117,9 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
         app.state.ctx = AppContext(s, db, manager, ZoneInfo(s.timezone))
         await manager.start()
         log.info(
-            "Start (Version %s): %d Maschine(n), %s, Datenordner %s",
+            "Start (Version %s, Build %s): %d Maschine(n), %s, Datenordner %s",
             __version__,
+            BUILD or "lokal",
             len(manager.collectors),
             "SIMULATION" if s.simulate else "LSV2",
             s.data_dir,
@@ -101,7 +130,8 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
             await manager.stop()
             db.close()
 
-    app = FastAPI(title="LD Maschinenlaufzeit", lifespan=lifespan)
+    app = FastAPI(title="LD Maschinenlaufzeit", version=__version__, lifespan=lifespan)
+    app.add_middleware(CacheControl)
     app.include_router(api.router)
     app.include_router(config_api.router)
     app.include_router(orders_api.router)

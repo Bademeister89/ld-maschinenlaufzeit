@@ -44,7 +44,22 @@ export async function loadMeta() {
   meta ??= await api("/api/meta");
   const sim = document.getElementById("sim");
   if (sim) sim.hidden = !meta.simulate;
+  showVersion(meta);
   return meta;
+}
+
+/** Softwarestand oben neben dem Namen, mit Link zum Änderungsprotokoll. */
+function showVersion({ version, build }) {
+  const brand = document.querySelector(".brand");
+  if (!brand || !version || brand.querySelector(".brand-version")) return;
+  brand.append(
+    el("a", {
+      class: "brand-version num",
+      href: "konfiguration.html#versionen",
+      title: build ? `Version ${version} · Build ${build}` : `Version ${version} (lokal)`,
+      text: `v${version}`,
+    }),
+  );
 }
 
 const tz = () => meta?.timezone ?? "Europe/Berlin";

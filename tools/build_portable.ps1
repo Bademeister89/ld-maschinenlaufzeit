@@ -9,7 +9,7 @@
   - kopiert App, Werkzeuge, config.yaml und die Start-/Autostart-Skripte
   - prueft den fertigen Ordner mit einem Starttest und packt ihn als ZIP
 
-  Ergebnis (Standard): C:\Users\<Name>\ld-mainmachine\dist\LD-Maschinenlaufzeit\ und ...-<Datum>.zip
+  Ergebnis (Standard): C:\Users\<Name>\ld-mainmachine\dist\LD-Maschinenlaufzeit\ und ...-<Version>.zip
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\build_portable.ps1
@@ -71,7 +71,13 @@ Copy-Item (Join-Path $Root "app") $Target -Recurse
 New-Item -ItemType Directory -Force (Join-Path $Target "tools") | Out-Null
 Copy-Item (Join-Path $Root "tools\probe.py"), (Join-Path $Root "tools\seed_demo.py"), (Join-Path $Root "portable\autostart.ps1") (Join-Path $Target "tools")
 Copy-Item (Join-Path $Root "portable\*.cmd") $Target
-Copy-Item (Join-Path $Root "config.yaml"), (Join-Path $Root "README.md") $Target
+Copy-Item (Join-Path $Root "config.yaml"), (Join-Path $Root "README.md"), (Join-Path $Root "CHANGELOG.md") $Target
+# Build-Kennung wie im Docker-Image (Datum + Commit); "+lokal", wenn nicht alles committet ist
+try {
+    $commit = (& git -C $Root rev-parse --short=7 HEAD).Trim()
+    if (& git -C $Root status --porcelain) { $commit += "+lokal" }
+} catch { $commit = "ohne-git" }
+Set-Content -Path (Join-Path $Target "app\BUILD") -Encoding ascii -Value ("{0}-{1}" -f (Get-Date -Format "yyyy-MM-dd"), $commit)
 Get-ChildItem $Target -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 
 Step "Vorkompilieren (schnellerer Start)"
@@ -83,7 +89,8 @@ if ($LASTEXITCODE -ne 0 -or $check -notlike "portable*") { throw "Starttest fehl
 Write-Host $check
 
 Step "ZIP erstellen"
-$zipOut = Join-Path $OutDir ("{0}-{1}.zip" -f $Name, (Get-Date -Format "yyyy-MM-dd"))
+$appVersion = & (Join-Path $Runtime "python.exe") -c "import app; print(app.__version__)"
+$zipOut = Join-Path $OutDir ("{0}-{1}.zip" -f $Name, $appVersion)
 if (Test-Path $zipOut) { Remove-Item $zipOut }
 Compress-Archive -Path $Target -DestinationPath $zipOut -CompressionLevel Optimal
 

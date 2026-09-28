@@ -9,7 +9,7 @@ spätere Laufzeitauswertungen:
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
 - **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
-  testen; zeigt die laufende Version.
+  testen; zeigt die laufende Version und das Änderungsprotokoll.
 
 Die Anbindung läuft über das LSV2-Protokoll (TCP 19000) mit der Open-Source-Bibliothek
 [pyLSV2](https://github.com/drunsinn/pyLSV2), also über dasselbe Protokoll wie TNCremo und das
@@ -23,7 +23,7 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
 
 **Einrichten:**
 
-1. ZIP `LD-Maschinenlaufzeit-<Datum>.zip` auf den PC kopieren und entpacken, am besten nach
+1. ZIP `LD-Maschinenlaufzeit-<Version>.zip` auf den PC kopieren und entpacken, am besten nach
    `C:\LD-Maschinenlaufzeit`. Der Ordner muss lokal liegen; ein Netzlaufwerk oder ein Cloud-Ordner
    funktioniert nicht, weil die Datenbank dort beschädigt werden kann.
 2. `start.cmd` doppelklicken. Der Browser öffnet sich mit der Oberfläche.
@@ -184,7 +184,10 @@ andere Werte liefert, wird nur dort angepasst.
 | `GET /api/runs?machine=&from=&to=` | Programmdurchläufe |
 | `GET /api/events?machine=&from=&to=` | Ereignisse |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
+| `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
+| `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |
+| `GET /api/version` | Versionsnummer, Build-Kennung, Änderungsprotokoll |
 
 `from`/`to` sind Unix-Sekunden oder ISO-Zeitpunkte. Ohne Angabe gilt: heute 0 Uhr bis jetzt.
 Interaktive Doku: <http://localhost:8000/docs>.
@@ -224,7 +227,8 @@ Das Image wird bei jedem Push auf `main` von GitHub Actions gebaut und liegt unt
 
 8. **Anwenden** (*Apply*), warten bis das Image geladen ist, **Fertig**.
 9. **Prüfen:** Container steht auf *started* → Icon anklicken → **WebUI**. Im Simulationsmodus
-   erscheinen zwei simulierte Maschinen. Unter Icon → **Protokolle** steht „Start: 2 Maschine(n), SIMULATION“.
+   erscheinen zwei simulierte Maschinen. Unter Icon → **Protokolle** steht
+   „Start (Version …, Build …): 2 Maschine(n), SIMULATION“.
 
 **Auf echten Betrieb umstellen:** Icon → **Bearbeiten**, `SIMULATE` = `0`, **Anwenden**. Die Simulation
 schreibt in eine eigene `demo.db`; echte Daten landen in `data.db`.
@@ -234,8 +238,12 @@ schreibt in eine eigene `demo.db`; echte Daten landen in `data.db`.
 
 - **Update:** Nach jedem Push baut GitHub ein neues Image; im Reiter DOCKER erscheint beim Container
   „Update“ (ggf. unten *Nach Updates suchen*). Ein Klick aktualisiert – kein Terminal, kein Script.
-  Die laufende Version steht im Tab **Konfiguration → Allgemein → Version** (Build-Datum und Commit,
-  z. B. `2026-09-28-1a2b3c4`); Daten und Maschinen bleiben beim Update erhalten.
+  Daten und Maschinen bleiben beim Update erhalten. Welche Version läuft, steht oben neben dem
+  Namen (z. B. `v1.2.0`), siehe [Versionen](#versionen).
+- **Version festhalten oder zurück:** Icon → **Bearbeiten**, bei *Repository* statt `:latest` die
+  Versionsnummer eintragen, z. B. `ghcr.io/bademeister89/ld-maschinenlaufzeit:1.1.0`, **Anwenden**.
+  Zurück zu automatischen Updates mit `:latest`. Vor einem Wechsel auf eine ältere Version
+  `appdata/ld-maschinenlaufzeit` sichern.
 - **Sicherung:** `appdata/ld-maschinenlaufzeit` sichern, z. B. mit dem Plugin „Appdata Backup“.
 - **Keine Anmeldung:** Die Oberfläche hat keinen Login. Nicht ins Internet freigeben;
   Fernzugriff z. B. über Tailscale.
@@ -276,6 +284,38 @@ docker compose up -d
 Daten liegen in `./data`. Die `docker-compose.yml` verwendet das fertige Image; zum lokalen
 Bauen dort `build: .` eintragen.
 
+## Versionen
+
+Die Versionsnummer folgt dem Schema `MAJOR.MINOR.PATCH`: MINOR für neue Funktionen, PATCH für
+Fehlerbehebungen, MAJOR für Umstellungen, bei denen man selbst etwas anpassen muss.
+
+- **Anzeige:** auf jeder Seite oben neben dem Namen (`v1.2.0`). Ein Klick darauf öffnet im Tab
+  Konfiguration den Abschnitt **Versionen** mit allen Änderungen. Unter **Allgemein** steht dort
+  zusätzlich die **Build-Kennung** (Build-Datum und Commit, z. B. `2026-09-28-1a2b3c4`). Sie ändert
+  sich mit jedem Image, auch ohne neue Versionsnummer.
+- **Änderungsprotokoll:** [`CHANGELOG.md`](CHANGELOG.md).
+- **Docker-Images:** `latest` folgt dem Branch `main`; jede freigegebene Version gibt es zusätzlich
+  fest als `:<Version>` (z. B. `:1.2.0`) und `:<MAJOR.MINOR>` (z. B. `:1.2`).
+- **Portable Version:** Die ZIP heißt `LD-Maschinenlaufzeit-<Version>.zip`.
+
+**Neue Version freigeben** (Entwicklung):
+
+1. Nummer in `app/__init__.py` (`__version__`) erhöhen und oben in `CHANGELOG.md` beschreiben.
+   Ein Test schlägt fehl, wenn beides nicht zusammenpasst.
+2. Committen, dann Tag setzen und beides pushen:
+
+   ```bash
+   git tag v1.2.0
+   git push origin main v1.2.0
+   ```
+
+   GitHub Actions baut `latest` (aus `main`) und `1.2.0`/`1.2` (aus dem Tag). Passt der Tag nicht
+   zur Nummer in `app/__init__.py`, bricht der Build ab.
+
+Nach einem Update fragt der Browser Seiten und Skripte bei jedem Aufruf neu an (ab Version 1.2.0).
+Beim Wechsel von 1.1.0 auf 1.2.0 kann einmalig **Strg+F5** nötig sein, falls der Browser noch alte
+Dateien zwischengespeichert hat.
+
 ## Entwicklung
 
 ```bat
@@ -298,7 +338,9 @@ Demo-Historie (drei Wochen, Schichtbetrieb) und Tests:
 | `app/registry.py` | Maschinenverwaltung zur Laufzeit (Konfigurations-Tab) |
 | `app/probe.py` | Verbindungstest |
 | `app/stats.py` | Auswertung |
+| `app/orders.py`, `app/orders_api.py` | Aufträge aus Programmnamen |
 | `app/api.py`, `app/config_api.py`, `app/main.py` | Web-API und Start (`python -m app`) |
+| `app/__init__.py`, `CHANGELOG.md` | Versionsnummer und Änderungsprotokoll |
 | `app/static/` | Oberfläche (HTML/CSS/JS ohne Build-Schritt) |
 | `portable/` | Start- und Autostart-Skripte der portablen Version |
 | `tools/` | `probe.py`, `seed_demo.py`, `build_portable.ps1` |

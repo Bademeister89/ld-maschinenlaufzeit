@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import __version__, stats
+from . import BUILD, __version__, changelog, stats
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, RUN_RESULT_LABELS, STATE_LABELS
 
 if TYPE_CHECKING:
@@ -73,6 +73,7 @@ def meta(request: Request) -> dict[str, Any]:
         "timezone": ctx.settings.timezone,
         "simulate": ctx.settings.simulate,
         "version": __version__,
+        "build": BUILD,
         "poll_interval_s": ctx.settings.poll_interval_s,
         "labels": {
             "state": {**{s.value: label for s, label in STATE_LABELS.items()}, stats.NO_DATA: "Keine Daten"},
@@ -81,6 +82,11 @@ def meta(request: Request) -> dict[str, Any]:
             "run_result": RUN_RESULT_LABELS,
         },
     }
+
+
+@router.get("/version")
+def version() -> dict[str, Any]:
+    return {"version": __version__, "build": BUILD, "changelog": changelog.load()}
 
 
 @router.get("/machines")

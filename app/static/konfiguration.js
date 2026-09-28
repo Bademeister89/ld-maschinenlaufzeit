@@ -87,6 +87,7 @@ function renderSettings(s) {
   const item = (label, value) => el("div", {}, el("dt", { text: label }), el("dd", { text: value }));
   $("settings").replaceChildren(
     item("Version", s.version),
+    item("Build", s.build ?? "lokal (aus dem Quellcode gestartet)"),
     item("Betriebsart", s.simulate ? "Simulation (Demo-Datenbank)" : "Erfassung der echten Steuerungen"),
     item("Datenordner", s.data_dir),
     item("Datenbank", s.db_path),
@@ -96,6 +97,41 @@ function renderSettings(s) {
     item("Oberfläche", `${s.listen_host === "0.0.0.0" ? "im Netzwerk erreichbar" : "nur lokal"}, Port ${s.port}`),
   );
   $("settings-note").textContent = `Diese Werte stehen in ${s.config_path}. Nach einer Änderung die App neu starten.`;
+}
+
+// --- Versionen ----------------------------------------------------------------------
+
+const isoToDe = (iso) => iso?.split("-").reverse().join(".");
+
+async function loadChangelog() {
+  const data = await api("/api/version");
+  if (!data.changelog.length) {
+    $("changelog").replaceChildren(el("p", { class: "empty", text: "Kein Änderungsprotokoll gefunden." }));
+    return;
+  }
+  $("changelog").replaceChildren(
+    ...data.changelog.map((release, index) =>
+      el(
+        "details",
+        { class: "release", open: index === 0 },
+        el(
+          "summary",
+          {},
+          el("span", { class: "num", text: release.version }),
+          release.date && el("span", { class: "release-date", text: isoToDe(release.date) }),
+          release.version === data.version && el("span", { class: "release-badge", text: "installiert" }),
+        ),
+        release.sections.map((section) =>
+          el(
+            "div",
+            { class: "release-section" },
+            section.title && el("h3", { text: section.title }),
+            el("ul", {}, section.items.map((text) => el("li", { text }))),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 async function move(index, delta) {
@@ -309,7 +345,9 @@ async function main() {
     renderPreview();
   });
 
-  await reload();
+  await Promise.all([reload(), loadChangelog()]);
+  // Link „v1.2.0“ aus der Kopfzeile: erst nach dem Laden springen, die Liste darüber wächst noch
+  if (location.hash === "#versionen") $("versionen").scrollIntoView();
   setInterval(refreshStatus, STATUS_MS);
 }
 
