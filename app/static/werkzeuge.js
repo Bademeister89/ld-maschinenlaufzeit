@@ -294,8 +294,10 @@ async function openEditor(t = null) {
   $("f-machine").replaceChildren(...data.machines.map((m) => el("option", { value: m.id, text: m.name })));
   $("f-machine").value = t?.machine_id ?? (state.machine || data.machines[0]?.id || "");
   $("f-number").value = t ? String(t.number) : "";
-  // Genau wie gespeichert anzeigen, damit Speichern ohne Änderung das Limit nicht rundet
-  $("f-limit").value = t?.limit_s ? String(+(t.limit_s / 3600).toFixed(4)).replace(".", ",") : "";
+  // Genau wie gespeichert anzeigen, damit Speichern ohne Änderung das Limit nicht rundet;
+  // neue Werkzeuge starten mit der Standard-Maximallaufzeit
+  const limitS = t ? t.limit_s : data.default_limit_h * 3600;
+  $("f-limit").value = limitS ? String(+(limitS / 3600).toFixed(4)).replace(".", ",") : "";
   $("f-note").value = t?.note ?? "";
   $("f-machine").disabled = $("f-number").disabled = Boolean(t);
   $("f-delete").hidden = !t;

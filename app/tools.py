@@ -22,6 +22,8 @@ from .db import Database
 
 TOOL_MIN, TOOL_MAX = 1, 1000  # Nummernkreis im Betrieb (Anlegen von Hand)
 WARN_RATIO = 0.9  # Vorwarnung ab 90 % der Maximallaufzeit
+DEFAULT_LIMIT_H = 100  # Maximallaufzeit neuer Werkzeuge (automatisch und von Hand angelegt)
+DEFAULT_LIMIT_S = DEFAULT_LIMIT_H * 3600
 
 _TOOL = re.compile(r"^T(\d+)(?:\s+(.*))?$")
 

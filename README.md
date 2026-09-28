@@ -154,7 +154,8 @@ zugeordnet, z. B. `26-21055-01-01`:
   Spindel ist. Stopps, Störungen, Einrichten und stehende Programme zählen nicht. Die Werkzeugnummer
   kommt alle 2 s von der Steuerung. Ein Wechsel wird also auf etwa 2 s genau erfasst.
 - **Maximallaufzeit** (Bearbeiten → Stunden, z. B. `100` oder `2,5`): Der Balken zeigt, wie viel
-  davon verbraucht ist.
+  davon verbraucht ist. Neue Werkzeuge bekommen automatisch **100 h**. Das gilt auch beim Anlegen von
+  Hand; leer lassen heißt kein Limit.
   - Ab 90 % erscheint eine gelbe **Vorwarnung**.
   - Ab 100 % erscheint **„Über Limit“** in Rot: als Meldung oben auf der Seite, als rote Zahl am
     Reiter und auf der Live-Karte, solange das Werkzeug in der Spindel ist.

@@ -10,6 +10,14 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.5.0] – 2026-09-28
+
+### Neu
+- Jedes neu angelegte Werkzeug bekommt automatisch eine Maximallaufzeit von 100 h. Das gilt für
+  automatisch angelegte Werkzeuge und beim Anlegen von Hand (Feld mit 100 vorbelegt). Das Limit
+  lässt sich je Werkzeug unter Bearbeiten ändern oder leeren. Bereits angelegte Werkzeuge behalten
+  ihr bisheriges Limit.
+
 ## [1.4.0] – 2026-09-28
 
 ### Neu

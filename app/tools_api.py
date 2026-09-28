@@ -87,6 +87,7 @@ def list_tools(request: Request) -> dict[str, Any]:
         "machines": machines,
         "range": [tools.TOOL_MIN, tools.TOOL_MAX],
         "warn_ratio": tools.WARN_RATIO,
+        "default_limit_h": tools.DEFAULT_LIMIT_H,
         **tools.list_tools(ctx.db, machines, _spindle(ctx)),
     }
 
@@ -102,7 +103,7 @@ def add_tool(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str,
         raise HTTPException(400, "Bitte eine Werkzeugnummer eintragen, z. B. 100.") from None
     if not tools.TOOL_MIN <= number <= tools.TOOL_MAX:
         raise HTTPException(400, f"Werkzeugnummern gehen von {tools.TOOL_MIN} bis {tools.TOOL_MAX}.")
-    if not ctx.db.insert_tool(machine_id, number, _note(payload), _limit_s(payload), time.time()):
+    if not ctx.db.insert_tool(machine_id, number, _note(payload), _limit_s(payload, tools.DEFAULT_LIMIT_S), time.time()):
         raise HTTPException(409, f"T{number} ist an dieser Maschine schon angelegt.")
     return tools.tool_detail(ctx.db, machine_id, number)
 

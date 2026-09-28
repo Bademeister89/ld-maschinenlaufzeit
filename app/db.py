@@ -467,12 +467,12 @@ class Database:
         "AS last_used_at FROM tools t "
     )
 
-    def ensure_tool(self, machine_id: str, number: int, name: str, t: float) -> bool:
+    def ensure_tool(self, machine_id: str, number: int, name: str, t: float, limit_s: float | None = None) -> bool:
         """Werkzeug anlegen, falls neu (True); sonst nur den Namen aus der Steuerung nachführen."""
         cur = self._execute(
-            "INSERT INTO tools(machine_id, number, name, reset_at, created_at) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO tools(machine_id, number, name, limit_s, reset_at, created_at) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(machine_id, number) DO NOTHING",
-            (machine_id, number, name, t, t),
+            (machine_id, number, name, limit_s, t, t),
         )
         if cur.rowcount:
             return True

@@ -149,7 +149,8 @@ def test_api_list(client):
     assert [m["id"] for m in data["machines"]] == ["m1", "m2"]
     assert data["range"] == [1, 1000]
     [tool] = data["tools"]
-    assert (tool["machine"], tool["number"], tool["name"], tool["status"]) == ("DMG 1", 100, "FRAESER_D10", "none")
+    assert (tool["machine"], tool["number"], tool["name"], tool["status"]) == ("DMG 1", 100, "FRAESER_D10", "ok")
+    assert tool["limit_s"] == 100 * 3600 and data["default_limit_h"] == 100  # Standard für neue Werkzeuge
     assert tool["used_s"] == pytest.approx(7200)
     assert (tool["in_spindle"], tool["running"]) == (True, True)
     assert data["alerts"] == 0
@@ -180,6 +181,23 @@ def test_api_reset(client):
     assert detail["resets"][0]["used_s"] == pytest.approx(7200)
     events = client.get("/api/events", params={"from": 0, "machine": "m1"}).json()
     assert "tool_reset" in {e["type"] for e in events}
+
+
+def test_new_tools_get_default_limit(client):
+    # Von Hand ohne Angabe: Standard 100 h; ausdrücklich leer: kein Limit
+    r = client.post("/api/tools", json={"machine_id": "m2", "number": 7})
+    assert r.json()["limit_s"] == 100 * 3600
+    r = client.post("/api/tools", json={"machine_id": "m2", "number": 8, "limit_h": None})
+    assert r.json()["limit_s"] is None
+
+
+def test_auto_created_tool_gets_default_limit(db, make_collector):
+    c = make_collector()
+    feed(c, (0, snap("STARTED", tool="T9")))
+    assert db.tool("m1", 9)["limit_s"] == tools.DEFAULT_LIMIT_S == 360000
+    db.update_tool("m1", 9, "", 7200)
+    feed(c, (10, snap("STARTED", tool="T3")), (20, snap("STARTED", tool="T9")))
+    assert db.tool("m1", 9)["limit_s"] == 7200  # geändertes Limit bleibt beim erneuten Auftauchen
 
 
 def test_api_create_and_delete(client):
