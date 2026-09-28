@@ -152,10 +152,10 @@ function toolWarning(m) {
   const info = m.tool_info;
   if (!info || (info.status !== "over" && info.status !== "warn")) return null;
   const link = el("a", { href: `werkzeuge.html#tool-${m.id}-${info.number}`, text: "Werkzeugauswertung" });
-  const values = `${fmtToolTime(info.used_s)} von ${fmtToolTime(info.limit_s)}`;
+  const values = `${fmtToolTime(info.used_s)}${info.limit_s ? ` von ${fmtToolTime(info.limit_s)}` : ""}`;
   return info.status === "over"
     ? el("p", { class: "tool-warning over", role: "alert" }, `✕ Achtung: T${info.number} ist über der Maximallaufzeit (${values}) · `, link)
-    : el("p", { class: "tool-warning warn" }, `⚠ T${info.number} bei ${Math.round(info.ratio * 100)} % der Maximallaufzeit (${values}) · `, link);
+    : el("p", { class: "tool-warning warn" }, `⚠ T${info.number}: Vorwarnzeit erreicht (${values}) · `, link);
 }
 
 function overrideText(o) {

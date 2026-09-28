@@ -677,6 +677,13 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, button:focus-visi
 .link-button { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
 .tool-help { margin: 20px 0 0; font-size: 13px; max-width: 95ch; }
 .tool-form-row { grid-template-columns: minmax(0, 1fr) 140px; }
+.form-row.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.form-group { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.form-group legend { padding: 0; margin-bottom: 2px; font-size: 13px; font-weight: 650; color: var(--ink); }
+.tool-specs { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.tool-meter { position: relative; }
+/* Marke im Balken: ab hier Vorwarnung */
+.tool-warn-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink-2); opacity: 0.6; }
 .tool-history h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
 .tool-history table { font-size: 13px; }
 .tool-history p { margin: 6px 0 0; font-size: 13px; }

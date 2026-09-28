@@ -8,7 +8,7 @@ spätere Laufzeitauswertungen:
   CSV-Export für Excel.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
-- **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T1000) und Maschine, Maximallaufzeit mit
+- **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T1000) und Maschine, Werkzeugdaten, Maximallaufzeit mit
   Vorwarnung und roter Meldung, Zurücksetzen beim Werkzeugwechsel, Standzeit-Historie.
 - **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
   testen; zeigt die laufende Version und das Änderungsprotokoll.
@@ -158,14 +158,21 @@ zugeordnet, z. B. `26-21055-01-01`:
 - **Einsatzzeit** = Zeit, in der ein Programm läuft (Zustand „Läuft“) und das Werkzeug in der
   Spindel ist. Stopps, Störungen, Einrichten und stehende Programme zählen nicht. Die Werkzeugnummer
   kommt alle 2 s von der Steuerung. Ein Wechsel wird also auf etwa 2 s genau erfasst.
-- **Maximallaufzeit** (Bearbeiten → Stunden, z. B. `100` oder `2,5`): Der Balken zeigt, wie viel
-  davon verbraucht ist. Neue Werkzeuge bekommen automatisch **100 h**. Das gilt auch beim Anlegen von
-  Hand; leer lassen heißt kein Limit.
-  - Ab 90 % erscheint eine gelbe **Vorwarnung**.
-  - Ab 100 % erscheint **„Über Limit“** in Rot: als Meldung oben auf der Seite, als rote Zahl am
-    Reiter und auf der Live-Karte, solange das Werkzeug in der Spindel ist.
+- **Werkzeugdaten** (Bearbeiten bzw. + Werkzeug anlegen): Hersteller, Artikelnummer, Durchmesser
+  und Radius in mm. Sie stehen in der Liste unter dem Werkzeug, z. B. „Ø 10 mm · R 0,5 mm · Garant ·
+  Art.-Nr. 202340“, und lassen sich suchen.
+- **Standzeit** (Bearbeiten → Stunden, z. B. `100` oder `2,5`):
+  - **Maximallaufzeit:** Der Balken zeigt, wie viel davon verbraucht ist.
+  - **Vorwarnung bei:** Ab dieser Einsatzzeit wird das Werkzeug gelb markiert, im Balken zeigt ein
+    Strich die Stelle. Sie muss kleiner als die Maximallaufzeit sein.
+  - Neue Werkzeuge bekommen automatisch **100 h** mit Vorwarnung bei **80 h**, auch beim Anlegen von
+    Hand.
+  - Leer lassen heißt kein Limit bzw. Vorwarnung bei 90 % der Maximallaufzeit. So verhalten sich auch
+    Werkzeuge, die vor Version 1.6.2 angelegt wurden, bis die Vorwarnung eingetragen ist.
+  - Ab der Maximallaufzeit erscheint **„Über Limit“** in Rot: als Meldung oben auf der Seite, als rote
+    Zahl am Reiter und auf der Live-Karte, solange das Werkzeug in der Spindel ist.
 - **Zurücksetzen** nach dem Einspannen eines neuen Werkzeugs: Die Einsatzzeit beginnt wieder bei 0.
-  Limit und Notiz bleiben. Der alte Stand kommt als **Standzeit** in die Historie (Bearbeiten →
+  Werkzeugdaten, Limit, Vorwarnung und Notiz bleiben. Der alte Stand kommt als **Standzeit** in die Historie (Bearbeiten →
   „Standzeiten bisher“, mit Ø Standzeit).
 - **Entfernen** löscht den Eintrag samt Historie. Taucht das Werkzeug wieder auf, wird es neu
   angelegt und zählt ab dann.
@@ -177,7 +184,8 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Taucht ein Werkzeug ohne bekannten Namen auf, prüft sie schon nach einer Minute wieder.
   - Indizierte Werkzeuge (T5.1 …) zählen zur Nummer des Hauptwerkzeugs.
 - **Notiz:** eigene Bezeichnung, z. B. „VHM D10, Hersteller X“, unter Bearbeiten.
-- Filter nach Maschine und Status, Suche nach T-Nummer, Name oder Notiz, CSV-Export.
+- Filter nach Maschine und Status, Suche nach T-Nummer, Name, Hersteller, Artikelnummer oder Notiz,
+  CSV-Export mit allen Werkzeugdaten.
 
 Ob beides an der iTNC 530 funktioniert, zeigt der Verbindungstest:
 
@@ -233,7 +241,7 @@ andere Werte liefert, wird nur dort angepasst.
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |
 | `GET /api/tools`, `POST /api/tools` | Werkzeuge (Liste, von Hand anlegen) |
-| `PUT/DELETE /api/tools/{maschine}/{nr}`, `POST …/reset` | Limit/Notiz, Entfernen, Zurücksetzen |
+| `PUT/DELETE /api/tools/{maschine}/{nr}`, `POST …/reset` | Werkzeugdaten/Standzeit, Entfernen, Zurücksetzen |
 | `GET /api/tools/export.csv` | Werkzeugliste als CSV |
 | `GET /api/version` | Versionsnummer, Build-Kennung, Änderungsprotokoll |
 

@@ -15,7 +15,11 @@ let data = null;
 let editing = null; // null = neues Werkzeug, sonst {machine_id, number}
 
 const nfLimit = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 });
+const nfMm = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 });
 const fmtLimit = (sec) => `${nfLimit.format(sec / 3600)} h`;
+// Eingabefelder: genau wie gespeichert (Dezimalkomma), damit Speichern ohne Änderung nichts rundet
+const hoursInput = (sec) => (sec ? String(+(sec / 3600).toFixed(4)).replace(".", ",") : "");
+const mmInput = (value) => (value == null ? "" : String(value).replace(".", ","));
 const toolKey = (t) => `tool-${t.machine_id}-${t.number}`;
 
 function showError(err) {
@@ -41,7 +45,7 @@ function matches(t) {
   if (state.status === "over" && t.status !== "over") return false;
   const q = state.search.trim().toLowerCase();
   if (!q) return true;
-  return `t${t.number} ${t.name} ${t.note}`.toLowerCase().includes(q);
+  return `t${t.number} ${t.name} ${t.note} ${t.manufacturer} ${t.article_no}`.toLowerCase().includes(q);
 }
 
 // --- Darstellung -------------------------------------------------------------------
@@ -57,7 +61,20 @@ function spindleBadge(t) {
   return el("span", { class: `tool-badge spindle${t.running ? " running" : ""}`, text: t.running ? "▶ Im Einsatz" : "● In der Spindel" });
 }
 
+/** "Ø 10 mm · R 0,5 mm · Garant · Art.-Nr. 202340" */
+function specsText(t) {
+  return [
+    t.diameter != null && `Ø ${nfMm.format(t.diameter)} mm`,
+    t.radius != null && `R ${nfMm.format(t.radius)} mm`,
+    t.manufacturer,
+    t.article_no && `Art.-Nr. ${t.article_no}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function usage(t) {
+  const warnText = t.warn_at_s ? el("span", { class: "muted num", text: `Vorwarnung ${fmtLimit(t.warn_at_s)}` }) : null;
   if (!t.limit_s) {
     return el(
       "div",
@@ -67,13 +84,17 @@ function usage(t) {
         { class: "tool-usage-text" },
         el("span", { class: "tool-used num", text: fmtToolTime(t.used_s) }),
         el("span", { class: "muted", text: "kein Limit" }),
+        warnText,
         el("button", { type: "button", class: "link-button", onclick: () => openEditor(t), text: "Limit eintragen" }),
       ),
     );
   }
   const pct = Math.round(t.ratio * 100);
   const over = t.used_s - t.limit_s;
-  const title = `T${t.number}: ${fmtToolTime(t.used_s)} von ${fmtLimit(t.limit_s)} (${pct} %)`;
+  const warnAt = t.warn_at_s && t.warn_at_s < t.limit_s ? t.warn_at_s : null;
+  const title =
+    `T${t.number}: ${fmtToolTime(t.used_s)} von ${fmtLimit(t.limit_s)} (${pct} %)` +
+    (warnAt ? `, Vorwarnung bei ${fmtLimit(warnAt)}` : "");
   return el(
     "div",
     { class: "tool-usage" },
@@ -90,6 +111,7 @@ function usage(t) {
         title,
       },
       el("div", { class: "meter-fill", style: { width: `${Math.min(100, t.ratio * 100)}%` } }),
+      warnAt ? el("div", { class: "tool-warn-mark", style: { left: `${(warnAt / t.limit_s) * 100}%` } }) : null,
     ),
     el(
       "div",
@@ -97,7 +119,7 @@ function usage(t) {
       el("span", { class: "tool-used num", text: fmtToolTime(t.used_s) }),
       el("span", { class: "muted num", text: `von ${fmtLimit(t.limit_s)}` }),
       el("span", { class: "tool-pct num", text: `${pct} %` }),
-      over > 0 ? el("span", { class: "tool-over num", text: `${fmtToolTime(over)} drüber` }) : null,
+      over > 0 ? el("span", { class: "tool-over num", text: `${fmtToolTime(over)} drüber` }) : warnText,
     ),
   );
 }
@@ -114,6 +136,7 @@ function toolRow(t) {
         "div",
         { class: "tool-names" },
         t.name ? el("div", { class: "tool-name", text: t.name }) : null,
+        specsText(t) ? el("div", { class: "tool-specs", text: specsText(t) }) : null,
         t.note ? el("div", { class: "tool-note", text: t.note }) : null,
       ),
     ),
@@ -184,7 +207,7 @@ function render() {
   $("kpis").replaceChildren(
     tile("Werkzeuge", String(all.length), `${all.filter((t) => t.limit_s).length} mit Maximallaufzeit`),
     tile("Über Limit", String(all.filter((t) => t.status === "over").length), "Werkzeug tauschen und zurücksetzen"),
-    tile("Vorwarnung", String(all.filter((t) => t.status === "warn").length), `ab ${Math.round(data.warn_ratio * 100)} % der Maximallaufzeit`),
+    tile("Vorwarnung", String(all.filter((t) => t.status === "warn").length), "Vorwarnzeit erreicht (je Werkzeug einstellbar)"),
     tile("Im Einsatz", String(all.filter((t) => t.running).length), "Programm läuft mit diesem Werkzeug"),
   );
 
@@ -294,17 +317,20 @@ async function openEditor(t = null) {
   $("f-machine").replaceChildren(...data.machines.map((m) => el("option", { value: m.id, text: m.name })));
   $("f-machine").value = t?.machine_id ?? (state.machine || data.machines[0]?.id || "");
   $("f-number").value = t ? String(t.number) : "";
-  // Genau wie gespeichert anzeigen, damit Speichern ohne Änderung das Limit nicht rundet;
-  // neue Werkzeuge starten mit der Standard-Maximallaufzeit
-  const limitS = t ? t.limit_s : data.default_limit_h * 3600;
-  $("f-limit").value = limitS ? String(+(limitS / 3600).toFixed(4)).replace(".", ",") : "";
+  // Neue Werkzeuge starten mit Standard-Maximallaufzeit und -Vorwarnzeit
+  $("f-limit").value = hoursInput(t ? t.limit_s : data.default_limit_h * 3600);
+  $("f-warn").value = hoursInput(t ? t.warn_s : data.default_warn_h * 3600);
+  $("f-manufacturer").value = t?.manufacturer ?? "";
+  $("f-article").value = t?.article_no ?? "";
+  $("f-diameter").value = mmInput(t?.diameter);
+  $("f-radius").value = mmInput(t?.radius);
   $("f-note").value = t?.note ?? "";
   $("f-machine").disabled = $("f-number").disabled = Boolean(t);
   $("f-delete").hidden = !t;
   $("editor-title").textContent = t ? `T${t.number} · ${t.machine}` : "Werkzeug anlegen";
   $("f-history").replaceChildren();
   $("editor").showModal();
-  (t ? $("f-limit") : $("f-number")).focus();
+  (t ? $("f-manufacturer") : $("f-number")).focus();
   if (t) {
     try {
       const detail = await api(`/api/tools/${encodeURIComponent(t.machine_id)}/${t.number}`);
@@ -318,7 +344,16 @@ async function openEditor(t = null) {
 
 async function save(e) {
   e.preventDefault();
-  const payload = { limit_h: $("f-limit").value.trim() || null, note: $("f-note").value.trim() };
+  const value = (id) => $(id).value.trim();
+  const payload = {
+    manufacturer: value("f-manufacturer"),
+    article_no: value("f-article"),
+    diameter: value("f-diameter") || null,
+    radius: value("f-radius") || null,
+    limit_h: value("f-limit") || null,
+    warn_h: value("f-warn") || null,
+    note: value("f-note"),
+  };
   $("f-save").disabled = true;
   try {
     if (editing) {
@@ -340,7 +375,7 @@ async function removeTool() {
   if (!t) return;
   const ok = confirm(
     `T${t.number} an ${t.machine} aus der Liste entfernen?\n\n` +
-      "Limit, Notiz und die Historie der Standzeiten werden gelöscht. Taucht das Werkzeug wieder in der " +
+      "Werkzeugdaten, Limit, Notiz und die Historie der Standzeiten werden gelöscht. Taucht das Werkzeug wieder in der " +
       "Spindel auf, wird es neu angelegt und zählt ab dann.",
   );
   if (!ok) return;

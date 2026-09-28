@@ -21,9 +21,11 @@ from typing import Any
 from .db import Database
 
 TOOL_MIN, TOOL_MAX = 1, 1000  # Nummernkreis im Betrieb (Anlegen von Hand)
-WARN_RATIO = 0.9  # Vorwarnung ab 90 % der Maximallaufzeit
+WARN_RATIO = 0.9  # Vorwarnung ab 90 % der Maximallaufzeit, wenn keine Vorwarnzeit eingetragen ist
 DEFAULT_LIMIT_H = 100  # Maximallaufzeit neuer Werkzeuge (automatisch und von Hand angelegt)
 DEFAULT_LIMIT_S = DEFAULT_LIMIT_H * 3600
+DEFAULT_WARN_H = 80  # Vorwarnzeit neuer Werkzeuge
+DEFAULT_WARN_S = DEFAULT_WARN_H * 3600
 
 _TOOL = re.compile(r"^T(\d+)(?:\s+(.*))?$")
 
@@ -38,19 +40,29 @@ def parse_tool(text: str | None) -> tuple[int, str] | None:
     return int(match[1]), (match[2] or "").strip()
 
 
-def status(used_s: float, limit_s: float | None) -> str:
-    """"none" (kein Limit), "ok", "warn" (ab 90 %) oder "over" (Limit erreicht)."""
-    if not limit_s:
-        return "none"
-    ratio = used_s / limit_s
-    return "over" if ratio >= 1 else "warn" if ratio >= WARN_RATIO else "ok"
+def warn_threshold(limit_s: float | None, warn_s: float | None) -> float | None:
+    """Ab wann vorgewarnt wird: eingetragene Vorwarnzeit, sonst 90 % der Maximallaufzeit."""
+    if warn_s:
+        return warn_s
+    return limit_s * WARN_RATIO if limit_s else None
+
+
+def status(used_s: float, limit_s: float | None, warn_s: float | None = None) -> str:
+    """"none" (kein Limit), "ok", "warn" (Vorwarnzeit erreicht) oder "over" (Limit erreicht)."""
+    if limit_s and used_s >= limit_s:
+        return "over"
+    threshold = warn_threshold(limit_s, warn_s)
+    if threshold is not None and used_s >= threshold:
+        return "warn"
+    return "ok" if limit_s else "none"
 
 
 def _public(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **row,
         "ratio": row["used_s"] / row["limit_s"] if row["limit_s"] else None,
-        "status": status(row["used_s"], row["limit_s"]),
+        "warn_at_s": warn_threshold(row["limit_s"], row["warn_s"]),
+        "status": status(row["used_s"], row["limit_s"], row["warn_s"]),
     }
 
 
@@ -90,10 +102,12 @@ def tool_info(db: Database, machine_id: str, tool: str | None) -> dict[str, Any]
     if row is None:
         return None
     public = _public(row)
-    return {key: public[key] for key in ("number", "name", "used_s", "limit_s", "ratio", "status")}
+    return {key: public[key] for key in ("number", "name", "used_s", "limit_s", "warn_at_s", "ratio", "status")}
 
 
 def alert_count(db: Database, machine_ids: set[str]) -> int:
     return sum(
-        status(row["used_s"], row["limit_s"]) == "over" for row in db.tools() if row["machine_id"] in machine_ids
+        status(row["used_s"], row["limit_s"], row["warn_s"]) == "over"
+        for row in db.tools()
+        if row["machine_id"] in machine_ids
     )

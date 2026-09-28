@@ -40,6 +40,12 @@ def test_status_thresholds():
     assert status(90, 100) == "warn"
     assert status(100, 100) == "over"
     assert status(250, 100) == "over"
+    # Eingetragene Vorwarnzeit statt 90 %
+    assert status(79, 100, 80) == "ok"
+    assert status(80, 100, 80) == "warn"
+    assert status(100, 100, 80) == "over"
+    assert status(80, None, 80) == "warn"  # Vorwarnung auch ohne Limit
+    assert tools.warn_threshold(100, None) == 90 and tools.warn_threshold(100, 80) == 80
 
 
 def test_simulation_uses_tool_range():
@@ -101,7 +107,7 @@ def test_tools_are_per_machine(db, make_collector):
 def test_reset(db, make_collector):
     c = make_collector()
     feed(c, (0, snap("STARTED", tool="T12")), (300, snap("STARTED", tool="T12")))
-    db.update_tool("m1", 12, "Test", 3600)
+    db.update_tool("m1", 12, note="Test", limit_s=3600)
     assert db.reset_tool("m1", 12, 350) == pytest.approx(300)
     assert used(db, 12) == 0
     # Der laufende Abschnitt zählt ab dem Zurücksetzen weiter
@@ -122,7 +128,7 @@ def test_schema_upgrade_adds_tool_tables(tmp_path):
     )
     con.close()
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "6"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "7"
     assert db.tools() == []
     db.close()
 
@@ -195,7 +201,7 @@ def test_auto_created_tool_gets_default_limit(db, make_collector):
     c = make_collector()
     feed(c, (0, snap("STARTED", tool="T9")))
     assert db.tool("m1", 9)["limit_s"] == tools.DEFAULT_LIMIT_S == 360000
-    db.update_tool("m1", 9, "", 7200)
+    db.update_tool("m1", 9, limit_s=7200)
     feed(c, (10, snap("STARTED", tool="T3")), (20, snap("STARTED", tool="T9")))
     assert db.tool("m1", 9)["limit_s"] == 7200  # geändertes Limit bleibt beim erneuten Auftauchen
 
@@ -229,11 +235,105 @@ def test_api_export(client):
     client.put("/api/tools/m1/100", json={"limit_h": 4})
     text = client.get("/api/tools/export.csv").content.decode("utf-8").lstrip("﻿")
     header, row = text.strip().split("\r\n")
-    assert header.split(";")[:5] == ["Maschine", "Werkzeug", "Name", "Notiz", "Einsatzzeit (h)"]
-    assert row.split(";")[:8] == ["DMG 1", "T100", "FRAESER_D10", "", "2,00", "4,00", "50", "ok"]
+    assert header.split(";")[:11] == [
+        "Maschine", "Werkzeug", "Name", "Hersteller", "Artikelnummer", "Durchmesser (mm)", "Radius (mm)",
+        "Notiz", "Einsatzzeit (h)", "Maximallaufzeit (h)", "Vorwarnung ab (h)",
+    ]
+    # Limit 4 h unter der Standard-Vorwarnzeit (80 h): Vorwarnung wieder automatisch bei 90 % = 3,6 h
+    assert row.split(";")[:13] == ["DMG 1", "T100", "FRAESER_D10", "", "", "", "", "", "2,00", "4,00", "3,60", "50", "ok"]
 
 
 def test_page(client):
     html = client.get("/werkzeuge.html").text
     assert "Werkzeugauswertung" in html and "werkzeuge.js" in html
     assert client.get("/werkzeuge.js").status_code == 200
+
+
+# --- Werkzeugdaten und Vorwarnzeit (1.6.2) -------------------------------------------------------
+
+
+def test_new_tools_get_default_warning(client):
+    r = client.post("/api/tools", json={"machine_id": "m2", "number": 11})
+    assert (r.json()["limit_s"], r.json()["warn_s"], r.json()["warn_at_s"]) == (360000, 288000, 288000)
+    assert client.get("/api/tools").json()["default_warn_h"] == 80
+
+
+def test_auto_created_tool_gets_default_warning(db, make_collector):
+    c = make_collector()
+    feed(c, (0, snap("STARTED", tool="T4")))
+    assert db.tool("m1", 4)["warn_s"] == tools.DEFAULT_WARN_S == 80 * 3600
+
+
+def test_api_tool_data(client):
+    r = client.put(
+        "/api/tools/m1/100",
+        json={
+            "manufacturer": " Garant ",
+            "article_no": "202340",
+            "diameter": "10",
+            "radius": "0,5",
+            "limit_h": "4",
+            "warn_h": "1,5",
+            "note": "Alu",
+        },
+    )
+    assert r.status_code == 200, r.text
+    tool = r.json()
+    assert (tool["manufacturer"], tool["article_no"], tool["diameter"], tool["radius"]) == ("Garant", "202340", 10, 0.5)
+    assert (tool["limit_s"], tool["warn_s"], tool["status"]) == (4 * 3600, 1.5 * 3600, "warn")  # 2 h benutzt
+    # Nur einzelne Felder ändern: der Rest bleibt
+    tool = client.put("/api/tools/m1/100", json={"note": "Stahl"}).json()
+    assert (tool["manufacturer"], tool["warn_s"], tool["note"]) == ("Garant", 1.5 * 3600, "Stahl")
+    # Leeren = keine Angabe; Radius 0 ist erlaubt (scharfe Ecke)
+    tool = client.put("/api/tools/m1/100", json={"diameter": "", "radius": 0}).json()
+    assert (tool["diameter"], tool["radius"]) == (None, 0)
+    # Suche/Anzeige: Felder kommen auch in der Liste an
+    [row] = client.get("/api/tools").json()["tools"]
+    assert (row["manufacturer"], row["article_no"], row["warn_at_s"]) == ("Garant", "202340", 1.5 * 3600)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"diameter": "abc"},
+        {"diameter": "0"},
+        {"diameter": "5000"},
+        {"radius": "-1"},
+        {"warn_h": "0"},
+        {"limit_h": "100", "warn_h": "100"},  # Vorwarnung muss vor dem Limit liegen
+        {"limit_h": "100", "warn_h": "120"},
+        {"manufacturer": "x" * 81},
+        {"article_no": "x" * 81},
+    ],
+)
+def test_api_tool_data_invalid(client, payload):
+    assert client.put("/api/tools/m1/100", json=payload).status_code == 400
+
+
+def test_lower_limit_below_warning_resets_warning(client):
+    # Nur das Limit unter die Vorwarnzeit gesenkt: Vorwarnung wieder automatisch (90 %)
+    tool = client.put("/api/tools/m1/100", json={"limit_h": "50"}).json()
+    assert (tool["limit_s"], tool["warn_s"], tool["warn_at_s"]) == (50 * 3600, None, 45 * 3600)
+
+
+def test_schema_upgrade_from_v6_keeps_tools(tmp_path):
+    path = tmp_path / "v6.db"
+    con = sqlite3.connect(path)
+    con.executescript(
+        "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+        "INSERT INTO meta VALUES ('schema_version', '6');"
+        "CREATE TABLE machines (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL);"
+        "INSERT INTO machines VALUES ('m1', 'DMG 1', '10.0.0.1', 19000);"
+        "CREATE TABLE tools (machine_id TEXT NOT NULL, number INTEGER NOT NULL, name TEXT NOT NULL DEFAULT '',"
+        " note TEXT NOT NULL DEFAULT '', limit_s REAL, reset_at REAL NOT NULL, created_at REAL NOT NULL,"
+        " PRIMARY KEY (machine_id, number));"
+        "INSERT INTO tools (machine_id, number, name, note, limit_s, reset_at, created_at)"
+        " VALUES ('m1', 12, 'FRAESER', 'alt', 360000, 0, 0);"
+    )
+    con.close()
+    db = Database(path)
+    tool = db.tool("m1", 12)
+    assert (tool["name"], tool["note"], tool["limit_s"]) == ("FRAESER", "alt", 360000)
+    assert (tool["manufacturer"], tool["article_no"], tool["diameter"], tool["radius"], tool["warn_s"]) == ("", "", None, None, None)
+    assert tools.tool_detail(db, "m1", 12)["warn_at_s"] == 360000 * 0.9  # bisheriges Verhalten bleibt
+    db.close()

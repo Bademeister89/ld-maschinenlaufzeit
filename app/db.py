@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -101,6 +101,11 @@ CREATE TABLE IF NOT EXISTS tools (
     limit_s    REAL,
     reset_at   REAL NOT NULL,
     created_at REAL NOT NULL,
+    manufacturer TEXT NOT NULL DEFAULT '',
+    article_no TEXT NOT NULL DEFAULT '',
+    diameter   REAL,
+    radius     REAL,
+    warn_s     REAL,
     PRIMARY KEY (machine_id, number)
 );
 CREATE TABLE IF NOT EXISTS tool_usage (
@@ -162,6 +167,17 @@ class Database:
                 self._con.execute(f"ALTER TABLE {table} ADD COLUMN order_key TEXT")
         self._con.execute("CREATE INDEX IF NOT EXISTS ix_intervals_order ON state_intervals(order_key)")
         self._con.execute("CREATE INDEX IF NOT EXISTS ix_runs_order ON program_runs(order_key)")
+        # v6 → v7: Werkzeugdaten (Hersteller, Artikelnummer, Durchmesser, Radius) und Vorwarnzeit
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(tools)")}
+        for name, ddl in (
+            ("manufacturer", "TEXT NOT NULL DEFAULT ''"),
+            ("article_no", "TEXT NOT NULL DEFAULT ''"),
+            ("diameter", "REAL"),
+            ("radius", "REAL"),
+            ("warn_s", "REAL"),
+        ):
+            if name not in columns:
+                self._con.execute(f"ALTER TABLE tools ADD COLUMN {name} {ddl}")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:
@@ -460,19 +476,25 @@ class Database:
     # ist die Summe dieser Abschnitte seit reset_at (Anlage bzw. letztes Zurücksetzen).
 
     _TOOL_SELECT = (
-        "SELECT t.machine_id, t.number, t.name, t.note, t.limit_s, t.reset_at, t.created_at, "
+        "SELECT t.machine_id, t.number, t.name, t.note, t.limit_s, t.warn_s, t.reset_at, t.created_at, "
+        "t.manufacturer, t.article_no, t.diameter, t.radius, "
         "COALESCE((SELECT SUM(u.ended_at - MAX(u.started_at, t.reset_at)) FROM tool_usage u "
         "WHERE u.machine_id = t.machine_id AND u.number = t.number AND u.ended_at > t.reset_at), 0) AS used_s, "
         "(SELECT MAX(u.ended_at) FROM tool_usage u WHERE u.machine_id = t.machine_id AND u.number = t.number) "
         "AS last_used_at FROM tools t "
     )
 
-    def ensure_tool(self, machine_id: str, number: int, name: str, t: float, limit_s: float | None = None) -> bool:
+    # Von Hand pflegbare Felder eines Werkzeugs
+    TOOL_FIELDS = ("note", "limit_s", "warn_s", "manufacturer", "article_no", "diameter", "radius")
+
+    def ensure_tool(
+        self, machine_id: str, number: int, name: str, t: float, limit_s: float | None = None, warn_s: float | None = None
+    ) -> bool:
         """Werkzeug anlegen, falls neu (True); sonst nur den Namen aus der Steuerung nachführen."""
         cur = self._execute(
-            "INSERT INTO tools(machine_id, number, name, limit_s, reset_at, created_at) VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(machine_id, number) DO NOTHING",
-            (machine_id, number, name, limit_s, t, t),
+            "INSERT INTO tools(machine_id, number, name, limit_s, warn_s, reset_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine_id, number) DO NOTHING",
+            (machine_id, number, name, limit_s, warn_s, t, t),
         )
         if cur.rowcount:
             return True
@@ -495,13 +517,21 @@ class Database:
                 changed += cur.rowcount
         return changed
 
-    def insert_tool(self, machine_id: str, number: int, note: str, limit_s: float | None, t: float) -> bool:
+    def insert_tool(self, machine_id: str, number: int, t: float, **fields: Any) -> bool:
+        """Werkzeug von Hand anlegen; ``fields`` aus TOOL_FIELDS. False, wenn es schon existiert."""
+        names = self._tool_fields(fields)
+        columns = ", ".join(["machine_id", "number", "reset_at", "created_at", *names])
+        marks = ", ".join("?" * (4 + len(names)))
         cur = self._execute(
-            "INSERT INTO tools(machine_id, number, note, limit_s, reset_at, created_at) VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(machine_id, number) DO NOTHING",
-            (machine_id, number, note, limit_s, t, t),
+            f"INSERT INTO tools({columns}) VALUES ({marks}) ON CONFLICT(machine_id, number) DO NOTHING",
+            (machine_id, number, t, t, *(fields[name] for name in names)),
         )
         return bool(cur.rowcount)
+
+    def _tool_fields(self, fields: dict[str, Any]) -> list[str]:
+        if unknown := set(fields) - set(self.TOOL_FIELDS):
+            raise ValueError(f"Unbekannte Werkzeugfelder: {sorted(unknown)}")
+        return [name for name in self.TOOL_FIELDS if name in fields]
 
     def tools(self, machine_id: str | None = None) -> list[dict[str, Any]]:
         where, params = ("WHERE t.machine_id = ? ", (machine_id,)) if machine_id else ("", ())
@@ -511,10 +541,15 @@ class Database:
         rows = self._query(self._TOOL_SELECT + "WHERE t.machine_id = ? AND t.number = ?", (machine_id, number))
         return rows[0] if rows else None
 
-    def update_tool(self, machine_id: str, number: int, note: str, limit_s: float | None) -> None:
+    def update_tool(self, machine_id: str, number: int, **fields: Any) -> None:
+        """Felder aus TOOL_FIELDS ändern (nur die übergebenen)."""
+        names = self._tool_fields(fields)
+        if not names:
+            return
+        assignments = ", ".join(f"{name} = ?" for name in names)
         self._execute(
-            "UPDATE tools SET note = ?, limit_s = ? WHERE machine_id = ? AND number = ?",
-            (note, limit_s, machine_id, number),
+            f"UPDATE tools SET {assignments} WHERE machine_id = ? AND number = ?",
+            (*(fields[name] for name in names), machine_id, number),
         )
 
     def reset_tool(self, machine_id: str, number: int, t: float) -> float:

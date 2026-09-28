@@ -31,7 +31,7 @@ from .db import Database
 from .forecast import Forecaster
 from .orders import parse_program
 from .state import RUN_ACTIVE_STATES, MachineState, classify, run_result
-from .tools import DEFAULT_LIMIT_S, parse_tool
+from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, parse_tool
 
 log = logging.getLogger(__name__)
 
@@ -227,7 +227,7 @@ class MachineCollector:
             # Die Spindelabfrage der echten Steuerung liefert keinen Namen – dann aus TOOL.T
             name = parsed[1] or self._tool_names.get(number, "")
             self._tool_name_missing = self._tool_name_missing or not name
-            if self._db.ensure_tool(self.machine.id, number, name, now, DEFAULT_LIMIT_S):
+            if self._db.ensure_tool(self.machine.id, number, name, now, DEFAULT_LIMIT_S, DEFAULT_WARN_S):
                 self._db.add_event(self.machine.id, now, "tool_created", {"tool": number, "name": name})
                 log.info("%s: Werkzeug T%d angelegt", self.machine.name, number)
             self._seen_tool = number

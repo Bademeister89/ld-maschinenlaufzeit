@@ -10,6 +10,19 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.6.2] – 2026-09-28
+
+### Neu
+- Werkzeugdaten beim Anlegen und Bearbeiten: Hersteller, Artikelnummer, Durchmesser und Radius (mm).
+  Sie stehen in der Werkzeugliste, lassen sich suchen und sind im CSV-Export enthalten.
+- Einstellbare Vorwarnzeit je Werkzeug („Vorwarnung bei“, z. B. 80 h bei 100 h Maximallaufzeit).
+  Der Balken zeigt die Stelle mit einem Strich. Neue Werkzeuge bekommen 100 h mit Vorwarnung bei
+  80 h.
+
+### Geändert
+- Datenbank-Schema 7. Das Update läuft beim Start automatisch. Werkzeuge ohne eingetragene
+  Vorwarnzeit warnen wie bisher bei 90 % der Maximallaufzeit.
+
 ## [1.6.0] – 2026-09-28
 
 ### Neu
