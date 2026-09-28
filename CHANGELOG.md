@@ -10,6 +10,16 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.6.3] – 2026-09-28
+
+### Neu
+- Technischer Schreibschutz für alle Verbindungen zur Steuerung. Jeder Befehl wird vor dem Senden
+  gegen eine Liste reiner Lesebefehle geprüft. Alles andere wird blockiert, bevor es den Rechner
+  verlässt, zum Beispiel Dateien senden, löschen, umbenennen oder kopieren, Ordner anlegen,
+  Maschinenparameter oder PLC schreiben, Tasten senden, die Tastatur sperren oder die Steuerung
+  zurücksetzen. Lässt sich der Schutz nicht einrichten, baut die App keine Verbindung auf.
+  Die App war schon vorher rein lesend; der Schutz sichert das zusätzlich technisch ab.
+
 ## [1.6.2] – 2026-09-28
 
 ### Neu

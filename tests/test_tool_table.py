@@ -53,6 +53,8 @@ class FakeLSV2:
     def __init__(self, host, port, timeout, safe_mode):
         assert safe_mode is True  # Datei lesen ohne DNC-Login
         self.last_error = "Fehler"
+        # Übertragungsschicht, in die sich der Schreibschutz einhängt (ohne sie: keine Verbindung)
+        self._llcom = type("Telegramme", (), {"telegram": staticmethod(lambda *args, **kwargs: None)})()
 
     def connect(self):
         FakeLSV2.connected += 1

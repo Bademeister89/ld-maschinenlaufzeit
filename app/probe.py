@@ -16,6 +16,7 @@ import pyLSV2
 
 from .adapters.base import AdapterError
 from .adapters.lsv2_adapter import Lsv2Adapter
+from .adapters.lsv2_guard import open_lsv2
 from .netcheck import reachable
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, STATE_LABELS, classify
 from .tools import parse_tool
@@ -86,8 +87,8 @@ def run_probe(host: str, port: int = 19000, timeout: float = 5.0, check_host: st
         )
         return result
 
-    con = pyLSV2.LSV2(host, port=port, timeout=timeout, safe_mode=False)
     try:
+        con = open_lsv2(host, port, timeout, dnc=True)  # mit Schreibschutz wie die Erfassung
         con.connect()
     except Exception as exc:
         steps.append(

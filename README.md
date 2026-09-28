@@ -16,7 +16,7 @@ spätere Laufzeitauswertungen:
 Die Anbindung läuft über das LSV2-Protokoll (TCP 19000) mit der Open-Source-Bibliothek
 [pyLSV2](https://github.com/drunsinn/pyLSV2), also über dasselbe Protokoll wie TNCremo und das
 Heidenhain-RemoTools-SDK, aber ohne Windows-COM-Komponente.
-Es werden **ausschließlich lesende** Abfragen gestellt.
+Es werden **ausschließlich lesende** Abfragen gestellt, siehe [Nur lesend](#nur-lesend-schreibschutz).
 
 ## Portable Version für den Windows-PC im Betrieb
 
@@ -201,6 +201,36 @@ Ob beides an der iTNC 530 funktioniert, zeigt der Verbindungstest:
 - Unter „Statusabfrage“ steht `Werkzeug T12` oder „Werkzeug: keine Angabe“.
 - Unter „Werkzeugtabelle lesen“ steht z. B. „245 Werkzeuge mit Namen, in der Spindel: T12
   FRAESER_D16“.
+
+## Nur lesend (Schreibschutz)
+
+Die App verändert oder löscht nichts an der Maschine. Sie liest nur:
+- Status: Programmstatus, Betriebsart, Programm und Satz, Override, Fehlermeldungen, Werkzeug in
+  der Spindel
+- Steuerungstyp und Softwarestand
+- das angewählte NC-Programm (für die Satzanzahl)
+- die Werkzeugtabelle `TOOL.T` (für die Werkzeugnamen)
+
+Programm und Werkzeugtabelle werden auf den Rechner kopiert und nur dort ausgewertet.
+
+**Technischer Schutz:** Jede Verbindung zur Steuerung läuft über einen Schreibschutz
+(`app/adapters/lsv2_guard.py`). Er prüft jeden einzelnen LSV2-Befehl vor dem Senden gegen eine
+Positivliste:
+
+| erlaubt | Zweck |
+|---|---|
+| Anmelden / Abmelden (nur INSPECT, FILE, DNC) | Leserechte für diese Verbindung |
+| R_VR, R_PR, R_CI | Version, Schnittstellenparameter, Systeminfo lesen |
+| R_RI | Status lesen |
+| R_FI, R_FL | Dateiinfo und Datei lesen |
+| C_CC nur Puffergröße und Übertragungsart | Einstellung dieser Verbindung, keine Daten der Steuerung |
+
+Alles andere wird blockiert, bevor es den Rechner verlässt, zum Beispiel Datei senden (C_FL),
+löschen (C_FD), kopieren (C_FC), umbenennen (C_FR), Ordner anlegen oder löschen (C_DM, C_DD),
+Maschinenparameter (C_MC), Tastendruck (C_EK), Tastatursperre (C_LK), Steuerung zurücksetzen und
+Anmeldungen wie PLCDEBUG. Lässt sich der Schutz nicht einrichten (z. B. nach einem Update von
+pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steuerung prüfen das
+(`tests/test_readonly.py`).
 
 ## Begriffe der Auswertung
 

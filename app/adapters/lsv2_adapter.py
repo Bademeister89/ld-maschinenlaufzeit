@@ -1,8 +1,9 @@
 """Adapter für Heidenhain-Steuerungen (iTNC 530 / TNC 640) über LSV2 mit pyLSV2.
 
-Es werden ausschließlich lesende Abfragen verwendet. ``safe_mode=False`` ist nur nötig,
-weil pyLSV2 sonst den DNC-Login (Option 18) verweigert – ohne ihn gibt es keinen
-Programmstatus.
+Es werden ausschließlich lesende Abfragen verwendet. Jede Verbindung entsteht über
+``open_lsv2`` (lsv2_guard.py): Ein Schreibschutz lässt nur Lesetelegramme zur Steuerung durch.
+``safe_mode=False`` (nur Statusverbindung) ist nötig, weil pyLSV2 sonst den DNC-Login
+(Option 18) verweigert – ohne ihn gibt es keinen Programmstatus.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from ..nc_program import ProgramFile, count_blocks
 from ..netcheck import reachable
 from ..tool_table import TOOL_TABLE, TOOL_TABLE_MAX_BYTES, ToolTableFile, parse_tool_table
 from .base import AdapterError, Snapshot
+from .lsv2_guard import open_lsv2
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class Lsv2Adapter:
     def connect(self) -> dict[str, str]:
         self.close()
         try:
-            con = pyLSV2.LSV2(self.host, port=self.port, timeout=self.timeout, safe_mode=False)
+            con = open_lsv2(self.host, self.port, self.timeout, dnc=True)
             con.connect()
         except Exception as exc:
             raise AdapterError(f"Keine LSV2-Verbindung zu {self.host}:{self.port} ({exc})") from exc
@@ -104,7 +106,7 @@ class Lsv2Adapter:
         """NC-Programm lesen und Sätze zählen – über eine eigene, rein lesende Verbindung
         (ohne DNC-Login), damit die laufende Statusabfrage nicht blockiert wird."""
         try:
-            con = pyLSV2.LSV2(self.host, port=self.port, timeout=max(self.timeout, 10.0), safe_mode=True)
+            con = open_lsv2(self.host, self.port, max(self.timeout, 10.0), dnc=False)
             con.connect()
         except Exception as exc:
             raise AdapterError(f"Keine LSV2-Verbindung zum Lesen von {path} ({exc})") from exc
@@ -134,7 +136,7 @@ class Lsv2Adapter:
         """Werkzeugnamen aus TOOL.T lesen (eigene, rein lesende Verbindung wie bei den Programmen).
         None = seit dem letzten Lesen unverändert."""
         try:
-            con = pyLSV2.LSV2(self.host, port=self.port, timeout=max(self.timeout, 10.0), safe_mode=True)
+            con = open_lsv2(self.host, self.port, max(self.timeout, 10.0), dnc=False)
             con.connect()
         except Exception as exc:
             raise AdapterError(f"Keine LSV2-Verbindung zum Lesen von {TOOL_TABLE} ({exc})") from exc
