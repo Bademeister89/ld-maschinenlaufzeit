@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
+from . import __version__
 from .config import DEFAULT_CONFIG, IS_PORTABLE
 from .probe import run_probe
 from .registry import MAX_IMAGE_BYTES, ConfigError, MachineManager, MachineNotFound, validate_machine
@@ -46,6 +47,7 @@ def overview(request: Request) -> dict[str, Any]:
     return {
         "machines": [m.public() for m in ctx.manager.machines()],
         "settings": {
+            "version": __version__,
             "simulate": s.simulate,
             "portable": IS_PORTABLE,
             "data_dir": str(s.data_dir),

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aufträge</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230ca30c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">LD Maschinenlaufzeit</div>
+      <nav class="nav" aria-label="Seiten">
+        <a href="./">Live</a>
+        <a href="auswertung.html">Auswertung</a>
+        <a href="auftraege.html" aria-current="page">Aufträge</a>
+        <a href="konfiguration.html">Konfiguration</a>
+      </nav>
+      <div class="topbar-status">
+        <span id="sim" class="sim-badge" hidden>Simulation – keine echten Maschinendaten</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="banner" class="banner error" hidden></div>
+
+    <div class="card filters" role="group" aria-label="Filter">
+      <div class="segmented" id="status" role="group" aria-label="Status">
+        <button type="button" data-status="open">Offen</button>
+        <button type="button" data-status="closed">Abgeschlossen</button>
+        <button type="button" data-status="all">Alle</button>
+      </div>
+      <label class="field">Suche
+        <input type="search" id="search" placeholder="Auftragsnummer oder Bezeichnung" autocomplete="off">
+      </label>
+      <span class="spacer"></span>
+      <span class="muted" id="count"></span>
+    </div>
+
+    <section class="section card">
+      <div class="section-head">
+        <h2>Aufträge</h2>
+        <p class="muted">Werden automatisch angelegt, sobald ein Programm nach dem Schema
+          <span class="num">JJ-Auftrag-Aufspannung-Programm</span> (z. B. 26-21055-01-01) an einer Maschine auftaucht.</p>
+      </div>
+      <div class="table-wrap" id="orders"></div>
+    </section>
+
+    <section class="section" id="detail" hidden></section>
+  </main>
+
+  <script type="module" src="auftraege.js"></script>
+</body>
+</html>

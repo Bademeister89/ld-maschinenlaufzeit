@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS run_progress (
     line_no INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_progress_run ON run_progress(run_id, t_run);
+CREATE TABLE IF NOT EXISTS orders (
+    key        TEXT PRIMARY KEY,
+    year       INTEGER NOT NULL,
+    number     TEXT NOT NULL,
+    title      TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL DEFAULT 'open',
+    created_at REAL NOT NULL,
+    closed_at  REAL
+);
 CREATE TABLE IF NOT EXISTS program_files (
     machine_id TEXT NOT NULL REFERENCES machines(id),
     path       TEXT NOT NULL,
@@ -119,6 +128,13 @@ class Database:
         ):
             if name not in columns:
                 self._con.execute(f"ALTER TABLE machines ADD COLUMN {name} {ddl}")
+        # v4 → v5: Auftragsnummer (aus dem Programmnamen) an Zustandsabschnitten und Läufen
+        for table in ("state_intervals", "program_runs"):
+            columns = {row["name"] for row in self._con.execute(f"PRAGMA table_info({table})")}
+            if "order_key" not in columns:
+                self._con.execute(f"ALTER TABLE {table} ADD COLUMN order_key TEXT")
+        self._con.execute("CREATE INDEX IF NOT EXISTS ix_intervals_order ON state_intervals(order_key)")
+        self._con.execute("CREATE INDEX IF NOT EXISTS ix_runs_order ON program_runs(order_key)")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:
@@ -232,11 +248,12 @@ class Database:
         run_id: int | None,
         started_at: float,
         last_seen: float,
+        order_key: str | None = None,
     ) -> int:
         cur = self._execute(
-            "INSERT INTO state_intervals(machine_id, state, pgm_state, exec_mode, program, run_id, started_at, last_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (machine_id, state, pgm_state, exec_mode, program, run_id, started_at, last_seen),
+            "INSERT INTO state_intervals(machine_id, state, pgm_state, exec_mode, program, run_id, started_at, "
+            "last_seen, order_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (machine_id, state, pgm_state, exec_mode, program, run_id, started_at, last_seen, order_key),
         )
         return int(cur.lastrowid)
 
@@ -268,10 +285,12 @@ class Database:
 
     # --- Programmdurchläufe --------------------------------------------------------
 
-    def start_run(self, machine_id: str, program: str | None, t: float, start_observed: bool) -> int:
+    def start_run(
+        self, machine_id: str, program: str | None, t: float, start_observed: bool, order_key: str | None = None
+    ) -> int:
         cur = self._execute(
-            "INSERT INTO program_runs(machine_id, program, started_at, start_observed) VALUES (?, ?, ?, ?)",
-            (machine_id, program, t, int(start_observed)),
+            "INSERT INTO program_runs(machine_id, program, started_at, start_observed, order_key) VALUES (?, ?, ?, ?, ?)",
+            (machine_id, program, t, int(start_observed), order_key),
         )
         return int(cur.lastrowid)
 
@@ -313,6 +332,100 @@ class Database:
             "GROUP BY r.id ORDER BY r.started_at DESC LIMIT ?",
             (machine_id, program, limit),
         )
+
+    # --- Aufträge ------------------------------------------------------------------------
+
+    def ensure_order(self, key: str, year: int, number: str, t: float, reopen: bool = False) -> str | None:
+        """Auftrag anlegen, falls neu. Liefert "created", "reopened" oder None."""
+        cur = self._execute(
+            "INSERT INTO orders(key, year, number, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO NOTHING",
+            (key, year, number, t),
+        )
+        if cur.rowcount:
+            return "created"
+        if reopen:
+            cur = self._execute(
+                "UPDATE orders SET status = 'open', closed_at = NULL WHERE key = ? AND status = 'closed'", (key,)
+            )
+            if cur.rowcount:
+                return "reopened"
+        return None
+
+    _ORDER_COLUMNS = "key, year, number, title, status, created_at, closed_at"
+
+    def orders(self, status: str = "all") -> list[dict[str, Any]]:
+        where, params = ("", ()) if status == "all" else ("WHERE status = ? ", (status,))
+        return self._query(f"SELECT {self._ORDER_COLUMNS} FROM orders {where}ORDER BY created_at DESC", params)
+
+    def order(self, key: str) -> dict[str, Any] | None:
+        rows = self._query(f"SELECT {self._ORDER_COLUMNS} FROM orders WHERE key = ?", (key,))
+        return rows[0] if rows else None
+
+    def update_order(self, key: str, title: str, status: str, t: float) -> None:
+        self._execute(
+            "UPDATE orders SET title = ?, status = ?, "
+            "closed_at = CASE WHEN ? = 'closed' THEN COALESCE(closed_at, ?) ELSE NULL END WHERE key = ?",
+            (title, status, status, t, key),
+        )
+
+    def programs_without_order(self) -> list[str]:
+        with self._lock:
+            rows = self._con.execute(
+                "SELECT DISTINCT program FROM state_intervals WHERE order_key IS NULL AND program IS NOT NULL "
+                "UNION SELECT DISTINCT program FROM program_runs WHERE order_key IS NULL AND program IS NOT NULL"
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def assign_order(self, program: str, key: str) -> float:
+        """Auftragsnummer für alle Daten eines Programms nachtragen; liefert den ersten Zeitpunkt."""
+        with self.transaction():
+            self._execute(
+                "UPDATE state_intervals SET order_key = ? WHERE program = ? AND order_key IS NULL", (key, program)
+            )
+            self._execute("UPDATE program_runs SET order_key = ? WHERE program = ? AND order_key IS NULL", (key, program))
+            rows = self._query("SELECT MIN(started_at) AS t FROM state_intervals WHERE program = ?", (program,))
+        return rows[0]["t"] or 0.0
+
+    def order_state_totals(self, states: tuple[str, ...]) -> list[dict[str, Any]]:
+        marks = ", ".join("?" * len(states))
+        return self._query(
+            f"SELECT i.order_key, i.state, SUM({_END} - i.started_at) AS seconds, MIN(i.started_at) AS first, "
+            f"MAX({_END}) AS last FROM state_intervals i WHERE i.order_key IS NOT NULL AND i.run_id IS NOT NULL "
+            f"AND i.state IN ({marks}) GROUP BY i.order_key, i.state",
+            states,
+        )
+
+    def order_run_counts(self) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT order_key, COUNT(*) AS runs, SUM(result = 'finished') AS finished FROM program_runs "
+            "WHERE order_key IS NOT NULL GROUP BY order_key"
+        )
+
+    def order_programs(self) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT order_key, machine_id, program FROM program_runs WHERE order_key IS NOT NULL "
+            "GROUP BY order_key, machine_id, program"
+        )
+
+    def order_program_totals(self, key: str, states: tuple[str, ...]) -> list[dict[str, Any]]:
+        marks = ", ".join("?" * len(states))
+        return self._query(
+            f"SELECT i.program, i.machine_id, i.state, SUM({_END} - i.started_at) AS seconds FROM state_intervals i "
+            f"WHERE i.order_key = ? AND i.run_id IS NOT NULL AND i.state IN ({marks}) "
+            "GROUP BY i.program, i.machine_id, i.state",
+            (key, *states),
+        )
+
+    def order_intervals(self, key: str, states: tuple[str, ...]) -> list[dict[str, Any]]:
+        marks = ", ".join("?" * len(states))
+        return self._query(
+            f"SELECT i.machine_id, i.state, i.program, i.started_at AS start, {_END} AS end FROM state_intervals i "
+            f"WHERE i.order_key = ? AND i.run_id IS NOT NULL AND i.state IN ({marks}) ORDER BY i.started_at",
+            (key, *states),
+        )
+
+    def order_runs(self, key: str) -> list[dict[str, Any]]:
+        return self._query(self._RUN_SELECT + "WHERE r.order_key = ? GROUP BY r.id ORDER BY r.started_at", (key,))
 
     # --- Satzverlauf (Grundlage der Restlaufzeit-Prognose) ------------------------------
 

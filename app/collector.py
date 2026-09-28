@@ -12,6 +12,8 @@ Regeln:
 - Während ein Lauf LÄUFT, wird der Satzverlauf (reine Laufzeit → Satznummer) mitgeschrieben;
   daraus berechnet ``forecast.py`` die Restlaufzeit künftiger Läufe.
 - Angewählte NC-Programme werden im Hintergrund gelesen, um die Satzanzahl zu kennen.
+- Folgt der Programmname dem Schema JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM, bekommen Abschnitte und
+  Läufe die Auftragsnummer; ein neuer Auftrag wird dabei automatisch angelegt (orders.py).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from .adapters.base import MachineAdapter, Snapshot
 from .config import MachineConfig
 from .db import Database
 from .forecast import Forecaster
+from .orders import parse_program
 from .state import RUN_ACTIVE_STATES, MachineState, classify, run_result
 
 log = logging.getLogger(__name__)
@@ -148,7 +151,10 @@ class MachineCollector:
 
         if run is None and state is MachineState.RUNNING:
             start_observed = self._prev_state not in (None, MachineState.OFFLINE)
-            run_id = self._db.start_run(self.machine.id, snap.program, now, start_observed)
+            code = parse_program(snap.program)
+            run_id = self._db.start_run(
+                self.machine.id, snap.program, now, start_observed, code.key if code else None
+            )
             self._run = run = _Run(run_id, snap.program, now, False, start_observed, now)
 
         if run is not None and state is MachineState.ERROR and not run.had_error:
@@ -191,7 +197,16 @@ class MachineCollector:
             self._db.close_interval(cur.id, start)
         if cur is None or cur.key[0] != state.value:
             self._state_since = start
-        interval_id = self._db.open_interval(self.machine.id, *key[:4], run_id, start, now)
+        code = parse_program(snap.program) if snap else None
+        if code is not None:
+            # Neuer Auftrag? Anlegen. Läuft ein abgeschlossener Auftrag wieder, wird er neu geöffnet.
+            change = self._db.ensure_order(code.key, code.year, code.order, start, reopen=state is MachineState.RUNNING)
+            if change:
+                self._db.add_event(self.machine.id, now, f"order_{change}", {"order": code.key, "program": snap.program})
+                log.info("Auftrag %s %s (%s)", code.key, "angelegt" if change == "created" else "wieder geöffnet", code.name)
+        interval_id = self._db.open_interval(
+            self.machine.id, *key[:4], run_id, start, now, order_key=code.key if code else None
+        )
         self._interval = _Interval(interval_id, key, now)
 
     def _record_events(self, snap: Snapshot | None, state: MachineState, now: float, reason: str | None) -> None:
@@ -307,6 +322,7 @@ class MachineCollector:
             "current_program": snap.current_program if snap else None,
             "line_no": snap.line_no if snap else None,
             "blocks": blocks,
+            "order": (code.public() if (code := parse_program(snap.program if snap else None)) else None),
             "tool": snap.tool if snap else None,
             "override": {
                 "feed": snap.override_feed if snap else None,

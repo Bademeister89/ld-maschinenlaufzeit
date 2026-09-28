@@ -86,6 +86,7 @@ function renderList() {
 function renderSettings(s) {
   const item = (label, value) => el("div", {}, el("dt", { text: label }), el("dd", { text: value }));
   $("settings").replaceChildren(
+    item("Version", s.version),
     item("Betriebsart", s.simulate ? "Simulation (Demo-Datenbank)" : "Erfassung der echten Steuerungen"),
     item("Datenordner", s.data_dir),
     item("Datenbank", s.db_path),

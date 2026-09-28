@@ -3,6 +3,9 @@ FROM python:3.14-slim
 LABEL org.opencontainers.image.title="LD Maschinenlaufzeit" \
       org.opencontainers.image.description="Laufzeiterfassung für Heidenhain-Steuerungen über LSV2"
 
+# Version (Datum + Commit) setzt GitHub Actions; die Oberfläche zeigt sie unter Konfiguration an.
+ARG VERSION=dev
+
 # LDM_DATA_DIR statt DB_PATH: So bleibt die Trennung data.db / demo.db (SIMULATE=1) erhalten.
 # PUID/PGID: Besitzer der Dateien in /data (Unraid-Standard: nobody:users = 99:100).
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -11,7 +14,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LDM_DATA_DIR=/data \
     PUID=99 \
     PGID=100 \
-    TZ=Europe/Berlin
+    TZ=Europe/Berlin \
+    LDM_VERSION=$VERSION
 
 # tzdata: Systemzeitzonen, damit TZ auch für die Zeitstempel im Log gilt
 RUN apt-get update \

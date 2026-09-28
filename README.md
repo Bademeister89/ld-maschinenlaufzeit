@@ -6,7 +6,10 @@ spätere Laufzeitauswertungen:
 - **Live:** Läuft die Maschine? Welches Programm, seit wann, welcher Satz, welches Werkzeug, welcher Override?
 - **Auswertung:** Laufzeit und Auslastung je Tag und Maschine, Zeitleiste, Programme mit Stückzeiten,
   CSV-Export für Excel.
-- **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung testen.
+- **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
+  Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
+- **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
+  testen; zeigt die laufende Version.
 
 Die Anbindung läuft über das LSV2-Protokoll (TCP 19000) mit der Open-Source-Bibliothek
 [pyLSV2](https://github.com/drunsinn/pyLSV2), also über dasselbe Protokoll wie TNCremo und das
@@ -106,6 +109,37 @@ Voraussetzungen an jeder Steuerung:
   angewählte Programm und zeigt Satzanzahl und aktuellen Satz. Die Satznummer sollte der Anzeige
   an der Steuerung entsprechen.
 
+## Aufträge (Tab „Aufträge“)
+
+Programme nach dem Schema **`JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM`** werden automatisch einem Auftrag
+zugeordnet, z. B. `26-21055-01-01`:
+
+| Teil | Bedeutung |
+|---|---|
+| `26` | Jahr (2026) |
+| `21055` | Auftragsnummer, 4- oder 5-stellig |
+| `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …) |
+| `01` | Programmnummer, fortlaufend |
+
+- Taucht ein Programm mit einer neuen Auftragsnummer an einer Maschine auf, wird der Auftrag
+  **automatisch angelegt**. Schlüssel ist Jahr + Nummer (`26-21055`), falls eine Nummer in einem
+  späteren Jahr wieder vorkommt. Zusätze nach der Programmnummer (`26-21055-01-01_Schlichten.H`)
+  und Unterstriche statt Bindestriche werden ebenfalls erkannt.
+- **Gezählt wird die Zeit der Programmdurchläufe:** Laufzeit sowie Stopps und Fehler innerhalb der
+  Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
+  angewähltes Programm dem Auftrag Tage gutschreiben.
+- **Liste:** Status (läuft gerade / offen / abgeschlossen), Aufspannungen, Programme, Laufzeit,
+  Stopps, fertige Läufe, Maschinen, letzte Aktivität. Suche nach Nummer oder Bezeichnung.
+- **Detail:**
+  - Bezeichnung (z. B. Kunde, Bauteil), Abschließen / Wieder öffnen.
+  - Welche Maschine den Auftrag gerade fährt, mit Restlaufzeit.
+  - Je Aufspannung die Programme mit Läufen, Laufzeit und **Ø Laufzeit je Teil**.
+  - **Ø Bearbeitungszeit je Teil:** die Summe der Ø-Laufzeiten aller Programme über alle
+    Aufspannungen, gerechnet nur aus vollständig erfassten, fertigen Läufen.
+  - Laufzeit je Tag, alle Läufe, CSV-Export.
+- Läuft ein abgeschlossener Auftrag wieder an, wird er automatisch wieder geöffnet.
+- Daten, die vor der Auftragsauswertung erfasst wurden, werden beim Start einmalig nachgetragen.
+
 ## Begriffe der Auswertung
 
 | Zustand | Bedeutung (Heidenhain-Programmstatus) |
@@ -160,27 +194,48 @@ Interaktive Doku: <http://localhost:8000/docs>.
 Das Image wird bei jedem Push auf `main` von GitHub Actions gebaut und liegt unter
 `ghcr.io/bademeister89/ld-maschinenlaufzeit:latest`. Auf Unraid ist kein Terminal nötig.
 
-### Container anlegen
+### Container anlegen (Schritt für Schritt, geprüft mit Unraid 6.12.15)
 
-Am einfachsten über die Vorlage aus dem Repo: Auf dem Tab **Docker** unter *Template Repositories*
-`https://github.com/Bademeister89/ld-maschinenlaufzeit` eintragen und speichern. Danach steht unter
-**Add Container** das Template `ld-maschinenlaufzeit` bereit. Alternativ die Datei
-`unraid/ld-maschinenlaufzeit.xml` über die Flash-Freigabe nach
-`config\plugins\dockerMan\templates-user\` kopieren oder die Felder von Hand ausfüllen:
+1. **Freien Port wählen:** Reiter **DOCKER**, Spalte *Port-Zuordnungen*. Ist `8000` schon belegt
+   (z. B. durch Paperless), einen anderen Host-Port nehmen, z. B. `8030`.
+2. Reiter **DOCKER** → ganz unten **Container hinzufügen** (*Add Container*).
+3. Oben rechts **Erweiterte Ansicht** (*Advanced View*) einschalten, sonst fehlt das Feld „WebUI“.
+4. Oberes Formular:
 
-| Feld | Wert |
-|---|---|
-| Name | `ld-maschinenlaufzeit` |
-| Repository | `ghcr.io/bademeister89/ld-maschinenlaufzeit:latest` |
-| Network Type | `bridge`, mit VPN-Tunnel siehe unten |
-| WebUI | `http://[IP]:[PORT:8000]/` |
-| Port | Container `8000` → Host `8000` |
-| Pfad | Container `/data` → `/mnt/user/appdata/ld-maschinenlaufzeit` |
-| Variable | `TZ` = `Europe/Berlin` |
+   | Feld | Eintrag |
+   |---|---|
+   | Vorlage (*Template*) | leer lassen |
+   | Name | `ld-maschinenlaufzeit` |
+   | Repository | `ghcr.io/bademeister89/ld-maschinenlaufzeit:latest` |
+   | WebUI | `http://[IP]:[PORT:8000]/` (bleibt so, auch bei anderem Host-Port) |
+   | Netzwerktyp (*Network Type*) | `Bridge` (mit VPN-Tunnel siehe unten) |
 
-Optional: `PUID`/`PGID` (Standard 99/100 = nobody:users), `SIMULATE=1` zum Ausprobieren.
+5. **Port:** unten „Einen weiteren Pfad, Port, Variable, Label oder Gerät hinzufügen“ →
+   Typ **Port**, Name `Oberfläche`, Container-Port `8000`, Host-Port `8000` bzw. `8030`, TCP → **Hinzufügen**.
+6. **Pfad:** gleicher Link → Typ **Pfad**, Name `Daten`, Container-Pfad `/data`,
+   Host-Pfad `/mnt/user/appdata/ld-maschinenlaufzeit`, Read/Write → **Hinzufügen**.
+7. **Variablen:** gleicher Link, je Typ **Variable**:
 
-- **Update:** In der Docker-Übersicht auf „Update“ klicken, sobald ein neues Image gebaut wurde.
+   | Name | Schlüssel | Wert |
+   |---|---|---|
+   | Zeitzone | `TZ` | `Europe/Berlin` |
+   | Simulation | `SIMULATE` | `1` zum Ausprobieren, `0` für echten Betrieb |
+   | PUID | `PUID` | `99` |
+
+8. **Anwenden** (*Apply*), warten bis das Image geladen ist, **Fertig**.
+9. **Prüfen:** Container steht auf *started* → Icon anklicken → **WebUI**. Im Simulationsmodus
+   erscheinen zwei simulierte Maschinen. Unter Icon → **Protokolle** steht „Start: 2 Maschine(n), SIMULATION“.
+
+**Auf echten Betrieb umstellen:** Icon → **Bearbeiten**, `SIMULATE` = `0`, **Anwenden**. Die Simulation
+schreibt in eine eigene `demo.db`; echte Daten landen in `data.db`.
+
+**Alternative mit Vorlage:** `unraid/ld-maschinenlaufzeit.xml` über die Flash-Freigabe nach
+`config\plugins\dockerMan\templates-user\` kopieren, dann unter *Vorlage* auswählen (nicht geprüft).
+
+- **Update:** Nach jedem Push baut GitHub ein neues Image; im Reiter DOCKER erscheint beim Container
+  „Update“ (ggf. unten *Nach Updates suchen*). Ein Klick aktualisiert – kein Terminal, kein Script.
+  Die laufende Version steht im Tab **Konfiguration → Allgemein → Version** (Build-Datum und Commit,
+  z. B. `2026-09-28-1a2b3c4`); Daten und Maschinen bleiben beim Update erhalten.
 - **Sicherung:** `appdata/ld-maschinenlaufzeit` sichern, z. B. mit dem Plugin „Appdata Backup“.
 - **Keine Anmeldung:** Die Oberfläche hat keinen Login. Nicht ins Internet freigeben;
   Fernzugriff z. B. über Tailscale.

@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import MachineConfig, Settings
-from app.db import Database
+from app.db import SCHEMA_VERSION, Database
 from app.main import create_app
 from app.registry import slugify
 
@@ -174,7 +174,7 @@ def test_migration_from_schema_v1(tmp_path):
     db = Database(path)
     row = db.machine("dmg1")
     assert (row["note"], row["sort_order"], row["image"], row["removed"], row["check_host"]) == ("", 0, None, 0, "")
-    assert db.get_meta("schema_version") == "4"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     db.close()
 
 

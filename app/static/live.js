@@ -205,6 +205,13 @@ function renderLive(m, now) {
         { class: "program" },
         el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
         m.program ? el("div", { class: "program-path", text: [m.program, current].filter(Boolean).join(" · ") }) : null,
+        m.order
+          ? el(
+              "a",
+              { class: "order-link", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}` },
+              `Auftrag ${m.order.order} (${m.order.year}) · Aufspannung ${m.order.setup} · Programm ${String(m.order.program).padStart(2, "0")}`,
+            )
+          : null,
       ),
       el(
         "dl",

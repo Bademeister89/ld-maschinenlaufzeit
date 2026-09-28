@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import stats
+from . import __version__, stats
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, RUN_RESULT_LABELS, STATE_LABELS
 
 if TYPE_CHECKING:
@@ -72,6 +72,7 @@ def meta(request: Request) -> dict[str, Any]:
         "machines": [m.public() for m in ctx.manager.machines()],
         "timezone": ctx.settings.timezone,
         "simulate": ctx.settings.simulate,
+        "version": __version__,
         "poll_interval_s": ctx.settings.poll_interval_s,
         "labels": {
             "state": {**{s.value: label for s, label in STATE_LABELS.items()}, stats.NO_DATA: "Keine Daten"},

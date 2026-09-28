@@ -17,13 +17,25 @@ from zoneinfo import ZoneInfo
 from ..nc_program import ProgramFile
 from .base import AdapterError, Snapshot
 
-PROGRAMS = (
-    "TNC:\\PROD\\GEHAEUSE_A12.H",
-    "TNC:\\PROD\\FLANSCH_D80.H",
-    "TNC:\\PROD\\DECKEL_7730.H",
-    "TNC:\\PROD\\HALTER_V2.H",
-    "TNC:\\KUNDE\\MUELLER\\PLATTE_400.H",
+# Aufträge nach dem Namensschema JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM:
+# (Auftrag, ((Aufspannung, Anzahl Programme), …))
+ORDERS = (
+    ("26-21055", ((1, 2), (2, 1))),
+    ("26-21102", ((1, 1), (2, 1))),
+    ("26-4711", ((1, 1),)),
+    ("26-20988", ((1, 2), (2, 2))),
+    ("26-5023", ((1, 1), (2, 1), (3, 1))),
+    ("26-21230", ((1, 1), (2, 1))),
 )
+# Je Aufspannung die Programme in Reihenfolge: {Auftrag: [[Programme Aufspannung 1], …]}
+ORDER_SETUPS = {
+    order: [
+        [f"TNC:\\AUFTRAG\\{order}-{setup:02d}-{number:02d}.H" for number in range(1, count + 1)]
+        for setup, count in setups
+    ]
+    for order, setups in ORDERS
+}
+PROGRAMS = tuple(p for setups in ORDER_SETUPS.values() for programs in setups for p in programs)
 TOOLS = (
     (1, "NC-ANBOHRER"),
     (5, "BOHRER_D8.5"),
@@ -63,7 +75,7 @@ class SimulatedMachine:
         # Programmeigenschaften hängen nur vom Programmnamen ab: Jede simulierte Maschine und
         # die Demo-Historie fahren dasselbe Programm gleich (wichtig für die Restlaufzeit).
         program_rngs = {p: random.Random(zlib.crc32(p.encode())) for p in PROGRAMS}
-        self._cycle_min = {p: r.uniform(4, 18) for p, r in program_rngs.items()}
+        self._cycle_min = {p: r.uniform(3, 12) for p, r in program_rngs.items()}
         self.program_blocks = {p: r.randint(400, 3000) for p, r in program_rngs.items()}
         self._plans = {p: self._plan(p, program_rngs[p]) for p in PROGRAMS}
         self._segments = self._generate(start)
@@ -112,20 +124,25 @@ class SimulatedMachine:
                 yield t, None
                 continue
 
-            # Rüsten im manuellen Betrieb, dann Programm anwählen
-            program = rng.choice(PROGRAMS)
-            t += self._minutes(3, 12)
-            yield t, Snapshot("IDLE", "MANUAL", program=last_program)
-            t += self._minutes(0.5, 3)
-            yield t, Snapshot("IDLE", "AUTOMATIC", program=program, current_program=program)
-            last_program = program
-
-            for _ in range(rng.randint(2, 8)):
+            # Ein Los eines Auftrags: je Aufspannung rüsten, dann jedes Teil mit allen
+            # Programmen dieser Aufspannung nacheinander bearbeiten
+            order = rng.choice(ORDERS)[0]
+            quantity = rng.randint(2, 6)
+            for programs in ORDER_SETUPS[order]:
                 if not self._in_shift(t):
                     break
-                t, ok = yield from self._part(t, program)
-                if not ok:
-                    break
+                t += self._minutes(3, 12)
+                yield t, Snapshot("IDLE", "MANUAL", program=last_program)
+                for _ in range(quantity):
+                    if not self._in_shift(t):
+                        break
+                    for program in programs:
+                        t += self._minutes(0.2, 1)
+                        yield t, Snapshot("IDLE", "AUTOMATIC", program=program, current_program=program)
+                        last_program = program
+                        t, ok = yield from self._part(t, program)
+                        if not ok:
+                            break  # Störung: Teil abgebrochen, weiter mit dem nächsten
 
     def _plan(self, program: str, rng: random.Random) -> list[tuple[str, float, int, int]]:
         """Fester Ablauf je Programm: (Werkzeug, Zeitanteil, erster Satz, letzter Satz).

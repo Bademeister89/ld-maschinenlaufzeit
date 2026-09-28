@@ -575,8 +575,48 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, button:focus-visi
 .settings-list dt { font-size: 12px; color: var(--muted); }
 .settings-list dd { margin: 0; font-weight: 550; overflow-wrap: anywhere; }
 
+/* --- Aufträge ---------------------------------------------------------------- */
+
+.order-link { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 600; text-decoration: none; }
+.order-link:hover { text-decoration: underline; }
+.order-key { font-weight: 650; color: var(--ink); text-decoration: none; }
+.order-title { font-size: 13px; color: var(--ink-2); }
+.order-status {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.order-status.open { background: var(--accent-wash); color: var(--ink); }
+tr.selectable { cursor: pointer; }
+tr.selectable[aria-selected="true"] { background: var(--accent-wash); }
+tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.order-head { display: grid; gap: 12px; }
+.order-head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.order-title-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.order-title-form input { flex: 1; min-width: 200px; max-width: 520px; }
+.active-list { display: grid; gap: 6px; }
+.active-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 550; }
+.setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+input[type="search"] {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--axis);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-width: 240px;
+}
+
 @media (max-width: 640px) {
   .hero-value { font-size: 32px; }
+  input[type="search"] { min-width: 0; width: 100%; }
+  .nav { max-width: 100%; overflow-x: auto; }
+  .nav a { padding: 6px 8px; }
   .day-row { grid-template-columns: 64px minmax(0, 1fr) 64px; gap: 6px; }
   .topbar-status .clock { display: none; }
 }

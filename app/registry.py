@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from . import orders
 from .adapters.base import MachineAdapter
 from .collector import MachineCollector
 from .config import MachineConfig, Settings
@@ -147,6 +148,10 @@ class MachineManager:
                 if self.db.machine(m.id) is None:
                     self.db.insert_machine(m.id, m.name, m.host, m.port, m.note, m.sort_order, m.check_host)
             self.db.set_meta("machines_seeded", "1")
+        # Auftragsnummern für Daten nachtragen, die vor der Auftragsauswertung erfasst wurden
+        assigned = orders.backfill(self.db)
+        if assigned:
+            log.info("Aufträge: %d Programm(e) nachträglich Aufträgen zugeordnet", assigned)
         for machine in self.machines():
             self._spawn(machine)
 
