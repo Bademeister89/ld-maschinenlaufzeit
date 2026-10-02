@@ -1,6 +1,6 @@
 {
-  "name": "LD Maschinenlaufzeit",
-  "short_name": "Laufzeit",
+  "name": "LD-Machine-Viewer",
+  "short_name": "LD-Viewer",
   "description": "Laufzeiterfassung für Heidenhain-Steuerungen",
   "lang": "de",
   "start_url": "./",

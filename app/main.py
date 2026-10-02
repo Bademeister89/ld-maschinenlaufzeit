@@ -138,7 +138,7 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
             await manager.stop()
             db.close()
 
-    app = FastAPI(title="LD Maschinenlaufzeit", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="LD-Machine-Viewer", version=__version__, lifespan=lifespan)
     app.add_middleware(CacheControl)
     app.include_router(api.router)
     app.include_router(config_api.router)

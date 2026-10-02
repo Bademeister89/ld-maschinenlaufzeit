@@ -1,6 +1,6 @@
 # Änderungsprotokoll
 
-Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer folgt dem Schema
+Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt dem Schema
 `MAJOR.MINOR.PATCH`:
 
 - MAJOR: Umstellungen, bei denen man selbst etwas tun muss (z. B. Einstellungen anpassen)
@@ -9,6 +9,16 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
+
+## [1.10.0] – 2026-10-02
+
+### Geändert
+- Neuer Name: **LD-Machine-Viewer** (bisher „LD Maschinenlaufzeit“). Geändert ist der Anzeigename:
+  - Kopfzeile, Name auf dem Handy-Startbildschirm, Konsolenfenster
+  - Desktop-Verknüpfung, Windows-Aufgabe für den Autostart
+- Gleich bleiben Docker-Image, Unraid-Vorlage, appdata-Ordner, ZIP-Name und alle Daten.
+- Portable Version: `autostart-einrichten.cmd` entfernt die alte Aufgabe und Firewall-Regel
+  „LD Maschinenlaufzeit“ automatisch. `verknuepfung-erstellen.cmd` ersetzt die alte Verknüpfung.
 
 ## [1.9.0] – 2026-10-02
 

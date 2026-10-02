@@ -1,11 +1,11 @@
-"""LD Maschinenlaufzeit – Zustandserfassung für Heidenhain-Steuerungen."""
+"""LD-Machine-Viewer – Zustandserfassung für Heidenhain-Steuerungen."""
 
 import os
 from pathlib import Path
 
 # Softwarestand nach dem Schema MAJOR.MINOR.PATCH (siehe README „Versionen“). Bei jeder
 # Auslieferung erhöhen und in CHANGELOG.md beschreiben – ein Test prüft, dass beides zusammenpasst.
-__version__ = "1.9.0"
+__version__ = "1.10.0"
 
 
 def _build() -> str | None:

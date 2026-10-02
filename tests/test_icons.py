@@ -41,7 +41,7 @@ def test_icon_files_are_served(client, path, media_type):
 
 def test_manifest_icons_exist(client):
     manifest = json.loads(client.get("/manifest.webmanifest").content)
-    assert manifest["name"] == "LD Maschinenlaufzeit" and manifest["start_url"] == "./"
+    assert manifest["name"] == "LD-Machine-Viewer" and manifest["start_url"] == "./"
     assert any(icon.get("purpose") == "maskable" for icon in manifest["icons"])
     for icon in manifest["icons"]:
         r = client.get(f"/{icon['src']}")

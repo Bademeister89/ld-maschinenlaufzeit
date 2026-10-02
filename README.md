@@ -1,4 +1,8 @@
-# LD Maschinenlaufzeit
+# LD-Machine-Viewer
+
+Bis Version 1.9.0 hieß die App „LD Maschinenlaufzeit“. Geändert hat sich nur der Anzeigename. Repo,
+Docker-Image (`ghcr.io/bademeister89/ld-maschinenlaufzeit`), Unraid-Vorlage, appdata-Ordner und der
+Name der portablen ZIP bleiben gleich, ebenso alle Daten.
 
 Erfasst laufend den Zustand der Heidenhain-Steuerungen (iTNC 530) der DMG-Fräsen und speichert ihn für
 spätere Laufzeitauswertungen:
@@ -40,7 +44,7 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
    - Der Port der Oberfläche wird in der Windows-Firewall freigegeben.
    - Andere PCs im Netz erreichen die Oberfläche unter `http://<PC-Name>:8000`.
 5. `verknuepfung-erstellen.cmd` ausführen (ohne Adminrechte). Das legt auf dem Desktop und im
-   Startmenü die Verknüpfung **LD Maschinenlaufzeit** mit Symbol an. Ein Klick öffnet die
+   Startmenü die Verknüpfung **LD-Machine-Viewer** mit Symbol an. Ein Klick öffnet die
    Oberfläche; läuft die App noch nicht, startet sie sie vorher. Nach dem Verschieben des Ordners
    erneut ausführen.
 
@@ -60,6 +64,11 @@ und ohne Internetzugang. Voraussetzung ist Windows 10/11 (64 Bit).
 2. Die neue ZIP über den alten Ordner entpacken. Der Ordner `data\` bleibt dabei erhalten, und die
    Maschinen stehen in der Datenbank, nicht in der `config.yaml`.
 3. `autostart-einrichten.cmd` erneut ausführen.
+
+Beim Update von 1.9.0 oder älter auf den neuen Namen räumen beide Skripte die alte Windows-Aufgabe
+und Firewall-Regel „LD Maschinenlaufzeit“ mit ab, auch wenn Schritt 1 vergessen wurde.
+`verknuepfung-erstellen.cmd` ersetzt die alte Verknüpfung „LD Maschinenlaufzeit“ durch
+„LD-Machine-Viewer“, sofern sie auf diesen Ordner zeigt.
 
 **Sicherung:** den ganzen Ordner `data\` kopieren (Datenbank und Bilder), am besten bei beendeter App.
 

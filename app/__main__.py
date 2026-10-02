@@ -26,7 +26,7 @@ def _port_free(host: str, port: int) -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="python -m app", description="LD Maschinenlaufzeit starten")
+    parser = argparse.ArgumentParser(prog="python -m app", description="LD-Machine-Viewer starten")
     parser.add_argument("--simulate", action="store_true", help="simulierte Maschinen (eigene Demo-Datenbank)")
     parser.add_argument("--host", help="Adresse, auf der die Oberfläche lauscht (Standard: config.yaml)")
     parser.add_argument("--port", type=int, help="Port der Oberfläche (Standard: config.yaml)")
@@ -55,7 +55,7 @@ def main() -> None:
     url = f"http://localhost:{port}"
 
     if not _port_free(host, port):
-        print(f"Port {port} ist belegt – läuft LD Maschinenlaufzeit bereits (z. B. über den Autostart)?")
+        print(f"Port {port} ist belegt – läuft LD-Machine-Viewer bereits (z. B. über den Autostart)?")
         print(f"Oberfläche: {url}")
         if args.open:
             # Die Desktop-Verknüpfung startet start.cmd: Läuft die App schon, genügt das Öffnen
@@ -66,7 +66,7 @@ def main() -> None:
 
     if args.open:
         threading.Timer(2.0, webbrowser.open, (url,)).start()
-    print(f"LD Maschinenlaufzeit{' (SIMULATION)' if settings.simulate else ''}")
+    print(f"LD-Machine-Viewer{' (SIMULATION)' if settings.simulate else ''}")
     print(f"Oberfläche: http://localhost:{port}    Datenordner: {settings.data_dir}")
     print("Beenden mit Strg+C\n")
     uvicorn.run("app.main:app", host=host, port=port)

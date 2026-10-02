@@ -1,4 +1,4 @@
-# Konfiguration LD Maschinenlaufzeit
+# Konfiguration LD-Machine-Viewer
 #
 # Die Maschinen (Name, IP, Bild …) werden im Tab "Konfiguration" der Oberfläche gepflegt
 # und in der Datenbank gespeichert. Hier stehen nur allgemeine Einstellungen.

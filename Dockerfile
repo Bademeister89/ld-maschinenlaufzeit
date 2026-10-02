@@ -1,7 +1,7 @@
 FROM python:3.14-slim
 
 # net.unraid.docker.icon: Symbol im Unraid-Reiter DOCKER, auch ohne Vorlage
-LABEL org.opencontainers.image.title="LD Maschinenlaufzeit" \
+LABEL org.opencontainers.image.title="LD-Machine-Viewer" \
       org.opencontainers.image.description="Laufzeiterfassung für Heidenhain-Steuerungen über LSV2" \
       net.unraid.docker.icon="https://raw.githubusercontent.com/Bademeister89/ld-maschinenlaufzeit/main/app/static/icons/icon-512.png"
 

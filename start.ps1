@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Startet LD Maschinenlaufzeit. Legt beim ersten Start die Python-Umgebung an.
+  Startet LD-Machine-Viewer. Legt beim ersten Start die Python-Umgebung an.
 
 .EXAMPLE
   .\start.ps1                 # echte Maschinen aus config.yaml
