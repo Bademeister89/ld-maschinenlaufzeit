@@ -101,9 +101,24 @@ def _public(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def rank_by_calls(rows: list[dict[str, Any]], slots: dict[str, int | None]) -> None:
+    """Je Maschine ``rank`` (1 = meiste Aufrufe; bei Gleichstand die kleinere T-Nummer zuerst, None
+    ohne Aufruf) und ``top``: gehört zu den meistgebrauchten, so viele wie das Magazin Plätze hat."""
+    by_machine: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        row["rank"], row["top"] = None, False
+        if row["calls"]:
+            by_machine.setdefault(row["machine_id"], []).append(row)
+    for machine_id, called in by_machine.items():
+        for rank, row in enumerate(sorted(called, key=lambda r: (-r["calls"], r["number"])), start=1):
+            row["rank"] = rank
+            row["top"] = bool(slots.get(machine_id)) and rank <= slots[machine_id]
+
+
 def list_tools(db: Database, machines: list[dict[str, Any]], spindle: dict[str, tuple[int | None, bool]]) -> dict[str, Any]:
     """Alle Werkzeuge der aktiven Maschinen (in deren Reihenfolge, dann nach T-Nummer).
 
+    ``machines``: ``id``, ``name`` und optional ``tool_slots`` (Werkzeugplätze im Magazin).
     ``spindle``: je Maschine (T-Nummer in der Spindel, Programm läuft) aus dem Live-Status.
     """
     names = {m["id"]: m["name"] for m in machines}
@@ -117,6 +132,7 @@ def list_tools(db: Database, machines: list[dict[str, Any]], spindle: dict[str, 
         rows.append(
             {**_public(row), "machine": names[row["machine_id"]], "in_spindle": in_spindle, "running": in_spindle and running}
         )
+    rank_by_calls(rows, {m["id"]: m.get("tool_slots") for m in machines})
     rows.sort(key=lambda r: (order[r["machine_id"]], r["number"]))
     return {"tools": rows, "alerts": sum(r["status"] == "over" for r in rows)}
 

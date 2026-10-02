@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS machines (
     sort_order INTEGER NOT NULL DEFAULT 0,
     image      TEXT,
     removed    INTEGER NOT NULL DEFAULT 0,
-    check_host TEXT NOT NULL DEFAULT ''
+    check_host TEXT NOT NULL DEFAULT '',
+    tool_slots INTEGER
 );
 CREATE TABLE IF NOT EXISTS program_runs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,6 +167,7 @@ class Database:
         """``tables``: Tabellen, die es vor diesem Start schon gab (leer bei neuer Datenbank)."""
         # v1 → v2: Maschinen werden in der Datenbank gepflegt (Notiz, Reihenfolge, Bild, entfernt)
         # v3 → v4: Prüfadresse am Standort
+        # v8 → v9: Werkzeugplätze im Magazin
         columns = {row["name"] for row in self._con.execute("PRAGMA table_info(machines)")}
         for name, ddl in (
             ("note", "TEXT NOT NULL DEFAULT ''"),
@@ -173,6 +175,7 @@ class Database:
             ("image", "TEXT"),
             ("removed", "INTEGER NOT NULL DEFAULT 0"),
             ("check_host", "TEXT NOT NULL DEFAULT ''"),
+            ("tool_slots", "INTEGER"),
         ):
             if name not in columns:
                 self._con.execute(f"ALTER TABLE machines ADD COLUMN {name} {ddl}")
@@ -260,7 +263,7 @@ class Database:
 
     # --- Maschinen -----------------------------------------------------------------
 
-    _MACHINE_COLUMNS = "id, name, host, port, note, sort_order, image, removed, check_host"
+    _MACHINE_COLUMNS = "id, name, host, port, note, sort_order, image, removed, check_host, tool_slots"
 
     def ensure_machine(self, machine_id: str, name: str, host: str, port: int) -> None:
         """Maschine anlegen, falls es sie noch nicht gibt (bestehende Einträge bleiben unverändert)."""
@@ -286,18 +289,21 @@ class Database:
         note: str = "",
         sort_order: int = 0,
         check_host: str = "",
+        tool_slots: int | None = None,
     ) -> None:
         self._execute(
-            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (machine_id, name, host, port, note, sort_order, check_host),
+            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host, tool_slots) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (machine_id, name, host, port, note, sort_order, check_host, tool_slots),
         )
 
     def update_machine(
-        self, machine_id: str, name: str, host: str, port: int, note: str, check_host: str = ""
+        self, machine_id: str, name: str, host: str, port: int, note: str, check_host: str = "",
+        tool_slots: int | None = None,
     ) -> None:
         self._execute(
-            "UPDATE machines SET name = ?, host = ?, port = ?, note = ?, check_host = ? WHERE id = ?",
-            (name, host, port, note, check_host, machine_id),
+            "UPDATE machines SET name = ?, host = ?, port = ?, note = ?, check_host = ?, tool_slots = ? WHERE id = ?",
+            (name, host, port, note, check_host, tool_slots, machine_id),
         )
 
     def set_machine_order(self, machine_ids: list[str]) -> None:

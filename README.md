@@ -80,6 +80,8 @@ Das Ergebnis liegt in `C:\Users\<Name>\ld-mainmachine\dist\`: der Ordner (ca. 45
   noch diese Adresse, ist die Verbindung zum Standort weg (etwa das VPN). Die Karte zeigt dann
   „Standort nicht erreichbar“, und die Zeit wird als „Keine Daten“ gebucht statt als „Offline“.
   Ohne Prüfadresse gilt jede nicht erreichbare Steuerung als „Offline“.
+- **Werkzeugplätze im Magazin** (optional), z. B. 30 oder 60: Die Werkzeugauswertung markiert dann
+  so viele meistgebrauchte Werkzeuge dieser Maschine (siehe [Aufrufe](#werkzeugauswertung-tab-werkzeugauswertung)).
 - **▲ ▼:** Reihenfolge der Karten auf der Live-Seite.
 - **Entfernen:** Die Maschine wird nicht mehr erfasst. Ihre bisher erfassten Daten bleiben in der
   Datenbank erhalten.
@@ -205,8 +207,11 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Nicht gezählt wird das Werkzeug, das beim Start der App schon in der Spindel steckt, sonst
     entstünde bei jedem Neustart ein Schein-Aufruf. Wechsel, während die App nicht läuft, fehlen.
   - **Meiste Aufrufe** sortiert jede Maschine absteigend nach Aufrufen. So siehst du, welche
-    Werkzeuge du am häufigsten brauchst, z. B. für die Belegung des Magazins. Die Kachel
-    „Meist aufgerufen“ zeigt das Spitzenwerkzeug.
+    Werkzeuge du am häufigsten brauchst. Die Kachel „Meist aufgerufen“ zeigt das Spitzenwerkzeug.
+  - **Top-Werkzeuge fürs Magazin:** Sind in der Konfiguration die Werkzeugplätze der Maschine
+    eingetragen (z. B. 30), tragen die 30 meistgebrauchten Werkzeuge die Marke „Top 30 · Platz 3“.
+    Bei „Meiste Aufrufe“ zeigt eine gestrichelte Linie, wo das Magazin endet. Bei gleich vielen
+    Aufrufen kommt die kleinere T-Nummer zuerst. Werkzeuge ohne Aufruf zählen nie zu den Top.
   - Beim Update auf 1.9.0 werden die Werkzeugwechsel nachgetragen, die seit Version 1.0
     gespeichert sind.
   - Jeder Aufruf wird mit Zeitpunkt gespeichert (Tabelle `tool_calls`), damit sich später auch

@@ -38,6 +38,7 @@ class MachineConfig:
     sort_order: int = 0
     image: str | None = None
     check_host: str = ""  # Prüfadresse am Standort (z. B. Router vor Ort), optional
+    tool_slots: int | None = None  # Werkzeugplätze im Magazin (Top-Werkzeuge nach Aufrufen), optional
 
     @property
     def image_url(self) -> str | None:
@@ -54,6 +55,7 @@ class MachineConfig:
             "sort_order": self.sort_order,
             "image_url": self.image_url,
             "check_host": self.check_host,
+            "tool_slots": self.tool_slots,
         }
 
 

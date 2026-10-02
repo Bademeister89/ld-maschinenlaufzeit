@@ -61,7 +61,12 @@ function renderList() {
           "div",
           { class: "info" },
           el("div", { class: "name" }, m.name, status?.state ? stateBadge(status.state) : null),
-          el("div", { class: "sub", text: [`${m.host}:${m.port}`, m.note, m.check_host && `Prüfadresse ${m.check_host}`].filter(Boolean).join(" · ") }),
+          el("div", {
+            class: "sub",
+            text: [`${m.host}:${m.port}`, m.note, m.check_host && `Prüfadresse ${m.check_host}`, m.tool_slots && `${m.tool_slots} Werkzeugplätze`]
+              .filter(Boolean)
+              .join(" · "),
+          }),
           el("div", { class: "conn", text: connectionText(m) }),
         ),
         el(
@@ -344,6 +349,7 @@ function openEditor(m = null) {
   $("f-port").value = m?.port ?? 19000;
   $("f-note").value = m?.note ?? "";
   $("f-check").value = m?.check_host ?? "";
+  $("f-slots").value = m?.tool_slots ?? "";
   $("img-input").value = "";
   $("f-probe").replaceChildren();
   setError(null);
@@ -361,6 +367,7 @@ async function save(event) {
     port: Number($("f-port").value) || 19000,
     note: $("f-note").value.trim(),
     check_host: $("f-check").value.trim(),
+    tool_slots: $("f-slots").value.trim() || null,
   };
   const button = $("f-save");
   button.disabled = true;

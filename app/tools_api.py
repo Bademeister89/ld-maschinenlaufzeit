@@ -31,7 +31,10 @@ def _ctx(request: Request) -> AppContext:
 
 
 def _machines(ctx: AppContext) -> list[dict[str, Any]]:
-    return [{"id": c.machine.id, "name": c.machine.name} for c in ctx.manager.ordered_collectors()]
+    return [
+        {"id": c.machine.id, "name": c.machine.name, "tool_slots": c.machine.tool_slots}
+        for c in ctx.manager.ordered_collectors()
+    ]
 
 
 def _spindle(ctx: AppContext) -> dict[str, tuple[int | None, bool]]:

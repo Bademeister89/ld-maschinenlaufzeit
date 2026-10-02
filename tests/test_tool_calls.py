@@ -197,3 +197,72 @@ def test_csv_has_calls_as_last_column(client):
     header, *rows = text.strip().split("\r\n")
     assert header.split(";")[-1] == "Aufrufe"
     assert {r.split(";")[1]: r.split(";")[-1] for r in rows} == {"T5": "2", "T7": "1", "T109": "2"}
+
+
+# --- Werkzeugplätze: die meistgebrauchten Werkzeuge je Magazin ---------------------------------
+
+
+def test_rank_by_calls_marks_top_per_machine():
+    rows = [
+        {"machine_id": "m1", "number": n, "calls": c}
+        for n, c in ((1, 5), (2, 9), (3, 5), (4, 0), (5, 1))
+    ] + [{"machine_id": "m2", "number": 1, "calls": 3}]
+    tools.rank_by_calls(rows, {"m1": 3, "m2": None})
+    got = {(r["machine_id"], r["number"]): (r["rank"], r["top"]) for r in rows}
+    assert got == {
+        ("m1", 2): (1, True),
+        ("m1", 1): (2, True),  # Gleichstand mit T3: kleinere Nummer zuerst
+        ("m1", 3): (3, True),
+        ("m1", 5): (4, False),  # außerhalb der 3 Plätze
+        ("m1", 4): (None, False),  # nie aufgerufen
+        ("m2", 1): (1, False),  # keine Werkzeugplätze eingetragen: keine Markierung
+    }
+
+
+def machine_payload(**extra):
+    return {"name": "DMG 1", "host": "10.0.0.1", "port": 19000, **extra}
+
+
+def test_tool_slots_in_config_and_tool_list(client):
+    assert client.get("/api/config").json()["machines"][0]["tool_slots"] is None
+    r = client.put("/api/config/machines/m1", json=machine_payload(tool_slots="2"))
+    assert r.status_code == 200 and r.json()["tool_slots"] == 2
+    data = client.get("/api/tools").json()
+    assert data["machines"][0]["tool_slots"] == 2  # wirkt sofort, ohne Neustart
+    got = {t["number"]: (t["calls"], t["rank"], t["top"]) for t in data["tools"]}
+    assert got == {5: (2, 1, True), 109: (2, 2, True), 7: (1, 3, False)}
+    # leer = keine Angabe
+    assert client.put("/api/config/machines/m1", json=machine_payload(tool_slots="")).json()["tool_slots"] is None
+    assert not any(t["top"] for t in client.get("/api/tools").json()["tools"])
+
+
+@pytest.mark.parametrize("value", [0, -1, 1001, "abc", "2,5", 2.5])
+def test_tool_slots_validation(client, value):
+    r = client.put("/api/config/machines/m1", json=machine_payload(tool_slots=value))
+    assert r.status_code == 400
+    assert "Werkzeugplätze" in r.json()["detail"]
+
+
+def test_new_machine_with_tool_slots(client):
+    r = client.post("/api/config/machines", json={"name": "DMU 70", "host": "10.0.0.9", "tool_slots": 60})
+    assert r.status_code == 201 and r.json()["tool_slots"] == 60
+
+
+def test_machines_table_gets_tool_slots_column(tmp_path):
+    path = tmp_path / "alt.db"
+    con = sqlite3.connect(path)
+    con.executescript(
+        "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+        "INSERT INTO meta VALUES ('schema_version', '8');"
+        "CREATE TABLE machines (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL,"
+        " note TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, image TEXT,"
+        " removed INTEGER NOT NULL DEFAULT 0, check_host TEXT NOT NULL DEFAULT '');"
+        "INSERT INTO machines(id, name, host, port) VALUES ('m1', 'DMG 1', '10.0.0.1', 19000);"
+    )
+    con.commit()
+    con.close()
+    db = Database(path)
+    assert db.machine("m1")["tool_slots"] is None
+    db.update_machine("m1", "DMG 1", "10.0.0.1", 19000, "", "", 30)
+    assert db.machine("m1")["tool_slots"] == 30
+    db.close()

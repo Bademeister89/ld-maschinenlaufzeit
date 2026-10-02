@@ -65,6 +65,27 @@ function statusBadge(t) {
   return null;
 }
 
+const slotsOf = (machineId) => data.machines.find((m) => m.id === machineId)?.tool_slots ?? null;
+
+/** "Top 30 · Platz 3": gehört zu den meistgebrauchten Werkzeugen, so viele wie das Magazin Plätze hat. */
+function topBadge(t) {
+  if (!t.top) return null;
+  return el("span", {
+    class: "tool-badge top",
+    title: `Platz ${t.rank} nach Aufrufen – gehört zu den ${slotsOf(t.machine_id)} meistgebrauchten Werkzeugen (Werkzeugplätze im Magazin)`,
+    text: `Top ${slotsOf(t.machine_id)} · Platz ${t.rank}`,
+  });
+}
+
+/** Trennlinie bei „Meiste Aufrufe“: hier endet das Magazin. */
+function slotsDivider(slots) {
+  return el(
+    "div",
+    { class: "tool-top-divider", role: "separator" },
+    el("span", { text: `Magazin: ${slots} Plätze – darunter die seltener gebrauchten Werkzeuge` }),
+  );
+}
+
 function spindleBadge(t) {
   if (!t.in_spindle) return null;
   return el("span", { class: `tool-badge spindle${t.running ? " running" : ""}`, text: t.running ? "▶ Im Einsatz" : "● In der Spindel" });
@@ -164,7 +185,7 @@ function toolRow(t) {
     ),
     callsCell(t),
     usage(t),
-    el("div", { class: "tool-flags" }, statusBadge(t), spindleBadge(t)),
+    el("div", { class: "tool-flags" }, statusBadge(t), spindleBadge(t), topBadge(t)),
     el(
       "div",
       { class: "tool-actions" },
@@ -248,6 +269,17 @@ function render() {
     ...machines.map((m) => {
       const rows = sorted(shown.filter((t) => t.machine_id === m.id));
       const total = all.filter((t) => t.machine_id === m.id).length;
+      const items = rows.map(toolRow);
+      if (state.sort === "calls" && m.tool_slots) {
+        // Nach dem letzten Top-Werkzeug eine Linie: oberhalb das, was ins Magazin gehört
+        const cut = rows.findLastIndex((t) => t.top) + 1;
+        if (cut > 0 && cut < rows.length) items.splice(cut, 0, slotsDivider(m.tool_slots));
+      }
+      const slotsInfo = m.tool_slots
+        ? el("span", { class: "muted", text: `· Magazin ${m.tool_slots} Plätze` })
+        : state.sort === "calls"
+          ? el("a", { class: "muted slots-hint", href: "konfiguration.html", text: "Werkzeugplätze eintragen, um die Top-Werkzeuge zu markieren" })
+          : null;
       return el(
         "section",
         { class: "section card" },
@@ -259,9 +291,10 @@ function render() {
             class: "muted",
             text: rows.length === total ? `${total} ${total === 1 ? "Werkzeug" : "Werkzeuge"}` : `${rows.length} von ${total}`,
           }),
+          slotsInfo,
         ),
         rows.length
-          ? el("div", { class: "tool-list" }, rows.map(toolRow))
+          ? el("div", { class: "tool-list" }, items)
           : el("p", {
               class: "empty",
               text: total ? "Kein Werkzeug passt zum Filter." : "Noch keine Werkzeuge – sie erscheinen, sobald ein Werkzeug in der Spindel ist.",

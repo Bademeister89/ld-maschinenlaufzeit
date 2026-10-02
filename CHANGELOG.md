@@ -19,6 +19,9 @@ Dort ist auch dieses Protokoll zu sehen.
     getrennt und seit Beginn der Erfassung. Zurücksetzen ändert daran nichts.
   - Sortierung „Meiste Aufrufe“: zeigt oben die Werkzeuge, die am häufigsten gebraucht werden.
   - Neue Kachel „Meist aufgerufen“ und Spalte „Aufrufe“ im CSV-Export (letzte Spalte).
+- Werkzeugplätze je Maschine (Konfiguration → Bearbeiten, z. B. 30 oder 60): Die Werkzeugauswertung
+  markiert so viele meistgebrauchte Werkzeuge mit „Top 30 · Platz 3“. Bei „Meiste Aufrufe“ zeigt
+  eine Linie, wo das Magazin endet.
   - Die bisher gespeicherten Werkzeugwechsel werden beim Update einmalig nachgetragen, die Zahlen
     starten also nicht bei 0.
 

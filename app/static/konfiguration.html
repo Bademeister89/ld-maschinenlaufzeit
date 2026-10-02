@@ -93,6 +93,11 @@
         <label class="form-field">Standort / Notiz
           <input type="text" id="f-note" maxlength="200" autocomplete="off" placeholder="z. B. Halle 2, Baujahr 2016">
         </label>
+        <label class="form-field">Werkzeugplätze im Magazin (optional)
+          <input type="number" id="f-slots" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off" placeholder="z. B. 30" class="slots-input">
+          <span class="field-hint">Die Werkzeugauswertung markiert dann so viele meistgebrauchte Werkzeuge dieser Maschine
+            („Top 30“), sortiert nach Aufrufen.</span>
+        </label>
         <label class="form-field">Prüfadresse am Standort (optional)
           <input type="text" id="f-check" maxlength="260" autocomplete="off" placeholder="z. B. 192.168.0.1 (Router vor Ort)">
           <span class="field-hint">Antworten weder die Steuerung noch diese Adresse, ist die Verbindung zum Standort weg

@@ -27,6 +27,7 @@ from .netcheck import parse_address
 log = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+TOOL_SLOTS_MAX = 1000  # wie der Nummernkreis der Werkzeuge
 _HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 AdapterFactory = Callable[[MachineConfig], MachineAdapter]
@@ -73,7 +74,27 @@ def validate_machine(data: dict[str, Any]) -> dict[str, Any]:
             parse_address(check_host)
         except ValueError as exc:
             raise ConfigError(f"Prüfadresse: {exc}") from None
-    return {"name": name, "host": host, "port": port, "note": note, "check_host": check_host}
+    return {
+        "name": name,
+        "host": host,
+        "port": port,
+        "note": note,
+        "check_host": check_host,
+        "tool_slots": _tool_slots(data.get("tool_slots")),
+    }
+
+
+def _tool_slots(value: Any) -> int | None:
+    """Werkzeugplätze im Magazin: ganze Zahl von 1 bis TOOL_SLOTS_MAX, leer = keine Angabe."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        slots = int(str(value).strip())
+    except ValueError:
+        slots = 0
+    if not 1 <= slots <= TOOL_SLOTS_MAX:
+        raise ConfigError(f"Werkzeugplätze: bitte eine ganze Zahl von 1 bis {TOOL_SLOTS_MAX} eintragen oder leer lassen.")
+    return slots
 
 
 def image_extension(data: bytes) -> str:
@@ -115,6 +136,7 @@ class MachineManager:
             sort_order=row["sort_order"],
             image=row["image"],
             check_host=row["check_host"],
+            tool_slots=row["tool_slots"],
         )
 
     def machines(self) -> list[MachineConfig]:
