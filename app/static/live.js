@@ -175,27 +175,40 @@ function toolWarning(m) {
 }
 
 const pctText = (v) => (v == null ? "—" : `${Math.round(v)} %`);
+const OVR_MAX = 150; // Potis der iTNC 530 gehen bis 150 %
+/** Farbzone eines Werts: [CSS-Klasse, Text]. Rot unter 50 %, Gelb unter 100 %, Grün 100–120 %, Orange darüber. */
+function overrideZone(v) {
+  if (v < 50) return ["low", "unter 50 %"];
+  if (v < 100) return ["reduced", "unter 100 %"];
+  if (v <= 120) return ["normal", "100–120 %"];
+  return ["high", "über 120 %"];
+}
 
-/** Ein Poti als Balken 0–100 %. Über 100 % (die Steuerung erlaubt bis 150 %) bleibt der Balken voll,
- * der Wert steht immer als Zahl daneben – nie nur die Länge. */
+/** Ein Poti als Balken 0–150 % mit Markierung bei 100 %. Die Zahl steht immer daneben – nie nur Farbe. */
 function overrideBar(label, value) {
-  const width = value == null ? 0 : Math.max(0, Math.min(100, value));
+  const width = value == null ? 0 : Math.max(0, Math.min(100, (value / OVR_MAX) * 100));
+  const zone = value == null ? null : overrideZone(value);
   return el(
     "div",
-    { class: "ovr" },
+    { class: `ovr${zone ? ` ovr-${zone[0]}` : ""}` },
     el("div", { class: "ovr-head" }, el("span", { class: "ovr-label", text: label }), el("span", { class: "ovr-value num", text: pctText(value) })),
     el(
       "div",
-      {
-        class: "ovr-meter",
-        role: "meter",
-        "aria-label": `${label}-Override`,
-        "aria-valuemin": "0",
-        "aria-valuemax": "100",
-        "aria-valuenow": value == null ? null : String(Math.round(width)),
-        "aria-valuetext": `${label} ${pctText(value)}`,
-      },
-      el("div", { class: "ovr-fill", style: { width: `${width}%` } }),
+      { class: "ovr-track" },
+      el(
+        "div",
+        {
+          class: "ovr-meter",
+          role: "meter",
+          "aria-label": `${label}-Override`,
+          "aria-valuemin": "0",
+          "aria-valuemax": String(OVR_MAX),
+          "aria-valuenow": value == null ? null : String(Math.round(value)),
+          "aria-valuetext": value == null ? `${label}: keine Angabe` : `${label} ${pctText(value)} (${zone[1]})`,
+        },
+        el("div", { class: "ovr-fill", style: { width: `${width}%` } }),
+      ),
+      el("div", { class: "ovr-mark", title: "100 %", "aria-hidden": "true" }),
     ),
   );
 }
