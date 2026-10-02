@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -126,6 +126,14 @@ CREATE TABLE IF NOT EXISTS tool_resets (
     limit_s    REAL
 );
 CREATE INDEX IF NOT EXISTS ix_tool_resets ON tool_resets(machine_id, number, reset_at);
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL REFERENCES machines(id),
+    number     INTEGER NOT NULL,
+    called_at  REAL NOT NULL,
+    program    TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_tool_calls ON tool_calls(machine_id, number, called_at);
 CREATE TABLE IF NOT EXISTS manufacturers (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -150,10 +158,12 @@ class Database:
             self._con.execute("PRAGMA journal_mode=WAL")
             self._con.execute("PRAGMA synchronous=NORMAL")
             self._con.execute("PRAGMA foreign_keys=ON")
+            tables = {row[0] for row in self._con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
             self._con.executescript(SCHEMA)
-            self._migrate()
+            self._migrate(tables)
 
-    def _migrate(self) -> None:
+    def _migrate(self, tables: set[str]) -> None:
+        """``tables``: Tabellen, die es vor diesem Start schon gab (leer bei neuer Datenbank)."""
         # v1 → v2: Maschinen werden in der Datenbank gepflegt (Notiz, Reihenfolge, Bild, entfernt)
         # v3 → v4: Prüfadresse am Standort
         columns = {row["name"] for row in self._con.execute("PRAGMA table_info(machines)")}
@@ -196,6 +206,11 @@ class Database:
         columns = {row["name"] for row in self._con.execute("PRAGMA table_info(orders)")}
         if "image" not in columns:
             self._con.execute("ALTER TABLE orders ADD COLUMN image TEXT")
+        # v8 → v9: Werkzeugaufrufe. Die Tabelle tool_calls kommt über SCHEMA. Nur bei einem Update
+        # (Ereignisse vorhanden, tool_calls neu) trägt tools.backfill_calls die bisherigen Werkzeugwechsel
+        # einmalig nach – eine Datenbank, die schon Aufrufe zählt, würde sonst doppelt zählen.
+        if "events" in tables and "tool_calls" not in tables:
+            self.set_meta("tool_calls_backfill", "pending")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:
@@ -495,10 +510,13 @@ class Database:
     # Je Maschine und T-Nummer. tool_usage hält die Abschnitte, in denen das Werkzeug bei laufendem
     # Programm in der Spindel war (ended_at wird bei jeder Abfrage fortgeschrieben). Die Einsatzzeit
     # ist die Summe dieser Abschnitte seit reset_at (Anlage bzw. letztes Zurücksetzen).
+    # tool_calls hält jeden Aufruf (Wechsel in die Spindel); gezählt wird über die ganze Erfassung,
+    # unabhängig vom Zurücksetzen – Grundlage der Statistik „meistverwendete Werkzeuge“.
 
     _TOOL_SELECT = (
         "SELECT t.machine_id, t.number, t.name, t.note, t.limit_s, t.warn_s, t.reset_at, t.created_at, "
         "t.manufacturer, t.article_no, t.diameter, t.radius, "
+        "(SELECT COUNT(*) FROM tool_calls c WHERE c.machine_id = t.machine_id AND c.number = t.number) AS calls, "
         "COALESCE((SELECT SUM(u.ended_at - MAX(u.started_at, t.reset_at)) FROM tool_usage u "
         "WHERE u.machine_id = t.machine_id AND u.number = t.number AND u.ended_at > t.reset_at), 0) AS used_s, "
         "(SELECT MAX(u.ended_at) FROM tool_usage u WHERE u.machine_id = t.machine_id AND u.number = t.number) "
@@ -608,6 +626,12 @@ class Database:
     def touch_tool_usage(self, usage_id: int, t: float) -> None:
         self._execute("UPDATE tool_usage SET ended_at = ? WHERE id = ?", (t, usage_id))
 
+    def add_tool_call(self, machine_id: str, number: int, t: float, program: str | None = None) -> None:
+        self._execute(
+            "INSERT INTO tool_calls(machine_id, number, called_at, program) VALUES (?, ?, ?, ?)",
+            (machine_id, number, t, program),
+        )
+
     # --- Werkzeughersteller (Auswahlliste im Werkzeug-Dialog) ----------------------------
     # Werkzeuge speichern den Namen als Text; Umbenennen zieht die Werkzeuge mit, Entfernen nicht.
 
@@ -704,6 +728,15 @@ class Database:
             "INSERT INTO events(machine_id, ts, type, payload) VALUES (?, ?, ?, ?)",
             (machine_id, t, event_type, json.dumps(payload or {}, ensure_ascii=False)),
         )
+
+    def events_of_type(self, event_type: str) -> list[dict[str, Any]]:
+        """Alle Ereignisse eines Typs, älteste zuerst (für einmaliges Nachtragen)."""
+        rows = self._query(
+            "SELECT machine_id, ts, payload FROM events WHERE type = ? ORDER BY ts, id", (event_type,)
+        )
+        for row in rows:
+            row["payload"] = json.loads(row["payload"])
+        return rows
 
     def events(self, t0: float, t1: float, machine_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         sql = "SELECT id, machine_id, ts, type, payload FROM events WHERE ts >= ? AND ts < ?"

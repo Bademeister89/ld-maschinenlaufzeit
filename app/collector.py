@@ -31,7 +31,7 @@ from .db import Database
 from .forecast import Forecaster
 from .orders import parse_program
 from .state import RUN_ACTIVE_STATES, MachineState, classify, run_result
-from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, parse_tool
+from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, is_call, parse_tool, spindle_number
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +90,7 @@ class MachineCollector:
         self._snapshot: Snapshot | None = None
         self._last_tool: str | None = None
         self._seen_tool: int | None = None  # zuletzt gesehene T-Nummer (Anlegen neuer Werkzeuge)
+        self._spindle: int | None = None  # T-Nummer in der Spindel (0 = leer, None = unbekannt) – Aufrufe
         self._tool_use: tuple[int, int] | None = None  # offener Einsatzabschnitt: (id, T-Nummer)
         self._last_update: float | None = None
         self._connected = False
@@ -231,6 +232,13 @@ class MachineCollector:
                 self._db.add_event(self.machine.id, now, "tool_created", {"tool": number, "name": name})
                 log.info("%s: Werkzeug T%d angelegt", self.machine.name, number)
             self._seen_tool = number
+        spindle = spindle_number(snap.tool) if snap is not None else None
+        if spindle is not None:
+            # Aufruf: anderes Werkzeug als bei der letzten Abfrage mit Werkzeugangabe. Abfragen ohne
+            # Angabe und Verbindungsabbrüche ändern das letzte bekannte Werkzeug nicht.
+            if is_call(self._spindle, spindle):
+                self._db.add_tool_call(self.machine.id, spindle, now, snap.program)
+            self._spindle = spindle
         active = number if state is MachineState.RUNNING else None
         use = self._tool_use
         if use is not None:

@@ -10,6 +10,9 @@
 - T100 an Maschine 1 und T100 an Maschine 2 sind verschiedene Werkzeuge (eigene Magazine).
 - **Zurücksetzen** (neues Werkzeug eingespannt) setzt die Einsatzzeit auf 0; der alte Stand bleibt
   als Standzeit in der Historie.
+- **Aufrufe** zählen, wie oft das Werkzeug in die Spindel gewechselt wurde (bei laufendem Programm
+  wie im Handbetrieb), über die ganze Erfassung – das Zurücksetzen ändert daran nichts. Daraus ergibt
+  sich, welche Werkzeuge am häufigsten gebraucht werden.
 """
 
 from __future__ import annotations
@@ -38,6 +41,38 @@ def parse_tool(text: str | None) -> tuple[int, str] | None:
     if not match or int(match[1]) <= 0:
         return None
     return int(match[1]), (match[2] or "").strip()
+
+
+def spindle_number(text: str | None) -> int | None:
+    """Nummer in der Spindel: ``"T12 …"`` → 12, ``"T0"`` (Spindel leer) → 0, keine Angabe → None."""
+    match = _TOOL.match(text.strip()) if text else None
+    return int(match[1]) if match else None
+
+
+def is_call(before: int | None, after: int | None) -> bool:
+    """Aufruf = ein Werkzeug kommt in die Spindel, in der vorher ein anderes (oder keins, T0) steckte.
+
+    Ist das vorige unbekannt (``None``: Start der App, noch keine Angabe), zählt es nicht – sonst
+    entstünde bei jedem Neustart ein Schein-Aufruf.
+    """
+    return bool(after) and before is not None and after != before
+
+
+def backfill_calls(db: Database) -> int:
+    """Nach dem Update auf Schema 9 einmalig: Aufrufe aus den bisher gespeicherten Werkzeugwechseln
+    (Ereignis ``tool_change``, erfasst seit Version 1.0) nachtragen. Liefert die Zahl der Aufrufe."""
+    if db.get_meta("tool_calls_backfill") != "pending":
+        return 0
+    count = 0
+    with db.transaction():
+        for event in db.events_of_type("tool_change"):
+            payload = event["payload"]
+            after = spindle_number(payload.get("to"))
+            if is_call(spindle_number(payload.get("from")), after):
+                db.add_tool_call(event["machine_id"], after, event["ts"], payload.get("program"))
+                count += 1
+        db.set_meta("tool_calls_backfill", "done")
+    return count
 
 
 def warn_threshold(limit_s: float | None, warn_s: float | None) -> float | None:

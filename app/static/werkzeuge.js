@@ -1,6 +1,6 @@
-// Werkzeugauswertung: Einsatzzeit je Werkzeug und Maschine, Maximallaufzeit, Zurücksetzen.
+// Werkzeugauswertung: Einsatzzeit und Aufrufe je Werkzeug und Maschine, Maximallaufzeit, Zurücksetzen.
 
-import { api, el, fmtDateTime, fmtToolTime, loadMeta, send, setToolAlerts } from "./common.js";
+import { api, el, fmtDateTime, fmtInt, fmtToolTime, loadMeta, send, setToolAlerts } from "./common.js";
 
 const REFRESH_MS = 10000;
 const $ = (id) => document.getElementById(id);
@@ -9,6 +9,7 @@ const query = new URLSearchParams(location.search);
 const state = {
   machine: query.get("machine") ?? "",
   status: query.get("status") ?? "all",
+  sort: query.get("sort") === "calls" ? "calls" : "number",
   search: "",
 };
 let data = null;
@@ -31,8 +32,10 @@ function syncUrl() {
   const params = new URLSearchParams();
   if (state.machine) params.set("machine", state.machine);
   if (state.status !== "all") params.set("status", state.status);
+  if (state.sort !== "number") params.set("sort", state.sort);
   history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
   for (const b of $("status").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.status === state.status));
+  for (const b of $("sort").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.sort === state.sort));
   $("machine").value = state.machine;
 }
 
@@ -46,6 +49,12 @@ function matches(t) {
   const q = state.search.trim().toLowerCase();
   if (!q) return true;
   return `t${t.number} ${t.name} ${t.note} ${t.manufacturer} ${t.article_no}`.toLowerCase().includes(q);
+}
+
+/** Nach T-Nummer oder – für die Frage „was brauche ich am häufigsten?“ – nach Aufrufen. */
+function sorted(rows) {
+  if (state.sort !== "calls") return rows;
+  return rows.slice().sort((a, b) => b.calls - a.calls || a.number - b.number);
 }
 
 // --- Darstellung -------------------------------------------------------------------
@@ -124,6 +133,19 @@ function usage(t) {
   );
 }
 
+/** "212× aufgerufen": wie oft das Werkzeug in die Spindel gewechselt wurde. */
+function callsCell(t) {
+  return el(
+    "div",
+    {
+      class: `tool-calls${t.calls ? "" : " none"}`,
+      title: `T${t.number} wurde ${fmtInt(t.calls)}× in die Spindel gewechselt (seit Beginn der Erfassung)`,
+    },
+    el("span", { class: "tool-calls-value num", text: `${fmtInt(t.calls)}×` }),
+    el("span", { class: "tool-calls-label", text: "aufgerufen" }),
+  );
+}
+
 function toolRow(t) {
   return el(
     "div",
@@ -140,6 +162,7 @@ function toolRow(t) {
         t.note ? el("div", { class: "tool-note", text: t.note }) : null,
       ),
     ),
+    callsCell(t),
     usage(t),
     el("div", { class: "tool-flags" }, statusBadge(t), spindleBadge(t)),
     el(
@@ -204,17 +227,26 @@ function render() {
   renderAlert(data.tools);
   setToolAlerts(data.alerts);
 
+  // Meistgenutztes Werkzeug (bei "Alle" über beide Maschinen, dann mit Maschinenname)
+  const top = all.reduce((best, t) => (t.calls > (best?.calls ?? 0) ? t : best), null);
   $("kpis").replaceChildren(
     tile("Werkzeuge", String(all.length), `${all.filter((t) => t.limit_s).length} mit Maximallaufzeit`),
     tile("Über Limit", String(all.filter((t) => t.status === "over").length), "Werkzeug tauschen und zurücksetzen"),
     tile("Vorwarnung", String(all.filter((t) => t.status === "warn").length), "Vorwarnzeit erreicht (je Werkzeug einstellbar)"),
     tile("Im Einsatz", String(all.filter((t) => t.running).length), "Programm läuft mit diesem Werkzeug"),
+    tile(
+      "Meist aufgerufen",
+      top ? `T${top.number}` : "—",
+      top
+        ? [`${fmtInt(top.calls)}× aufgerufen`, top.name, !state.machine && data.machines.length > 1 ? top.machine : null].filter(Boolean).join(" · ")
+        : "noch keine Werkzeugwechsel erfasst",
+    ),
   );
 
   const machines = data.machines.filter((m) => !state.machine || m.id === state.machine);
   $("lists").replaceChildren(
     ...machines.map((m) => {
-      const rows = shown.filter((t) => t.machine_id === m.id);
+      const rows = sorted(shown.filter((t) => t.machine_id === m.id));
       const total = all.filter((t) => t.machine_id === m.id).length;
       return el(
         "section",
@@ -408,6 +440,13 @@ async function main() {
     const status = e.target.closest("button")?.dataset.status;
     if (!status) return;
     state.status = status;
+    syncUrl();
+    render();
+  });
+  $("sort").addEventListener("click", (e) => {
+    const sort = e.target.closest("button")?.dataset.sort;
+    if (!sort) return;
+    state.sort = sort;
     syncUrl();
     render();
   });

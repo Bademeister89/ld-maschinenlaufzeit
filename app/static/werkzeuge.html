@@ -42,6 +42,10 @@
         <button type="button" data-status="warn">Vorwarnung</button>
         <button type="button" data-status="over">Über Limit</button>
       </div>
+      <div class="segmented" id="sort" role="group" aria-label="Sortierung">
+        <button type="button" data-sort="number">Nach T-Nummer</button>
+        <button type="button" data-sort="calls">Meiste Aufrufe</button>
+      </div>
       <label class="field">Suche
         <input type="search" id="search" placeholder="T-Nr., Name, Hersteller, Art.-Nr." autocomplete="off">
       </label>
@@ -61,6 +65,9 @@
       (Stopps, Störungen und Einrichten zählen nicht). Werkzeuge werden automatisch angelegt, sobald sie
       an einer Maschine in der Spindel auftauchen. Nach dem Einspannen eines neuen Werkzeugs
       <strong>Zurücksetzen</strong> drücken – die bisherige Standzeit bleibt in der Historie.
+      <strong>Aufrufe</strong> = wie oft das Werkzeug in die Spindel gewechselt wurde, im Programm wie im
+      Handbetrieb, seit Beginn der Erfassung. Zurücksetzen ändert daran nichts. „Meiste Aufrufe“ zeigt
+      oben die Werkzeuge, die am häufigsten gebraucht werden.
     </p>
   </main>
 

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import orders
+from . import orders, tools
 from .adapters.base import MachineAdapter
 from .collector import MachineCollector
 from .config import MachineConfig, Settings
@@ -152,6 +152,10 @@ class MachineManager:
         assigned = orders.backfill(self.db)
         if assigned:
             log.info("Aufträge: %d Programm(e) nachträglich Aufträgen zugeordnet", assigned)
+        # Nach dem Update: Werkzeugaufrufe aus den bisher erfassten Werkzeugwechseln nachtragen
+        calls = tools.backfill_calls(self.db)
+        if calls:
+            log.info("Werkzeuge: %d Aufruf(e) aus bisherigen Werkzeugwechseln nachgetragen", calls)
         for machine in self.machines():
             self._spawn(machine)
 

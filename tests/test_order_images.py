@@ -253,7 +253,7 @@ def test_update_from_schema_v7_database(tmp_path):
     con.close()
 
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "8"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     order = db.order("26-21055")
     assert (order["title"], order["status"], order["closed_at"], order["image"]) == ("Flansch", "closed", 200, None)
     db.set_order_image("26-21055", "26-21055-1a2b3c4d.jpg")

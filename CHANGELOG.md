@@ -10,6 +10,18 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.9.0] – 2026-10-02
+
+### Neu
+- Aufrufzähler in der Werkzeugauswertung: In jeder Zeile steht, wie oft das Werkzeug in die
+  Spindel gewechselt wurde, z. B. „212× aufgerufen“.
+  - Gezählt wird jeder Wechsel auf das Werkzeug, im Programm wie im Handbetrieb, je Maschine
+    getrennt und seit Beginn der Erfassung. Zurücksetzen ändert daran nichts.
+  - Sortierung „Meiste Aufrufe“: zeigt oben die Werkzeuge, die am häufigsten gebraucht werden.
+  - Neue Kachel „Meist aufgerufen“ und Spalte „Aufrufe“ im CSV-Export (letzte Spalte).
+  - Die bisher gespeicherten Werkzeugwechsel werden beim Update einmalig nachgetragen, die Zahlen
+    starten also nicht bei 0.
+
 ## [1.8.1] – 2026-10-02
 
 ### Behoben

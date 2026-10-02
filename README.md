@@ -197,6 +197,20 @@ zugeordnet, z. B. `26-21055-01-01`:
 - **Zurücksetzen** nach dem Einspannen eines neuen Werkzeugs: Die Einsatzzeit beginnt wieder bei 0.
   Werkzeugdaten, Limit, Vorwarnung und Notiz bleiben. Der alte Stand kommt als **Standzeit** in die Historie (Bearbeiten →
   „Standzeiten bisher“, mit Ø Standzeit).
+- **Aufrufe:** In jeder Zeile steht, wie oft das Werkzeug in die Spindel gewechselt wurde, z. B.
+  „212× aufgerufen“.
+  - Gezählt wird jeder Wechsel auf dieses Werkzeug, im Programm wie im Handbetrieb, seit Beginn der
+    Erfassung. Zurücksetzen und Entfernen ändern daran nichts. Ein Wechsel aus der leeren Spindel
+    (T0) zählt mit.
+  - Nicht gezählt wird das Werkzeug, das beim Start der App schon in der Spindel steckt, sonst
+    entstünde bei jedem Neustart ein Schein-Aufruf. Wechsel, während die App nicht läuft, fehlen.
+  - **Meiste Aufrufe** sortiert jede Maschine absteigend nach Aufrufen. So siehst du, welche
+    Werkzeuge du am häufigsten brauchst, z. B. für die Belegung des Magazins. Die Kachel
+    „Meist aufgerufen“ zeigt das Spitzenwerkzeug.
+  - Beim Update auf 1.9.0 werden die Werkzeugwechsel nachgetragen, die seit Version 1.0
+    gespeichert sind.
+  - Jeder Aufruf wird mit Zeitpunkt gespeichert (Tabelle `tool_calls`), damit sich später auch
+    Auswertungen je Zeitraum machen lassen.
 - **Entfernen** löscht den Eintrag samt Historie. Taucht das Werkzeug wieder auf, wird es neu
   angelegt und zählt ab dann.
 - **Name aus der Werkzeugtabelle:** Die Abfrage „Werkzeug in der Spindel“ liefert nur die Nummer.
@@ -207,8 +221,9 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Taucht ein Werkzeug ohne bekannten Namen auf, prüft sie schon nach einer Minute wieder.
   - Indizierte Werkzeuge (T5.1 …) zählen zur Nummer des Hauptwerkzeugs.
 - **Notiz:** eigene Bezeichnung, z. B. „VHM D10, Hersteller X“, unter Bearbeiten.
-- Filter nach Maschine und Status, Suche nach T-Nummer, Name, Hersteller, Artikelnummer oder Notiz,
-  CSV-Export mit allen Werkzeugdaten.
+- Filter nach Maschine und Status, Sortierung nach T-Nummer oder Aufrufen, Suche nach T-Nummer,
+  Name, Hersteller, Artikelnummer oder Notiz, CSV-Export mit allen Werkzeugdaten (Aufrufe in der
+  letzten Spalte).
 
 Ob beides an der iTNC 530 funktioniert, zeigt der Verbindungstest:
 
