@@ -32,6 +32,12 @@ OTHER = "TNC:\\AUFTRAG\\26-4711-01-01.H"
         ("TNC:/nc_prog/25-10001-01-12.h", ("25-10001", 2025, "10001", 1, 12, "25-10001-01-12")),
         ("26_21055_1_1.H", ("26-21055", 2026, "21055", 1, 1, "26_21055_1_1")),
         ("26-21055-01-01_Schlichten.H", ("26-21055", 2026, "21055", 1, 1, "26-21055-01-01_Schlichten")),
+        # Versionen: eigener Auftrag je Version
+        ("TNC:\\AUFTRAG\\26-21053V1-01-01.H", ("26-21053V1", 2026, "21053V1", 1, 1, "26-21053V1-01-01")),
+        ("26-21053V2-02-03.H", ("26-21053V2", 2026, "21053V2", 2, 3, "26-21053V2-02-03")),
+        ("26-21053v2-01-01.h", ("26-21053V2", 2026, "21053V2", 1, 1, "26-21053v2-01-01")),  # klein = groß
+        ("26-4711V12-01-01_Schlichten.H", ("26-4711V12", 2026, "4711V12", 1, 1, "26-4711V12-01-01_Schlichten")),
+        ("26_21053V1_1_1.H", ("26-21053V1", 2026, "21053V1", 1, 1, "26_21053V1_1_1")),
     ],
 )
 def test_parse_program(path, expected):
@@ -41,7 +47,14 @@ def test_parse_program(path, expected):
 
 @pytest.mark.parametrize(
     "path",
-    [None, "", "TNC:\\PROD\\GEHAEUSE_A12.H", "26-210-01-01.H", "26-210555-01-01.H", "2026-21055-01-01.H", "26-21055-01.H"],
+    [
+        None, "", "TNC:\\PROD\\GEHAEUSE_A12.H", "26-210-01-01.H", "26-210555-01-01.H", "2026-21055-01-01.H", "26-21055-01.H",
+        "26-21053X1-01-01.H",  # nur V kennzeichnet eine Version
+        "26-21053V-01-01.H",  # Version ohne Nummer
+        "26-21053V123-01-01.H",  # höchstens zweistellig
+        "26-21053-V1-01-01.H",  # Version gehört direkt an die Nummer
+        "26-21053V1-01.H",
+    ],
 )
 def test_parse_program_rejects(path):
     assert parse_program(path) is None
@@ -75,6 +88,37 @@ def test_collector_creates_order_and_tags_data(db, make_collector):
     types = [e["type"] for e in db.events(0, 1000)]
     assert types.count("order_created") == 1
     assert c.live()["order"]["setup"] == 1
+
+
+def test_versions_are_separate_orders(db, make_collector):
+    c = make_collector()
+    t = run_part(c, 0, P11, 300)
+    t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055V1-01-01.H", 200)
+    t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055V2-01-01.H", 100)
+    run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055v2-02-01.H", 50)  # kleines v: gleiche Version
+    rows = {r["key"]: r for r in orders.list_orders(db)}
+    assert set(rows) == {"26-21055", "26-21055V1", "26-21055V2"}
+    assert {k: (r["number"], r["running_s"], r["finished"]) for k, r in rows.items()} == {
+        "26-21055": ("21055", 300, 1),
+        "26-21055V1": ("21055V1", 200, 1),
+        "26-21055V2": ("21055V2", 150, 2),
+    }
+    assert rows["26-21055V2"]["setups"] == [1, 2]
+    assert c.live()["order"]["key"] == "26-21055V2"
+
+
+def test_backfill_assigns_versions_recorded_before_update(db, make_collector):
+    """Vor dem Update wurden Versionen nicht erkannt: ihre Läufe stehen ohne Auftrag in der Datenbank."""
+    make_collector()
+    program = "TNC:\\AUFTRAG\\26-21053V1-01-01.H"
+    run_id = db.start_run("m1", program, 100, True)  # ohne order_key, wie bisher erfasst
+    iv = db.open_interval("m1", "RUNNING", "STARTED", "AUTOMATIC", program, run_id, 100, 100)
+    db.close_interval(iv, 400)
+    db.end_run(run_id, 400, "finished")
+    assert db.orders() == []
+    assert orders.backfill(db) == 1
+    [row] = orders.list_orders(db)
+    assert (row["key"], row["number"], row["running_s"], row["finished"]) == ("26-21053V1", "21053V1", 300, 1)
 
 
 def test_programs_without_code_have_no_order(db, make_collector):

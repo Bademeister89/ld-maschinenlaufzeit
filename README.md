@@ -135,7 +135,7 @@ zugeordnet, z. B. `26-21055-01-01`:
 | Teil | Bedeutung |
 |---|---|
 | `26` | Jahr (2026) |
-| `21055` | Auftragsnummer, 4- oder 5-stellig |
+| `21055` | Auftragsnummer, 4- oder 5-stellig, optional mit Version: `21055V1`, `21055V2` |
 | `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …) |
 | `01` | Programmnummer, fortlaufend |
 
@@ -143,6 +143,13 @@ zugeordnet, z. B. `26-21055-01-01`:
   **automatisch angelegt**. Schlüssel ist Jahr + Nummer (`26-21055`), falls eine Nummer in einem
   späteren Jahr wieder vorkommt. Zusätze nach der Programmnummer (`26-21055-01-01_Schlichten.H`)
   und Unterstriche statt Bindestriche werden ebenfalls erkannt.
+- **Versionen:** `26-21053V1-01-01` und `26-21053V2-01-01` sind eigene Aufträge (`21053V1`,
+  `21053V2`), getrennt von `21053`.
+  - Die Version steht direkt an der Nummer: `V` und eine ein- oder zweistellige Zahl. Ein kleines
+    `v` zählt wie `V`.
+  - Die Suche nach `21053` findet den Auftrag mit allen Versionen.
+  - Läufe von Versionen, die vor Version 1.9.0 erfasst wurden (damals ohne Auftrag), werden beim
+    Update automatisch zugeordnet.
 - **Gezählt wird die Zeit der Programmdurchläufe:** Laufzeit sowie Stopps und Fehler innerhalb der
   Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
   angewähltes Programm dem Auftrag Tage gutschreiben.

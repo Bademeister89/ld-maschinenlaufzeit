@@ -22,6 +22,9 @@ Dort ist auch dieses Protokoll zu sehen.
 - Werkzeugplätze je Maschine (Konfiguration → Bearbeiten, z. B. 30 oder 60): Die Werkzeugauswertung
   markiert so viele meistgebrauchte Werkzeuge mit „Top 30 · Platz 3“. Bei „Meiste Aufrufe“ zeigt
   eine Linie, wo das Magazin endet.
+- Auftragsversionen: Programme wie `26-21053V1-01-01` und `26-21053V2-01-01` werden als eigene
+  Aufträge `21053V1` und `21053V2` erkannt. Bisher wurden sie keinem Auftrag zugeordnet.
+  Schon erfasste Läufe solcher Programme werden beim Update nachträglich zugeordnet.
   - Die bisher gespeicherten Werkzeugwechsel werden beim Update einmalig nachgetragen, die Zahlen
     starten also nicht bei 0.
 

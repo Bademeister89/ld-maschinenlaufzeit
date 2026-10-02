@@ -22,6 +22,7 @@ from .base import AdapterError, Snapshot
 # (Auftrag, ((Aufspannung, Anzahl Programme), …))
 ORDERS = (
     ("26-21055", ((1, 2), (2, 1))),
+    ("26-21055V1", ((1, 1),)),  # Version eines Auftrags: eigener Auftrag
     ("26-21102", ((1, 1), (2, 1))),
     ("26-4711", ((1, 1),)),
     ("26-20988", ((1, 2), (2, 2))),

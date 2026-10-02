@@ -1,11 +1,12 @@
 """Aufträge aus Programmnamen: ``JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM``, z. B. ``26-21055-01-01``.
 
 - ``26``    Jahr (2026)
-- ``21055`` Auftragsnummer, 4- oder 5-stellig
+- ``21055`` Auftragsnummer, 4- oder 5-stellig, optional mit Version: ``21055V1``, ``21055V2``
 - ``01``    Aufspannung (1 = Spannung 1, 2 = Spannung 2 …)
 - ``01``    Programmnummer, fortlaufend
 
-Ein Auftrag ist eindeutig über Jahr und Nummer (Schlüssel ``26-21055``). Er wird automatisch
+Ein Auftrag ist eindeutig über Jahr und Nummer (Schlüssel ``26-21055``). Jede Version ist ein eigener
+Auftrag (``26-21055V1``, ``26-21055V2``); ein kleines ``v`` zählt wie ``V``. Er wird automatisch
 angelegt, sobald ein passendes Programm an einer Maschine auftaucht. Gezählt wird die Zeit
 der Programmdurchläufe (Laufzeit sowie Stopps/Fehler innerhalb der Läufe) – nicht die Zeit,
 in der ein Programm nur angewählt ist, sonst würde ein übers Wochenende angewähltes Programm
@@ -25,15 +26,17 @@ from zoneinfo import ZoneInfo
 from .db import Database
 from .state import MachineState
 
-_CODE = re.compile(r"^(?P<year>\d{2})[-_](?P<order>\d{4,5})[-_](?P<setup>\d{1,2})[-_](?P<program>\d{1,3})(?:$|\D)")
+_CODE = re.compile(
+    r"^(?P<year>\d{2})[-_](?P<order>\d{4,5}(?:[Vv]\d{1,2})?)[-_](?P<setup>\d{1,2})[-_](?P<program>\d{1,3})(?:$|\D)"
+)
 RUN_TIME_STATES = (MachineState.RUNNING.value, MachineState.STOPPED.value, MachineState.ERROR.value)
 
 
 @dataclass(frozen=True)
 class ProgramCode:
-    key: str  # "26-21055"
+    key: str  # "26-21055" bzw. "26-21055V1"
     year: int  # 2026
-    order: str  # "21055"
+    order: str  # "21055" bzw. "21055V1"
     setup: int  # 1
     program: int  # 1
     name: str  # "26-21055-01-01"
@@ -55,7 +58,7 @@ def parse_program(path: str | None) -> ProgramCode | None:
     match = _CODE.match(name)
     if not match:
         return None
-    yy, order = match["year"], match["order"]
+    yy, order = match["year"], match["order"].upper()  # 21055v1 und 21055V1 sind derselbe Auftrag
     return ProgramCode(
         key=f"{yy}-{order}",
         year=2000 + int(yy),

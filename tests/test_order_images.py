@@ -84,6 +84,16 @@ def test_upload_stores_both_files_and_serves_them(client, folder):
     assert client.get(f"/api/orders/{KEY}/image?size=huge").status_code == 422
 
 
+def test_upload_for_order_version(app_client, folder):
+    app, client = app_client
+    app.state.ctx.db.ensure_order("26-21055V1", 2026, "21055V1", 1100)
+    r = upload(client, key="26-21055V1")
+    assert r.status_code == 200
+    full_name, thumb = pair(folder)
+    assert re.fullmatch(r"26-21055V1-[0-9a-f]{8}\.jpg", full_name)
+    assert client.get(r.json()["thumb_url"]).content == THUMB
+
+
 def test_list_detail_and_update_carry_urls(client):
     upload(client)
     rows = {r["key"]: r for r in client.get("/api/orders").json()["orders"]}
@@ -225,6 +235,8 @@ def test_missing_folder_means_no_image(app_client, client):
 
 def test_helpers():
     assert valid_key("26-21055") and valid_key("26-4711")
+    assert valid_key("26-21053V1") and valid_key("26-4711V12")  # Versionen
+    assert not valid_key("26-21053v1") and not valid_key("26-21053V") and not valid_key("26-21053V123")
     assert not valid_key("26-21055\n") and not valid_key("../26-21055")
     assert not valid_key("٢٦-٢١٠٥٥")  # arabisch-indische Ziffern
     assert thumb_name("26-21055-1a2b3c4d.jpg") == "26-21055-1a2b3c4d-thumb.jpg"
