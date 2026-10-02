@@ -264,6 +264,15 @@ async function saveOrder(key, changes) {
 
 let current = null; // angezeigter Auftrag
 const imageState = { key: null, text: null, error: false, busy: false }; // Hinweis zum Hochladen
+// Handy/Tablet: eigener Kamera-Button. Android (ab 13) zeigt bei einem Bild-Dateifeld nur die
+// Fotoauswahl ohne Kamera; die Kamera öffnet sich nur über ein eigenes Feld mit "capture".
+const touch = matchMedia("(pointer: coarse)").matches;
+
+function imageButtons(o, disabled) {
+  const button = (text, source) => el("button", { type: "button", class: "btn", disabled, onclick: () => pickImage(o.key, source) }, text);
+  if (touch) return [button("Foto aufnehmen", "camera"), button("Aus Galerie", "gallery")];
+  return [button(o.image_url ? "Bild ersetzen" : "Bild hinzufügen", "gallery")];
+}
 
 function imageBlock(o) {
   const own = imageState.key === o.key;
@@ -281,7 +290,7 @@ function imageBlock(o) {
     el(
       "figcaption",
       { class: "order-image-actions" },
-      el("button", { type: "button", class: "btn", disabled: own && imageState.busy, onclick: () => pickImage(o.key) }, o.image_url ? "Bild ersetzen" : "Bild hinzufügen"),
+      imageButtons(o, own && imageState.busy),
       o.image_url
         ? el("button", { type: "button", class: "btn danger", disabled: own && imageState.busy, onclick: () => removeImage(o) }, "Bild entfernen")
         : null,
@@ -297,11 +306,11 @@ function setImageState(key, text = null, { error = false, busy = false } = {}) {
   if (current) $("order-figure")?.replaceWith(imageBlock(current));
 }
 
-function pickImage(key) {
-  const input = $("image-input");
+function pickImage(key, source) {
+  const input = $(source === "camera" ? "camera-input" : "image-input");
   input.value = "";
   input.dataset.key = key;
-  input.click(); // am Handy: Kamera oder Galerie
+  input.click();
 }
 
 const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -467,6 +476,7 @@ async function main() {
     renderList();
   });
   $("image-input").addEventListener("change", uploadImage);
+  $("camera-input").addEventListener("change", uploadImage);
   await refresh();
   if (state.selected) $("detail").scrollIntoView({ block: "start" });
   setInterval(refresh, REFRESH_MS);

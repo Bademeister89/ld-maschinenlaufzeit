@@ -55,9 +55,11 @@
 
     <section class="section" id="detail" hidden></section>
 
-    <!-- Bild zum Auftrag: bleibt beim Neuzeichnen des Details bestehen, damit die Auswahl nicht
-         verloren geht. Ohne "capture", damit das Handy Kamera oder Galerie anbietet. -->
+    <!-- Bild zum Auftrag: Die Felder bleiben beim Neuzeichnen des Details bestehen, damit die Auswahl
+         nicht verloren geht. Galerie bzw. Datei ohne "capture"; die Kamera braucht ein eigenes Feld,
+         weil Android bei Bild-Dateifeldern sonst nur die Fotoauswahl zeigt. -->
     <input type="file" id="image-input" class="visually-hidden" accept="image/*" tabindex="-1" aria-hidden="true">
+    <input type="file" id="camera-input" class="visually-hidden" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
   </main>
 
   <script type="module" src="auftraege.js"></script>

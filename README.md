@@ -154,15 +154,16 @@ zugeordnet, z. B. `26-21055-01-01`:
     Aufspannungen, gerechnet nur aus vollständig erfassten, fertigen Läufen.
   - Laufzeit je Tag, alle Läufe, CSV-Export.
 - **Bild je Auftrag** (fertiges Bauteil):
-  - Im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“. Am Handy bietet
-    der Browser Kamera oder Galerie an.
+  - Am PC im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“.
+  - Am Handy zwei Buttons: „Foto aufnehmen“ öffnet direkt die Kamera, „Aus Galerie“ die
+    Fotoauswahl. Getrennt deshalb, weil Android bei nur einem Button lediglich die Galerie zeigt.
   - Der Browser verkleinert das Foto vor dem Hochladen:
     - großes Bild: höchstens 1280 px an der längsten Kante, ca. 150–250 KB
     - Vorschaubild: 256 px, ca. 10–20 KB
   - Handyfotos erscheinen richtig herum. Die Kameradaten (EXIF, auch der GPS-Standort) werden
     dabei entfernt.
-  - iPhone-Fotos (HEIC) wandelt der Browser in JPEG um. Kann ein Browser ein Format nicht lesen
-    (z. B. HEIC am Windows-PC), erscheint ein Hinweis. Dann das Foto direkt am Handy hochladen.
+  - Kann der Browser eine Datei nicht als Bild lesen, erscheint ein Hinweis; ein vorhandenes
+    Bild bleibt dann unverändert.
   - Das Vorschaubild steht in der Auftragsliste und auf der Live-Karte, solange der Auftrag an
     einer Maschine angewählt ist. Das große Bild erscheint nur im Detail; ein Klick öffnet es in
     voller Größe.

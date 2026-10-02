@@ -10,6 +10,13 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.8.1] – 2026-10-02
+
+### Behoben
+- Auftragsbild am Android-Handy: Es ließ sich nur ein Bild aus der Galerie wählen, die Kamera
+  ging nicht auf. Am Handy gibt es jetzt zwei Buttons: „Foto aufnehmen“ öffnet direkt die
+  Kamera, „Aus Galerie“ die Fotoauswahl. Am PC bleibt es bei „Bild hinzufügen“.
+
 ## [1.8.0] – 2026-10-02
 
 ### Neu

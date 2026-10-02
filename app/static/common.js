@@ -146,10 +146,7 @@ async function decodeImage(file) {
     await img.decode();
   } catch {
     URL.revokeObjectURL(url);
-    throw new Error(
-      `„${file.name}“ kann dieser Browser nicht als Bild lesen. Bitte ein JPG oder PNG wählen. ` +
-        "iPhone-Fotos (HEIC) am besten direkt am Handy hochladen.",
-    );
+    throw new Error(`„${file.name}“ kann dieser Browser nicht als Bild lesen. Bitte ein Foto als JPG oder PNG wählen.`);
   }
   return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => URL.revokeObjectURL(url) };
 }
