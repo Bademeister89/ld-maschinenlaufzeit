@@ -25,6 +25,9 @@ Dort ist auch dieses Protokoll zu sehen.
 - Auftragsversionen: Programme wie `26-21053V1-01-01` und `26-21053V2-01-01` werden als eigene
   Aufträge `21053V1` und `21053V2` erkannt. Bisher wurden sie keinem Auftrag zugeordnet.
   Schon erfasste Läufe solcher Programme werden beim Update nachträglich zugeordnet.
+- Live-Karte: Poti-Stellung für Vorschub und Spindel als zwei Balken (0–100 %) mit Prozentzahl.
+  Über 100 % bleibt der Balken voll, die Zahl zeigt den echten Wert. Der Eilgang (FMAX) steht
+  weiter als Kennzahl.
   - Die bisher gespeicherten Werkzeugwechsel werden beim Update einmalig nachgetragen, die Zahlen
     starten also nicht bei 0.
 

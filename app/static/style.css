@@ -319,6 +319,16 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 }
 
+/* Poti-Stellung Vorschub/Spindel: zwei Balken nebeneinander, neutral (nicht mit dem blauen
+   Programmfortschritt verwechseln), Wert immer als Zahl */
+.overrides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.ovr { display: grid; gap: 5px; min-width: 0; }
+.ovr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ovr-label { font-size: 12px; color: var(--muted); }
+.ovr-value { font-size: 15px; font-weight: 650; }
+.ovr-meter { height: 8px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.ovr-fill { height: 100%; border-radius: 999px; background: var(--ink-2); }
+
 .facts div { min-width: 0; }
 .facts dt { font-size: 12px; color: var(--muted); }
 .facts dd { margin: 0; font-weight: 550; overflow-wrap: anywhere; }

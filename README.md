@@ -3,7 +3,9 @@
 Erfasst laufend den Zustand der Heidenhain-Steuerungen (iTNC 530) der DMG-Fräsen und speichert ihn für
 spätere Laufzeitauswertungen:
 
-- **Live:** Läuft die Maschine? Welches Programm, seit wann, welcher Satz, welches Werkzeug, welcher Override?
+- **Live:** Läuft die Maschine? Welches Programm, seit wann, welcher Satz, welches Werkzeug? Die
+  Poti-Stellung für Vorschub und Spindel steht als Balken (0–100 %) auf der Karte; über 100 % bleibt
+  der Balken voll und die Zahl zeigt den echten Wert.
 - **Auswertung:** Laufzeit und Auslastung je Tag und Maschine, Zeitleiste, Programme mit Stückzeiten,
   CSV-Export für Excel.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,

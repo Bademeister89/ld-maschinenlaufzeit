@@ -174,9 +174,36 @@ function toolWarning(m) {
     : el("p", { class: "tool-warning warn" }, `⚠ T${info.number}: Vorwarnzeit erreicht (${values}) · `, link);
 }
 
-function overrideText(o) {
-  const p = (v) => (v == null ? "—" : `${Math.round(v)} %`);
-  return `F ${p(o.feed)} · S ${p(o.spindle)} · FMAX ${p(o.rapid)}`;
+const pctText = (v) => (v == null ? "—" : `${Math.round(v)} %`);
+
+/** Ein Poti als Balken 0–100 %. Über 100 % (die Steuerung erlaubt bis 150 %) bleibt der Balken voll,
+ * der Wert steht immer als Zahl daneben – nie nur die Länge. */
+function overrideBar(label, value) {
+  const width = value == null ? 0 : Math.max(0, Math.min(100, value));
+  return el(
+    "div",
+    { class: "ovr" },
+    el("div", { class: "ovr-head" }, el("span", { class: "ovr-label", text: label }), el("span", { class: "ovr-value num", text: pctText(value) })),
+    el(
+      "div",
+      {
+        class: "ovr-meter",
+        role: "meter",
+        "aria-label": `${label}-Override`,
+        "aria-valuemin": "0",
+        "aria-valuemax": "100",
+        "aria-valuenow": value == null ? null : String(Math.round(width)),
+        "aria-valuetext": `${label} ${pctText(value)}`,
+      },
+      el("div", { class: "ovr-fill", style: { width: `${width}%` } }),
+    ),
+  );
+}
+
+/** Poti-Stellung Vorschub und Spindel; fehlt beides (Steuerung liefert nichts), entfällt der Block. */
+function overrideBlock(o) {
+  if (o.feed == null && o.spindle == null) return null;
+  return el("div", { class: "overrides" }, overrideBar("Vorschub", o.feed), overrideBar("Spindel", o.spindle));
 }
 
 /** Großer Statusbalken: Symbol + Zustand, rechts wie lange schon. */
@@ -269,6 +296,7 @@ function renderLive(m, now) {
         orderThumb,
       ),
       progressBlock(m),
+      overrideBlock(m.override),
       el(
         "dl",
         { class: "facts" },
@@ -276,7 +304,7 @@ function renderLive(m, now) {
         fact("Programmstatus", pgmStateLabel(m.pgm_state)),
         fact("Satz", m.blocks ? blocksText(m.blocks).replace("Satz ", "") : null),
         toolFact(m),
-        fact("Override", overrideText(m.override)),
+        fact("Eilgang (FMAX)", pctText(m.override.rapid)),
         fact("Lauf-Nr.", m.run ? String(m.run.id) : null),
       ),
     );
