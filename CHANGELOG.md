@@ -10,7 +10,7 @@ Alle Versionen von LD Maschinenlaufzeit, die neueste oben. Die Versionsnummer fo
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
-## [1.8.0] – 2026-09-28
+## [1.8.0] – 2026-10-02
 
 ### Neu
 - Ein Bild je Auftrag (fertiges Bauteil):
