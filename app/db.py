@@ -382,6 +382,12 @@ class Database:
     def mark_run_error(self, run_id: int) -> None:
         self._execute("UPDATE program_runs SET had_error = 1 WHERE id = ?", (run_id,))
 
+    def discard_run(self, run_id: int) -> None:
+        """Lauf löschen; seine Zustandsabschnitte bleiben als Zeit ohne Lauf erhalten."""
+        self._execute("UPDATE state_intervals SET run_id = NULL WHERE run_id = ?", (run_id,))
+        self._execute("DELETE FROM run_progress WHERE run_id = ?", (run_id,))
+        self._execute("DELETE FROM program_runs WHERE id = ?", (run_id,))
+
     _RUN_SELECT = (
         "SELECT r.id, r.machine_id, r.program, r.started_at, r.ended_at, r.result, r.had_error, r.start_observed, "
         f"COALESCE(SUM(CASE WHEN i.state = 'RUNNING' THEN {_END} - i.started_at END), 0) AS run_s, "

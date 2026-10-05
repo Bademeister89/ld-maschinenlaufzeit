@@ -14,6 +14,10 @@ Regeln:
 - Angewählte NC-Programme werden im Hintergrund gelesen, um die Satzanzahl zu kennen.
 - Folgt der Programmname dem Schema JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM, bekommen Abschnitte und
   Läufe die Auftragsnummer; ein neuer Auftrag wird dabei automatisch angelegt (orders.py).
+- Oberprogramme (z. B. ein Palettenprogramm auf der Automation) werden übersprungen: Ruft ein
+  Hauptprogramm ohne Auftragsnummer ein Auftragsprogramm per CALL PGM auf, zählt alles für das
+  aufgerufene Programm. Läuft das Oberprogramm selbst (Palettenwechsel zwischen den Aufrufen),
+  entsteht kein Lauf. Kehrt die Steuerung ins Oberprogramm zurück, ist das aufgerufene Programm fertig.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .adapters.base import MachineAdapter, Snapshot
@@ -83,6 +87,7 @@ class MachineCollector:
         db.close_stale_intervals(machine.id)
         self._interval: _Interval | None = None
         self._run = self._load_open_run()
+        self._callers: set[str] = set()  # erkannte Oberprogramme (rufen Auftragsprogramme auf)
 
         # None = noch kein durchgehender Kontakt (Programmstart / Neustart des Tools)
         self._prev_state: MachineState | None = None
@@ -131,6 +136,7 @@ class MachineCollector:
             state = MachineState.NETWORK if site_down else MachineState.OFFLINE
         else:
             state = classify(snap.pgm_state)
+            snap = self._resolve_program(snap)
         with self._db.transaction():
             if snap is not None:
                 self._update_run(snap, state, now)
@@ -142,6 +148,28 @@ class MachineCollector:
         self._snapshot = snap
         self._last_update = now
 
+    def _resolve_program(self, snap: Snapshot) -> Snapshot:
+        """Auftragsprogramm statt Oberprogramm: Die Steuerung meldet das angewählte Hauptprogramm
+        (``program``) und das gerade abgearbeitete Programm (``current_program``). Ist das
+        Hauptprogramm kein Auftragsprogramm, ruft aber eines auf, gilt das aufgerufene als
+        ``program``; das Hauptprogramm steht dann als Oberprogramm in ``caller``."""
+        main, current = snap.program, snap.current_program
+        if not main or parse_program(main):
+            return snap  # Auftragsprogramm direkt angewählt (oder gar keins)
+        called = current if current and current != main else None
+        if called and parse_program(called):
+            self._callers.add(main)
+            return replace(snap, program=called, caller=main)
+        run = self._run
+        if called and run is not None and run.program != main and parse_program(run.program):
+            # Das aufgerufene Auftragsprogramm ruft seinerseits ein Unterprogramm auf. Die Steuerung
+            # meldet nur Haupt- und innerstes Programm, der Lauf bleibt beim Auftragsprogramm.
+            self._callers.add(main)
+            return replace(snap, program=run.program, caller=main)
+        if main in self._callers:
+            return replace(snap, caller=main)  # das Oberprogramm selbst, z. B. Palettenwechsel
+        return snap
+
     def _update_run(self, snap: Snapshot, state: MachineState, now: float) -> None:
         run = self._run
         cur = self._interval
@@ -149,18 +177,27 @@ class MachineCollector:
             # Seit der letzten Abfrage lief das Programm durchgehend
             run.run_s += now - cur.last_seen
 
+        if run is not None and run.program in self._callers:
+            # Lauf eines Oberprogramms von vor seinem ersten erkannten Aufruf: verwerfen. Die Zeit
+            # bleibt Laufzeit der Maschine, zählt aber wie die übrige Zeit im Oberprogramm zu keinem Lauf.
+            self._db.discard_run(run.id)
+            self._forecaster.invalidate(run.program)
+            self._run = run = None
+
         if run is not None and (
             state is MachineState.READY or (state in RUN_ACTIVE_STATES and snap.program != run.program)
         ):
             # Lief der Lauf bis eben durchgehend, endet er jetzt; nach einer Unterbrechung
             # (offline / Neustart) beim letzten Lebenszeichen.
             continuous = cur is not None and cur.key[-1] == run.id
-            self._db.end_run(run.id, now if continuous else run.last_active, run_result(snap.pgm_state, run.had_error))
+            # Geht es im Oberprogramm weiter, hat das aufgerufene Programm sein Ende erreicht.
+            pgm_state = "FINISHED" if snap.caller is not None and state is not MachineState.READY else snap.pgm_state
+            self._db.end_run(run.id, now if continuous else run.last_active, run_result(pgm_state, run.had_error))
             self._db.prune_progress(self.machine.id, run.program, PROGRESS_KEEP_RUNS)
             self._forecaster.invalidate(run.program)
             self._run = run = None
 
-        if run is None and state is MachineState.RUNNING:
+        if run is None and state is MachineState.RUNNING and snap.program not in self._callers:
             start_observed = self._prev_state not in (None, MachineState.OFFLINE)
             code = parse_program(snap.program)
             run_id = self._db.start_run(
@@ -398,6 +435,7 @@ class MachineCollector:
             "exec_mode": snap.exec_mode if snap else None,
             "program": snap.program if snap else None,
             "current_program": snap.current_program if snap else None,
+            "caller": snap.caller if snap else None,
             "line_no": snap.line_no if snap else None,
             "blocks": blocks,
             "order": (code.public() if (code := parse_program(snap.program if snap else None)) else None),

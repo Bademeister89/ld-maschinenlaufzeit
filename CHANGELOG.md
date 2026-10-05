@@ -10,6 +10,23 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.10.1] – 2026-10-05
+
+### Behoben
+- Palettenprogramme auf der Automation: Ruft ein Oberprogramm ohne Auftragsnummer die
+  Auftragsprogramme per `CALL PGM` auf, zählt jetzt das aufgerufene Programm.
+  - Bisher wurden Lauf, Laufzeit und Werkzeugaufrufe dem Palettenprogramm zugeordnet, und beim
+    eigentlichen Auftrag kam nichts an.
+  - Lauf, Auftrag, Restlaufzeit und Werkzeugaufrufe gehören jetzt zum aufgerufenen
+    Auftragsprogramm. Die Live-Karte zeigt „aufgerufen von …“.
+  - Ruft das Auftragsprogramm selbst Unterprogramme auf, bleibt es beim Auftragsprogramm.
+  - Kehrt die Steuerung ins Palettenprogramm zurück, ist der Lauf des aufgerufenen Programms
+    „fertig“. Damit gibt es auch für diese Programme eine Restlaufzeit und eine Ø-Zeit je Teil.
+  - Die Zeit im Palettenprogramm selbst (z. B. Palettenwechsel) bleibt Laufzeit der Maschine,
+    zählt aber zu keinem Lauf und keinem Auftrag.
+- Schon abgeschlossene Läufe der Palettenprogramme bleiben, wie sie sind. Sie werden nicht
+  nachträglich auf die Aufträge umgebucht.
+
 ## [1.10.0] – 2026-10-02
 
 ### Geändert

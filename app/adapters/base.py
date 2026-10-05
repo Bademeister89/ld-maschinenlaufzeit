@@ -24,6 +24,9 @@ class Snapshot:
     override_spindle: float | None = None
     override_rapid: float | None = None
     errors: tuple[str, ...] = ()
+    # Oberprogramm (z. B. Palettenprogramm), das ``program`` per CALL PGM aufgerufen hat.
+    # Setzt der Collector; der Adapter liefert in ``program`` immer das angewählte Hauptprogramm.
+    caller: str | None = None
 
 
 class MachineAdapter(Protocol):

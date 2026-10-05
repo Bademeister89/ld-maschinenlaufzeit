@@ -286,6 +286,10 @@ function renderLive(m, now) {
   } else {
     const programName = baseName(m.program);
     const current = m.current_program && m.current_program !== m.program ? `aktuell: ${baseName(m.current_program)}` : null;
+    // Oberprogramm (z. B. Palettenprogramm): gezählt wird das aufgerufene Auftragsprogramm
+    const caller = !m.caller ? null
+      : m.caller === m.program ? "Oberprogramm – zählt zu keinem Auftrag"
+      : `aufgerufen von ${baseName(m.caller)}`;
     const run = runText(m, now);
     const orderThumb = orderThumbFor(c, m);
     parts.push(
@@ -298,7 +302,7 @@ function renderLive(m, now) {
           el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
           run ? el("div", { class: "program-run num", text: run, title: m.run.start_observed ? null : "Start vor Beginn der Erfassung" }) : null,
         ),
-        m.program ? el("div", { class: "program-path", text: [m.program, current].filter(Boolean).join(" · ") }) : null,
+        m.program ? el("div", { class: "program-path", text: [m.program, current, caller].filter(Boolean).join(" · ") }) : null,
         m.order
           ? el(
               "a",

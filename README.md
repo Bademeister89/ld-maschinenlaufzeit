@@ -163,6 +163,18 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Die Suche nach `21053` findet den Auftrag mit allen Versionen.
   - Läufe von Versionen, die vor Version 1.9.0 erfasst wurden (damals ohne Auftrag), werden beim
     Update automatisch zugeordnet.
+- **Oberprogramme** (z. B. ein Palettenprogramm auf der Automation, das die Auftragsprogramme
+  per `CALL PGM` aufruft) werden übersprungen:
+  - Hat das angewählte Hauptprogramm keine Auftragsnummer, ruft aber ein Auftragsprogramm auf, zählen
+    Lauf, Auftrag, Restlaufzeit und Werkzeugaufrufe für das aufgerufene Programm. Die Live-Karte zeigt
+    „aufgerufen von PAL1“.
+  - Ruft das Auftragsprogramm selbst Unterprogramme auf, bleibt es beim Auftragsprogramm.
+  - Kehrt die Steuerung ins Oberprogramm zurück, ist der Lauf des aufgerufenen Programms fertig.
+  - Die Zeit im Oberprogramm selbst (z. B. Palettenwechsel zwischen zwei Aufrufen) ist Laufzeit
+    der Maschine, gehört aber zu keinem Lauf und keinem Auftrag.
+  - Ruft das Oberprogramm dasselbe Auftragsprogramm mehrmals direkt hintereinander auf, kann daraus
+    ein einziger Lauf werden: Die Steuerung wird alle 2 s abgefragt, und die Zeilen dazwischen
+    laufen meist schneller ab.
 - **Gezählt wird die Zeit der Programmdurchläufe:** Laufzeit sowie Stopps und Fehler innerhalb der
   Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
   angewähltes Programm dem Auftrag Tage gutschreiben.
