@@ -221,6 +221,10 @@ class Database:
         if "calls" not in columns:
             self._con.execute("ALTER TABLE program_files ADD COLUMN calls TEXT")
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL")
+        # Seit 1.10.4 werden Palettentabellen (.P) ausgewertet: einmal neu einlesen
+        if self.get_meta("pallet_tables_reread") is None:
+            self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
+            self.set_meta("pallet_tables_reread", "1")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:

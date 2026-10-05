@@ -414,8 +414,10 @@ class MachineCollector:
                 self._db.save_program_file(
                     self.machine.id, path, result.size, result.mtime, result.blocks, result.error, now, result.calls
                 )
-                calls = f", ruft auf: {', '.join(result.calls)}" if result.calls else ""
-                log.info("%s: %s eingelesen – %s%s", self.machine.name, path, result.error or f"{result.blocks} Sätze", calls)
+                parts = [result.error or (f"{result.blocks} Sätze" if result.blocks is not None else "")]
+                if result.calls:
+                    parts.append(f"ruft auf: {', '.join(result.calls)}")
+                log.info("%s: %s eingelesen – %s", self.machine.name, path, ", ".join(p for p in parts if p))
             self._programs.pop(path, None)
             self._program_checked[path] = marker
 

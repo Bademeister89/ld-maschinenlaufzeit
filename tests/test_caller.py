@@ -162,8 +162,8 @@ def test_order_program_selected_directly_keeps_subprograms(db, make_collector):
 
 
 def test_program_calls_from_klartext():
-    assert program_calls(PAL_TEXT) == ("26-21055-01-01", "REINIGUNG", "MESSEN", "SPUELEN")
-    assert program_calls("0 BEGIN PGM X MM\n1 L X+0 FMAX\n2 END PGM X MM\n") == ()
+    assert program_calls(PAL, PAL_TEXT) == ("26-21055-01-01", "REINIGUNG", "MESSEN", "SPUELEN")
+    assert program_calls("X.H", "0 BEGIN PGM X MM\n1 L X+0 FMAX\n2 END PGM X MM\n") == ()
     assert call_name("TNC:\\PALETTE\\Reinigung.h") == call_name("REINIGUNG") == "REINIGUNG"
 
 
@@ -214,7 +214,7 @@ class CallsAdapter(NullAdapter):
         self.fetched.append((path, known))
         if known == (500, 1.0):
             return None
-        return ProgramFile(path, 500, 1.0, 9, calls=program_calls(PAL_TEXT) if path == PAL else ())
+        return ProgramFile(path, 500, 1.0, 9, calls=program_calls(PAL, PAL_TEXT) if path == PAL else ())
 
 
 def test_fetched_program_stores_calls(db):
@@ -251,7 +251,7 @@ def test_update_rereads_program_files_once(tmp_path):
 
 def test_program_calls_quoted_and_select_cycle():
     text = '1 SEL CYCLE "TNC:\\ZYKLEN\\Bohren 2.H"\n2 CYCL CALL\n3 CALL PGM DREH.H ; Reinigung\n'
-    assert program_calls(text) == ("BOHREN 2", "DREH")
+    assert program_calls("T.H", text) == ("BOHREN 2", "DREH")
 
 
 # --- Oberprogramm nicht lesbar: Entscheidung über die Datei des Auftragsprogramms -------------------
@@ -351,3 +351,73 @@ def test_unreadable_programs_are_retried_every_minute(db):
     ]
     assert c.live()["caller_file"] == {"calls": ["26-21055-01-01", "DREH"], "error": None}
     assert db.program_file("m1", A)["calls"] == ()
+
+
+# --- Palettentabelle (.P) als Hauptprogramm, wie im Feldtest an der DMU 70 ---------------------------
+
+PAL_TABLE = "TNC:\\Programme\\pal1sp.p"
+ORDER = "TNC:\\Programme\\21 Motor\\21053 abdeckung rechts 1 cvo\\26-21053-01-01.h"
+
+
+def pallet_table(rows, type_column="TYPE", width=80):
+    """Palettentabelle mit festen Spaltenbreiten wie auf der iTNC 530."""
+    lines = ["BEGIN PAL1SP .P MM", f"{'NR':<5}{type_column:<8}{'NAME':<{width}}{'DATUM':<12}{'X':<10}{'Y':<10}"]
+    lines += [f"{nr:<5}{kind:<8}{name:<{width}}{'':<12}{'+0':<10}{'+0':<10}" for nr, kind, name in rows]
+    return "\n".join([*lines, "[END]"]) + "\n"
+
+
+TABLE_ROWS = [(0, "PAL", "PAL1"), (1, "PGM", ORDER), (2, "PGM", "DREH.H"), (3, "PGM", "PAL_HOLEN")]
+
+
+@pytest.mark.parametrize("type_column", ["TYPE", "PAL/PGM"])
+def test_programs_from_pallet_table(type_column):
+    text = pallet_table(TABLE_ROWS, type_column)
+    assert program_calls(PAL_TABLE, text) == ("PAL1", "26-21053-01-01", "DREH", "PAL_HOLEN")
+
+
+def test_programs_from_pallet_table_without_header():
+    """Unbekanntes Tabellenformat: Programme mit Endung .H/.I werden trotzdem gefunden."""
+    text = f"BEGIN PAL1SP .P MM\n1 PGM {ORDER} +0 +0\n2 PGM DREH.H +0\n[END]\n"
+    assert program_calls(PAL_TABLE, text) == ("26-21053-01-01", "DREH")
+
+
+def test_pallet_table_as_main_program(db, make_collector):
+    c = make_collector()
+    db.save_program_file("m1", PAL_TABLE, 800, 1.0, None, None, 0, program_calls(PAL_TABLE, pallet_table(TABLE_ROWS)))
+
+    def p(state, current):
+        return snap(state, PAL_TABLE, current_program=current)
+
+    feed(
+        c,
+        (0, p("IDLE", PAL_TABLE)),
+        (10, p("STARTED", ORDER)),
+        (50, p("STARTED", SUB)),  # Unterprogramm des Auftragsprogramms: nicht in der Tabelle
+        (60, p("STARTED", ORDER)),
+        (100, p("STARTED", "TNC:\\Programme\\DREH.H")),
+        (130, p("STARTED", "TNC:\\Programme\\PAL_HOLEN.H")),
+        (200, p("STARTED", ORDER)),
+        (290, p("STARTED", "TNC:\\Programme\\DREH.H")),
+        (320, p("FINISHED", PAL_TABLE)),
+    )
+    assert runs(db) == [(ORDER, 10, 100, "finished"), (ORDER, 200, 290, "finished")]
+    assert c.live()["caller_file"] == {"calls": ["PAL1", "26-21053-01-01", "DREH", "PAL_HOLEN"], "error": None}
+
+
+def test_update_rereads_pallet_tables_once(tmp_path):
+    """Version 1.10.3 hat Palettentabellen wie Klartext gelesen und keine Programme gefunden."""
+    path = tmp_path / "v10.db"
+    db = Database(path)
+    db.ensure_machine("m1", "DMG 1", "10.0.0.1", 19000)
+    db.save_program_file("m1", PAL_TABLE, 800, 1.0, None, "Satzanzahl nicht erkennbar", 0, ())
+    db.save_program_file("m1", ORDER, 900, 1.0, 26395, None, 0, ())
+    db._execute("DELETE FROM meta WHERE key = 'pallet_tables_reread'")
+    db.close()
+    db = Database(path)
+    assert db.program_file("m1", PAL_TABLE)["size"] is None  # wird neu gelesen
+    assert db.program_file("m1", ORDER)["size"] == 900  # Programme bleiben
+    db.save_program_file("m1", PAL_TABLE, 800, 1.0, None, None, 0, ("DREH",))
+    db.close()
+    db = Database(path)
+    assert db.program_file("m1", PAL_TABLE)["size"] == 800  # nur einmal
+    db.close()

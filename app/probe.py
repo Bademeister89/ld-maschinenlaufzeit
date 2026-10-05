@@ -159,11 +159,14 @@ def _program_step(adapter: Lsv2Adapter, path: str, line_no: int | None, title: s
         info = adapter.fetch_program(path, None, 20_000_000)
     except AdapterError as exc:
         return Step(title, False, str(exc), required=False)
-    if info is None or info.blocks is None:
-        return Step(title, False, f"{path}: {info.error if info else 'unbekannt'}", required=False)
-    current = f", aktuell Satz {line_no}" if line_no is not None else ""
-    calls = f", ruft auf: {', '.join(info.calls)}" if info.calls else ""
-    return Step(title, True, f"{path}: {info.blocks} Sätze{current}{calls}", required=False)
+    if info is None or (info.blocks is None and not info.calls):
+        return Step(title, False, f"{path}: {(info.error if info else None) or 'unbekannt'}", required=False)
+    parts = [f"{info.blocks} Sätze"] if info.blocks is not None else []  # Palettentabelle: keine Sätze
+    if line_no is not None:
+        parts.append(f"aktuell Satz {line_no}")
+    if info.calls:
+        parts.append(f"ruft auf: {', '.join(info.calls)}")
+    return Step(title, True, f"{path}: {', '.join(parts)}", required=False)
 
 
 def _tool_table_step(adapter: Lsv2Adapter, tool: str | None) -> Step:

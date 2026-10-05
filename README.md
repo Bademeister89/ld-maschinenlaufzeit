@@ -163,8 +163,8 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Die Suche nach `21053` findet den Auftrag mit allen Versionen.
   - Läufe von Versionen, die vor Version 1.9.0 erfasst wurden (damals ohne Auftrag), werden beim
     Update automatisch zugeordnet.
-- **Oberprogramme** (z. B. ein Palettenprogramm auf der Automation, das die Auftragsprogramme
-  per `CALL PGM` aufruft) werden übersprungen:
+- **Oberprogramme** werden übersprungen, z. B. ein Palettenprogramm auf der Automation, das die
+  Auftragsprogramme per `CALL PGM` aufruft, oder eine **Palettentabelle** (`.P`), die sie abarbeitet:
   - Hat das angewählte Hauptprogramm keine Auftragsnummer, ruft aber ein Auftragsprogramm auf, zählen
     Lauf, Auftrag, Restlaufzeit und Werkzeugaufrufe für das aufgerufene Programm. Die Live-Karte zeigt
     „aufgerufen von PAL1“.
@@ -174,7 +174,8 @@ zugeordnet, z. B. `26-21055-01-01`:
   - **Zwischenprogramme** wie eine Reinigung oder das Holen der nächsten Palette zählen genauso.
     Ein M30 im Auftragsprogramm ist dafür nicht nötig: Sobald die Steuerung ein anderes Programm
     meldet, entscheidet die App, wer es aufgerufen hat. Dazu liest sie die `CALL PGM`-Zeilen
-    (auch `SEL PGM`, `SEL CYCLE` und Zyklus 12) aus den Programmdateien, in dieser Reihenfolge:
+    (auch `SEL PGM`, `SEL CYCLE` und Zyklus 12) aus den Programmdateien. Bei einer
+    Palettentabelle liest sie die Spalte `NAME`, Pfade mit Leerzeichen eingeschlossen. Die Reihenfolge:
     1. Steht es in der Datei des Oberprogramms, endet der Lauf des Auftragsprogramms. Die Liste
        zählt nur, wenn auch das Auftragsprogramm darin steht, sonst ist sie unvollständig
        (z. B. Aufruf über Parameter).

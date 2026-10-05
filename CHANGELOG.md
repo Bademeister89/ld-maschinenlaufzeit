@@ -10,6 +10,21 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.10.4] – 2026-10-05
+
+### Behoben
+- Palettentabellen (`.P`) als Hauptprogramm, z. B. `pal1sp.p` an der DMU 70: Die App las sie wie
+  ein Klartext-Programm. Die Live-Karte zeigte deshalb „ruft auf: – (kein CALL PGM erkannt)“.
+  - Jetzt liest die App die Programme aus der Spalte `NAME`, auch volle Pfade mit Leerzeichen
+    (`TNC:\Programme\21 Motor\…\26-21053-01-01.h`). Zusätzlich erkennt sie jeden Dateinamen auf
+    `.H`/`.I` in der Tabelle.
+  - Damit ist eindeutig, was die Palettentabelle selbst aufruft (Auftragsprogramm, `DREH.H`,
+    Palettenwechsel). Unterprogramme des Auftragsprogramms bleiben in dessen Lauf, auch wenn
+    seine Datei nicht lesbar ist.
+  - Schon gelesene Palettentabellen werden nach dem Update einmal neu eingelesen.
+- Verbindungstest: „Hauptprogramm lesen“ meldet eine Palettentabelle ohne Satzanzahl nicht mehr
+  als Fehler.
+
 ## [1.10.3] – 2026-10-05
 
 ### Behoben

@@ -293,7 +293,7 @@ function renderLive(m, now) {
     // Zur Kontrolle: Welche Programme ruft das Oberprogramm laut seiner Datei auf?
     const cf = m.caller_file;
     const callerFile = !cf ? null
-      : cf.calls ? `${baseName(m.caller)} ruft auf: ${cf.calls.length ? cf.calls.join(", ") : "– (kein CALL PGM erkannt)"}`
+      : cf.calls ? `${baseName(m.caller)} ruft auf: ${cf.calls.length ? cf.calls.join(", ") : "– (kein Programmaufruf erkannt)"}`
       : `${baseName(m.caller)} nicht gelesen: ${cf.error}`;
     const run = runText(m, now);
     const orderThumb = orderThumbFor(c, m);
