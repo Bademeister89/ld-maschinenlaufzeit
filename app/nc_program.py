@@ -3,7 +3,7 @@ die es aufruft.
 
 - Klartext (.H): Sätze sind durchnummeriert, der letzte lautet ``<Nr> END PGM <Name> MM``.
 - DIN/ISO (.I): gezählt werden die Programmzeilen (ohne Leerzeilen), beginnend bei 0.
-- Aufrufe (Klartext): ``CALL PGM``, ``SEL PGM`` und Zyklus 12 (``CYCL DEF 12.1 PGM``).
+- Aufrufe (Klartext): ``CALL PGM``, ``SEL PGM``, ``SEL CYCLE`` und Zyklus 12 (``CYCL DEF 12.1 PGM``).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 _END_PGM = re.compile(r"^\s*(\d+)\s+END\s+PGM\b", re.IGNORECASE | re.MULTILINE)
 _BLOCK_NO = re.compile(r"^\s*(\d+)\s", re.MULTILINE)
-_CALL = re.compile(r"\b(?:CALL|SEL|12\.1)\s+PGM\s+\"?([^\s\"]+)", re.IGNORECASE)
+_CALL = re.compile(r"\b(?:CALL\s+PGM|SEL\s+PGM|SEL\s+CYCLE|12\.1\s+PGM)\s+(?:\"([^\"]+)\"|([^\s\"]+))", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -38,8 +38,8 @@ def program_calls(text: str) -> tuple[str, ...]:
     Kommentare (ab ``;``) zählen nicht."""
     names: dict[str, None] = {}
     for line in text.splitlines():
-        for target in _CALL.findall(line.split(";", 1)[0]):
-            names[call_name(target)] = None
+        for quoted, plain in _CALL.findall(line.split(";", 1)[0]):
+            names[call_name(quoted or plain)] = None
     return tuple(names)
 
 

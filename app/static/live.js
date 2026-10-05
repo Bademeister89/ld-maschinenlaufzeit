@@ -290,6 +290,11 @@ function renderLive(m, now) {
     const caller = !m.caller ? null
       : m.caller === m.program ? "Oberprogramm – zählt zu keinem Auftrag"
       : `aufgerufen von ${baseName(m.caller)}`;
+    // Zur Kontrolle: Welche Programme ruft das Oberprogramm laut seiner Datei auf?
+    const cf = m.caller_file;
+    const callerFile = !cf ? null
+      : cf.calls ? `${baseName(m.caller)} ruft auf: ${cf.calls.length ? cf.calls.join(", ") : "– (kein CALL PGM erkannt)"}`
+      : `${baseName(m.caller)} nicht gelesen: ${cf.error}`;
     const run = runText(m, now);
     const orderThumb = orderThumbFor(c, m);
     parts.push(
@@ -303,6 +308,7 @@ function renderLive(m, now) {
           run ? el("div", { class: "program-run num", text: run, title: m.run.start_observed ? null : "Start vor Beginn der Erfassung" }) : null,
         ),
         m.program ? el("div", { class: "program-path", text: [m.program, current, caller].filter(Boolean).join(" · ") }) : null,
+        callerFile ? el("div", { class: "program-path", text: callerFile }) : null,
         m.order
           ? el(
               "a",

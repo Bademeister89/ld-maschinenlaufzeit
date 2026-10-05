@@ -63,8 +63,14 @@ def test_called_programs_get_runs_and_orders(db, make_collector):
     assert db._query("SELECT COUNT(*) AS n FROM run_progress WHERE run_id NOT IN (SELECT id FROM program_runs)")[0]["n"] == 0
 
 
+def order_file(db, calls=("ENTGRATEN",)):
+    """Datei des Auftragsprogramms A gelesen: ruft ``calls`` auf."""
+    db.save_program_file("m1", A, 900, 1.0, 120, None, 0, calls)
+
+
 def test_subprogram_of_called_program_stays_in_run(db, make_collector):
     c = make_collector()
+    order_file(db)
     feed(
         c,
         (0, pal("IDLE")),
@@ -128,6 +134,7 @@ def test_live_shows_called_program_and_caller(db, make_collector):
 
 def test_restart_inside_subprogram_keeps_open_run(db, make_collector):
     first = make_collector()
+    order_file(db)
     feed(first, (0, pal("IDLE")), (10, pal("STARTED", A)), (20, pal("STARTED", A)))
     second = make_collector()  # Neustart des Tools, A ruft gerade ein Unterprogramm auf
     feed(second, (30, pal("STARTED", SUB)), (40, pal("STARTED", A)), (50, pal("FINISHED")))
@@ -240,3 +247,107 @@ def test_update_rereads_program_files_once(tmp_path):
     row = db.program_file("m1", PAL)
     assert (row["size"], row["mtime"], row["blocks"], row["calls"]) == (None, None, 9, None)
     db.close()
+
+
+def test_program_calls_quoted_and_select_cycle():
+    text = '1 SEL CYCLE "TNC:\\ZYKLEN\\Bohren 2.H"\n2 CYCL CALL\n3 CALL PGM DREH.H ; Reinigung\n'
+    assert program_calls(text) == ("BOHREN 2", "DREH")
+
+
+# --- Oberprogramm nicht lesbar: Entscheidung über die Datei des Auftragsprogramms -------------------
+# Ablauf aus dem Feldtest: Das Hauptprogramm ruft je Palette das Auftragsprogramm, DREH.H (Reinigung)
+# und ein Programm zum Palettenwechsel auf. Im Auftragsprogramm steht kein M30 und kein CALL PGM.
+
+DREH = "TNC:\\DREH.H"
+HOLEN = "TNC:\\PAL_HOLEN.H"
+FIELD = [
+    (0, PAL, "IDLE"), (10, A, "STARTED"), (100, DREH, "STARTED"), (130, HOLEN, "STARTED"),
+    (200, A, "STARTED"), (290, DREH, "STARTED"), (320, HOLEN, "STARTED"), (400, PAL, "FINISHED"),
+]
+
+
+def field_test(c):
+    feed(c, *((t, pal(state, current)) for t, current, state in FIELD))
+
+
+@pytest.mark.parametrize(
+    "pallet_calls, order_calls",
+    [
+        (None, ()),  # Hauptprogramm nicht lesbar, Auftragsprogramm ruft nichts auf
+        (None, None),  # beide Dateien unbekannt
+        ((), ()),  # Hauptprogramm gelesen, aber kein CALL PGM erkannt (z. B. Aufruf über Parameter)
+        (("DREH", "PAL_HOLEN"), None),  # Auftragsprogramm fehlt in der Liste: Liste unvollständig
+        (("26-21055-01-01", "DREH", "PAL_HOLEN"), None),  # Hauptprogramm vollständig gelesen
+    ],
+)
+def test_field_test_splits_runs_at_cleaning(db, make_collector, pallet_calls, order_calls):
+    c = make_collector()
+    if pallet_calls is not None:
+        pallet_file(db, pallet_calls)
+    if order_calls is not None:
+        order_file(db, order_calls)
+    field_test(c)
+    assert runs(db) == [(A, 10, 100, "finished"), (A, 200, 290, "finished")]
+    [row] = orders.list_orders(db)
+    assert (row["running_s"], row["runs"], row["finished"]) == (180, 2, 2)
+
+
+def test_subprogram_listed_in_order_program_stays_in_run(db, make_collector):
+    c = make_collector()
+    order_file(db, ("ENTGRATEN",))  # Hauptprogramm unbekannt
+    feed(c, (0, pal("IDLE")), (10, pal("STARTED", A)), (20, pal("STARTED", SUB)), (30, pal("STARTED", A)), (40, pal("FINISHED")))
+    assert runs(db) == [(A, 10, 40, "finished")]
+
+
+def test_manufacturer_macro_stays_in_run(db, make_collector):
+    c = make_collector()
+    macro = "PLC:\\NC_MAKRO\\TOOLCHG.H"  # z. B. Werkzeugwechsel des Maschinenherstellers
+    feed(c, (0, pal("IDLE")), (10, pal("STARTED", A)), (20, pal("STARTED", macro)), (30, pal("STARTED", A)), (40, pal("FINISHED")))
+    assert runs(db) == [(A, 10, 40, "finished")]
+
+
+class FlakyAdapter(NullAdapter):
+    """Hauptprogramm: zweimal Übertragung abgebrochen; Auftragsprogramm: einmal abgelehnt; danach lesbar."""
+
+    def __init__(self):
+        self.fetched = []
+
+    def fetch_program(self, path, known, max_bytes):
+        self.fetched.append((path, known))
+        attempt = sum(1 for p, _ in self.fetched if p == path)
+        if path == PAL and attempt <= 2:
+            return ProgramFile(path, 500, 1.0, error="Übertragung fehlgeschlagen")
+        if path == A and attempt == 1:
+            raise RuntimeError("Steuerung belegt")
+        return ProgramFile(path, 500, 1.0, 9, calls=("26-21055-01-01", "DREH") if path == PAL else ())
+
+
+def test_unreadable_programs_are_retried_every_minute(db):
+    adapter = FlakyAdapter()
+    clock = [0.0]
+    c = MachineCollector(MACHINE, adapter, db, clock=lambda: clock[0])
+
+    async def poll(t, s):
+        clock[0] = t
+        c.process(s, t)
+        c._maybe_fetch_programs(s)
+        for _ in range(20):  # Lesen läuft im Hintergrund
+            await asyncio.sleep(0.01)
+            if c._fetch_task is None or c._fetch_task.done():
+                break
+
+    async def scenario():
+        await poll(0, pal("IDLE"))
+        await poll(10, pal("STARTED", A))  # neuer Lauf: beide erneut geprüft
+        assert c.live()["caller_file"] == {"calls": None, "error": "Übertragung fehlgeschlagen"}
+        await poll(30, pal("STARTED", A))  # gleicher Lauf, noch keine Minute: kein Versuch
+        await poll(75, pal("STARTED", A))  # nach einer Minute: neuer Versuch
+
+    asyncio.run(scenario())
+    assert adapter.fetched == [
+        (PAL, None),
+        (PAL, None), (A, None),  # nach dem Fehler ganz neu lesen, nicht nur auf Änderung prüfen
+        (PAL, None), (A, None),
+    ]
+    assert c.live()["caller_file"] == {"calls": ["26-21055-01-01", "DREH"], "error": None}
+    assert db.program_file("m1", A)["calls"] == ()

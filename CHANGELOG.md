@@ -10,6 +10,23 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.10.3] – 2026-10-05
+
+### Behoben
+- Palettenbetrieb: Der Auftragslauf lief über Reinigung und Palettenwechsel hinweg weiter, wenn die
+  App die Aufrufe im Hauptprogramm nicht kannte.
+  - **Ursachen:** Die Datei war nicht lesbar, enthielt keine erkennbare `CALL PGM`-Zeile, oder
+    das Lesen ist einmal fehlgeschlagen. Ein zweiter Versuch kam erst beim nächsten Lauf, und der
+    begann so nie.
+  - **Jetzt:** Die App prüft zusätzlich die Datei des **Auftragsprogramms**. Ein Programm, das das
+    Auftragsprogramm nicht selbst aufruft (z. B. `DREH.H`), beendet den Auftragslauf. Das gilt auch,
+    wenn gar keine Datei lesbar ist. Ausnahme: Makros auf `PLC:`.
+  - Nicht lesbare Programmdateien werden jede Minute erneut gelesen. Nach einer abgebrochenen
+    Übertragung liest die App die Datei ganz neu, statt nur auf Änderungen zu prüfen.
+  - Erkannt werden zusätzlich `SEL CYCLE` und Programmnamen in Anführungszeichen.
+- Live-Karte: Unter dem Programm steht beim Palettenbetrieb, welche Programme das Hauptprogramm
+  laut Datei aufruft, oder warum die Datei nicht gelesen werden konnte.
+
 ## [1.10.2] – 2026-10-05
 
 ### Behoben

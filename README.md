@@ -171,17 +171,21 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Kehrt die Steuerung ins Oberprogramm zurück, ist der Lauf des aufgerufenen Programms fertig.
   - Die Zeit im Oberprogramm selbst (z. B. Palettenwechsel zwischen zwei Aufrufen) ist Laufzeit
     der Maschine, gehört aber zu keinem Lauf und keinem Auftrag.
-  - **Zwischenprogramme** wie eine Reinigung zählen genauso. Die App liest dazu die
-    `CALL PGM`-Zeilen (auch `SEL PGM` und Zyklus 12) aus der Datei des Oberprogramms:
-    - Ruft das Oberprogramm ein Programm ohne Auftragsnummer selbst auf, endet damit der Lauf
-      des Auftragsprogramms.
-    - Ruft dagegen das Auftragsprogramm ein Unterprogramm auf, das im Oberprogramm nicht vorkommt,
-      bleibt es beim Auftragsprogramm.
-  - Der Verbindungstest zeigt unter „Hauptprogramm lesen“, welche Programme das Oberprogramm
-    aufruft. Im Log steht es beim Einlesen („ruft auf: …“).
-  - Ist die Datei des Oberprogramms nicht lesbar, oder ruft es Programme über Parameter auf, zählt
-    jedes Programm, das unter einem Auftragsprogramm läuft, zu dessen Lauf. Dann kann das
-    Auftragsprogramm, das Zwischenprogramm und das nächste Auftragsprogramm zu einem Lauf werden.
+  - **Zwischenprogramme** wie eine Reinigung oder das Holen der nächsten Palette zählen genauso.
+    Ein M30 im Auftragsprogramm ist dafür nicht nötig: Sobald die Steuerung ein anderes Programm
+    meldet, entscheidet die App, wer es aufgerufen hat. Dazu liest sie die `CALL PGM`-Zeilen
+    (auch `SEL PGM`, `SEL CYCLE` und Zyklus 12) aus den Programmdateien, in dieser Reihenfolge:
+    1. Steht es in der Datei des Oberprogramms, endet der Lauf des Auftragsprogramms. Die Liste
+       zählt nur, wenn auch das Auftragsprogramm darin steht, sonst ist sie unvollständig
+       (z. B. Aufruf über Parameter).
+    2. Steht es in der Datei des Auftragsprogramms, ist es ein Unterprogramm, und der Lauf geht weiter.
+    3. Sonst kommt der Aufruf aus dem Oberprogramm, und der Lauf endet. Das gilt auch, wenn keine
+       der beiden Dateien lesbar ist. Ausnahme: Programme auf `PLC:` (Makros des
+       Maschinenherstellers) laufen im Auftragsprogramm weiter.
+  - Programmdateien, die nicht gelesen werden konnten, versucht die App jede Minute erneut.
+  - **Zur Kontrolle** zeigt die Live-Karte unter dem Programm, was über das Oberprogramm bekannt ist:
+    „HAUPT.H ruft auf: …“ oder „HAUPT.H nicht gelesen: <Grund>“. Der Verbindungstest zeigt es
+    unter „Hauptprogramm lesen“, das Log beim Einlesen („ruft auf: …“).
   - Ruft das Oberprogramm dasselbe Auftragsprogramm mehrmals direkt hintereinander auf, ohne
     Zwischenprogramm, kann daraus ein einziger Lauf werden. Die Steuerung wird alle 2 s abgefragt,
     und die Zeilen dazwischen laufen meist schneller ab.

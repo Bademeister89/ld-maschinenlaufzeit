@@ -17,8 +17,10 @@ Regeln:
 - Oberprogramme (z. B. ein Palettenprogramm auf der Automation) werden übersprungen: Ruft ein
   Hauptprogramm ohne Auftragsnummer ein Auftragsprogramm per CALL PGM auf, zählt alles für das
   aufgerufene Programm. Läuft das Oberprogramm selbst (Palettenwechsel zwischen den Aufrufen) oder
-  ein Programm ohne Auftragsnummer, das es laut seiner Datei selbst aufruft (z. B. Reinigung),
-  entsteht kein Lauf. Kehrt die Steuerung ins Oberprogramm zurück, ist das aufgerufene Programm fertig.
+  ein Programm ohne Auftragsnummer, das es selbst aufruft (z. B. Reinigung), entsteht kein Lauf.
+  Kehrt die Steuerung ins Oberprogramm zurück, ist das aufgerufene Programm fertig. Wer ein Programm
+  aufruft, zeigen die CALL-PGM-Zeilen in den Dateien von Ober- und Auftragsprogramm (siehe
+  ``_called_by_caller``).
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ PROGRESS_SAMPLE_S = 10  # höchstens ein Satzverlauf-Punkt je 10 s reiner Laufze
 PROGRESS_KEEP_RUNS = 10  # Satzverlauf der letzten 10 Referenzläufe je Programm aufheben
 TOOL_TABLE_CHECK_S = 600  # Werkzeugtabelle (Namen) alle 10 min auf Änderungen prüfen …
 TOOL_TABLE_RETRY_S = 60  # … und früher, wenn ein Werkzeug ohne bekannten Namen auftaucht
+PROGRAM_RETRY_S = 60  # nicht lesbare Programmdatei jede Minute erneut versuchen
 
 
 @dataclass
@@ -109,6 +112,8 @@ class MachineCollector:
         self._last_sample: tuple[int, float, tuple[str | None, int]] | None = None
         self._programs: dict[str, dict[str, Any] | None] = {}
         self._program_checked: dict[str, int | None] = {}  # Pfad → Lauf, für den geprüft wurde
+        self._program_tried: dict[str, float] = {}  # Pfad → letzter Leseversuch
+        self._program_failures: dict[str, str] = {}  # Pfad → Fehler beim letzten Leseversuch
         self._fetch_task: asyncio.Task[None] | None = None  # Programm- bzw. Werkzeugtabellen-Lesen
         self._tool_names: dict[int, str] = {}  # aus TOOL.T
         self._tool_table: tuple[int, float] | None = None  # (Größe, Änderungszeit) beim letzten Lesen
@@ -165,21 +170,35 @@ class MachineCollector:
         run = self._run
         if called and run is not None and run.program != main and parse_program(run.program):
             # Ein Auftragsprogramm lief unter diesem Hauptprogramm, es ist also ein Oberprogramm. Die
-            # Steuerung meldet nur Haupt- und innerstes Programm: Ruft das Oberprogramm das Programm laut
-            # seiner Datei selbst auf (z. B. eine Reinigung), ist das Auftragsprogramm fertig; sonst ist es
-            # ein Unterprogramm des Auftragsprogramms, und der Lauf bleibt beim Auftragsprogramm.
+            # Steuerung meldet nur Haupt- und innerstes Programm: Ruft das Oberprogramm das Programm
+            # selbst auf (z. B. eine Reinigung), ist das Auftragsprogramm fertig; sonst ist es ein
+            # Unterprogramm des Auftragsprogramms, und der Lauf bleibt beim Auftragsprogramm.
             self._callers.add(main)
-            if not self._calls_directly(main, called):
+            if not self._called_by_caller(main, called, run.program):
                 return replace(snap, program=run.program, caller=main)
         if main in self._callers:
             return replace(snap, caller=main)  # das Oberprogramm selbst, z. B. Palettenwechsel
         return snap
 
-    def _calls_directly(self, caller: str, program: str) -> bool:
-        """Ruft ``caller`` laut seiner eingelesenen Programmdatei ``program`` selbst auf?
-        Unbekannt (Datei noch nicht oder nicht lesbar) = nein."""
-        row = self._program_row(caller)
-        return bool(row and row["calls"]) and call_name(program) in row["calls"]
+    def _calls_of(self, path: str) -> tuple[str, ...] | None:
+        """Aufgerufene Programme laut eingelesener Datei; None = Datei (noch) nicht gelesen."""
+        row = self._program_row(path)
+        return row["calls"] if row else None
+
+    def _called_by_caller(self, caller: str, called: str, order: str) -> bool:
+        """Läuft ``called`` direkt aus dem Oberprogramm (dann ist das Auftragsprogramm ``order``
+        fertig) oder als Unterprogramm des Auftragsprogramms?"""
+        if called.upper().startswith("PLC:"):
+            return False  # Makros des Maschinenherstellers laufen im Auftragsprogramm
+        name = call_name(called)
+        caller_calls = self._calls_of(caller)
+        if caller_calls is not None and call_name(order) in caller_calls:
+            # Die Datei des Oberprogramms zeigt seine Aufrufe vollständig (das Auftragsprogramm steht drin)
+            return name in caller_calls
+        # Oberprogramm unbekannt oder ruft über Parameter auf: Steht der Aufruf nicht im
+        # Auftragsprogramm (oder ist auch das unbekannt), kommt er aus dem Oberprogramm.
+        order_calls = self._calls_of(order)
+        return order_calls is None or name not in order_calls
 
     def _update_run(self, snap: Snapshot, state: MachineState, now: float) -> None:
         run = self._run
@@ -354,14 +373,20 @@ class MachineCollector:
         return row["blocks"] if row else None
 
     def _maybe_fetch_programs(self, snap: Snapshot) -> None:
-        """Angewählte Programme einmal je Lauf prüfen (bei Änderung neu einlesen)."""
+        """Angewählte Programme einmal je Lauf prüfen (bei Änderung neu einlesen). Programme, deren
+        Datei noch nicht gelesen werden konnte, jede Minute erneut versuchen – ohne ihre Aufrufe
+        lassen sich Oberprogramme schlechter trennen."""
         fetch = getattr(self._adapter, "fetch_program", None)
         if not self._fetch_programs or fetch is None or (self._fetch_task and not self._fetch_task.done()):
             return
         marker = self._run.id if self._run else None
+        now = self._clock()
         paths = [
             p for p in dict.fromkeys((snap.program, snap.current_program))
-            if p and self._program_checked.get(p, -1) != marker
+            if p and (
+                self._program_checked.get(p, -1) != marker
+                or (self._calls_of(p) is None and now - self._program_tried.get(p, now) >= PROGRAM_RETRY_S)
+            )
         ]
         if paths:
             self._fetch_task = asyncio.create_task(self._fetch(fetch, paths, marker))
@@ -369,13 +394,19 @@ class MachineCollector:
     async def _fetch(self, fetch: Callable[..., Any], paths: list[str], marker: int | None) -> None:
         for path in paths:
             row = self._program_row(path)
-            known = (row["size"], row["mtime"]) if row and row["size"] is not None else None
+            # Nach einem Fehler (z. B. Übertragung abgebrochen) ganz neu lesen, nicht nur auf Änderung prüfen
+            failed = row is not None and row["calls"] is None and row["error"] is not None
+            known = (row["size"], row["mtime"]) if row and row["size"] is not None and not failed else None
+            self._program_tried[path] = self._clock()
             try:
                 result = await asyncio.to_thread(fetch, path, known, self._program_max_bytes)
             except Exception as exc:
-                log.warning("%s: Programm %s nicht lesbar: %s", self.machine.name, path, exc)
+                if self._program_failures.get(path) != str(exc):
+                    log.warning("%s: Programm %s nicht lesbar: %s", self.machine.name, path, exc)
+                self._program_failures[path] = str(exc)
                 self._program_checked[path] = marker
                 continue
+            self._program_failures.pop(path, None)
             now = self._clock()
             if result is None:
                 self._db.touch_program_file(self.machine.id, path, now)
@@ -448,6 +479,7 @@ class MachineCollector:
             "program": snap.program if snap else None,
             "current_program": snap.current_program if snap else None,
             "caller": snap.caller if snap else None,
+            "caller_file": self._caller_file(snap.caller) if snap and snap.caller else None,
             "line_no": snap.line_no if snap else None,
             "blocks": blocks,
             "order": (code.public() if (code := parse_program(snap.program if snap else None)) else None),
@@ -472,6 +504,15 @@ class MachineCollector:
             ),
             "forecast": forecast,
         }
+
+    def _caller_file(self, path: str) -> dict[str, Any]:
+        """Was über die Datei des Oberprogramms bekannt ist – zur Kontrolle auf der Live-Karte."""
+        calls = self._calls_of(path)
+        if calls is not None:
+            return {"calls": list(calls), "error": None}
+        row = self._program_row(path)
+        error = (row["error"] if row else None) or self._program_failures.get(path) or "noch nicht gelesen"
+        return {"calls": None, "error": error}
 
     # --- Abfrageschleife -----------------------------------------------------------
 
