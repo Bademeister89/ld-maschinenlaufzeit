@@ -820,6 +820,11 @@ a.field-hint { color: var(--accent); justify-self: start; }
 .mf-list { list-style: none; margin: 0; padding: 0; display: grid; }
 .mf-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0; border-top: 1px solid var(--grid); }
 .mf-list li:first-child { border-top: 0; }
+
+/* Diagnose-Datei (Konfiguration) */
+.diag-form { display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: center; }
+.diag-form label { display: inline-flex; align-items: center; gap: 8px; }
+.diag-check input { margin: 0; }
 .mf-list li.empty { color: var(--muted); }
 .mf-name { font-weight: 550; overflow-wrap: anywhere; }
 .mf-usage { font-size: 13px; }

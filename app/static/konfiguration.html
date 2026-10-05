@@ -60,6 +60,25 @@
       <p class="muted" id="settings-note" style="margin: 0"></p>
     </section>
 
+    <section class="card section" id="diagnose">
+      <div class="section-head">
+        <h2>Diagnose</h2>
+        <p class="muted">Für Fehlermeldungen: Logs, Mitschnitt der Steuerungsdaten seit dem Start und die Auswertungsdaten des Zeitraums in einer ZIP-Datei.</p>
+      </div>
+      <form class="diag-form" action="/api/diagnose.zip" method="get">
+        <label>Zeitraum
+          <select name="days">
+            <option value="1">1 Tag</option>
+            <option value="7" selected>7 Tage</option>
+            <option value="30">30 Tage</option>
+          </select>
+        </label>
+        <label class="diag-check"><input type="checkbox" name="db" value="true"> Datenbank beifügen (größer)</label>
+        <button type="submit" class="btn primary">Diagnose-Datei herunterladen</button>
+      </form>
+      <p class="muted" style="margin: 8px 0 0">Das Erstellen dauert einige Sekunden. Die Datei enthält Maschinenadressen und Programmnamen, aber keine Passwörter.</p>
+    </section>
+
     <section class="card section" id="versionen">
       <h2 style="margin-bottom: 12px">Versionen</h2>
       <div id="changelog" class="changelog"></div>

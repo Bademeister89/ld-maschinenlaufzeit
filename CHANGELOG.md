@@ -10,6 +10,29 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.11.0] – 2026-10-05
+
+### Neu
+- **Diagnose-Datei** für Fehlermeldungen: Konfiguration → Diagnose → „Diagnose-Datei herunterladen“.
+  - Inhalt der ZIP-Datei:
+    - Logs
+    - Version und Einstellungen
+    - Live-Status
+    - ein **Mitschnitt** jeder Änderung der Steuerungsdaten seit dem Start der App
+    - Läufe mit Programmstatus am Laufende
+    - Zustandsabschnitte, Ereignisse und gelesene Programmdateien des Zeitraums
+  - Zeitraum 1, 7 oder 30 Tage, auf Wunsch mit der ganzen Datenbank.
+  - Die Datei enthält Maschinenadressen und Programmnamen, aber keine Passwörter.
+
+### Behoben
+- Läufe, die bis zum Programmende liefen, standen als „unterbrochen“ in den Programmläufen.
+  - **Ursache:** Die Steuerung meldet nach dem Programmende gleich „inaktiv“ statt „beendet“
+    (z. B. ohne M30).
+  - **Jetzt:** Das zählt als fertig, wenn das Programm bis zuletzt lief oder zuletzt in seinen
+    letzten 5 % Sätzen stand.
+  - Ein Abbruch über NC-Stopp mitten im Programm bleibt „unterbrochen“.
+  - Schon erfasste Läufe bleiben unverändert.
+
 ## [1.10.4] – 2026-10-05
 
 ### Behoben

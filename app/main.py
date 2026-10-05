@@ -79,6 +79,7 @@ class AppContext:
     manager: MachineManager
     tz: ZoneInfo
     order_images: OrderImages = field(init=False)
+    started_at: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
         self.order_images = OrderImages(self.db, self.settings.order_images_dir)

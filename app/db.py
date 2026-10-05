@@ -241,6 +241,15 @@ class Database:
         with self._lock:
             self._con.close()
 
+    def backup_to(self, path: Path | str) -> None:
+        """Vollständige, in sich stimmige Kopie der Datenbank (auch während die Erfassung schreibt)."""
+        target = sqlite3.connect(str(path))
+        try:
+            with self._lock:
+                self._con.backup(target)
+        finally:
+            target.close()
+
     @contextmanager
     def transaction(self) -> Iterator[None]:
         """Transaktion; verschachtelte Aufrufe laufen in der äußeren mit."""
@@ -744,6 +753,12 @@ class Database:
     def touch_program_file(self, machine_id: str, path: str, checked_at: float) -> None:
         self._execute(
             "UPDATE program_files SET checked_at = ? WHERE machine_id = ? AND path = ?", (checked_at, machine_id, path)
+        )
+
+    def program_files(self) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT machine_id, path, size, mtime, blocks, error, checked_at, calls FROM program_files "
+            "ORDER BY machine_id, checked_at DESC"
         )
 
     def program_blocks(self) -> dict[tuple[str, str], int]:

@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -49,6 +50,8 @@ PROGRESS_KEEP_RUNS = 10  # Satzverlauf der letzten 10 Referenzläufe je Programm
 TOOL_TABLE_CHECK_S = 600  # Werkzeugtabelle (Namen) alle 10 min auf Änderungen prüfen …
 TOOL_TABLE_RETRY_S = 60  # … und früher, wenn ein Werkzeug ohne bekannten Namen auftaucht
 PROGRAM_RETRY_S = 60  # nicht lesbare Programmdatei jede Minute erneut versuchen
+RAW_LOG_KEEP = 5000  # Mitschnitt: so viele Statusänderungen je Maschine im Speicher halten
+END_BLOCK_SHARE = 0.95  # Programm stand am Ende: zuletzt in den letzten 5 % seiner Sätze
 
 
 @dataclass
@@ -119,6 +122,11 @@ class MachineCollector:
         self._tool_table: tuple[int, float] | None = None  # (Größe, Änderungszeit) beim letzten Lesen
         self._tool_table_checked: float | None = None
         self._tool_name_missing = False
+        # Mitschnitt der Rohdaten (nur im Speicher, seit dem Start) für die Diagnose-Datei
+        self._raw: deque[dict[str, Any]] = deque(maxlen=RAW_LOG_KEEP)
+        self._raw_key: tuple[Any, ...] | None = None
+        self._raw_last: Snapshot | None = None
+        self.started_at = clock()
 
     def _load_open_run(self) -> _Run | None:
         row = self._db.open_run(self.machine.id)
@@ -139,6 +147,7 @@ class MachineCollector:
     def process(self, snap: Snapshot | None, now: float, reason: str | None = None, site_down: bool = False) -> None:
         """Eine Abfrage verbuchen. ``snap=None`` bedeutet: Steuerung nicht erreichbar;
         ``site_down``: auch die Prüfadresse am Standort antwortet nicht."""
+        raw = snap
         if snap is None:
             state = MachineState.NETWORK if site_down else MachineState.OFFLINE
         else:
@@ -151,9 +160,45 @@ class MachineCollector:
             self._update_tool(snap, state, now)
             self._record_events(snap, state, now, reason)
             self._update_progress(snap, state)
+        self._record_raw(raw, snap, state, now, reason)
         self._prev_state = state
         self._snapshot = snap
         self._last_update = now
+
+    def _record_raw(
+        self, raw: Snapshot | None, snap: Snapshot | None, state: MachineState, now: float, reason: str | None
+    ) -> None:
+        """Mitschnitt für die Diagnose-Datei: jede Änderung dessen, was die Steuerung meldet, mit
+        dem Satz davor und danach und dem, was die Erfassung daraus gemacht hat."""
+        key = (
+            (state.value, reason)
+            if raw is None
+            else (raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors)
+        )
+        if key != self._raw_key:
+            run = self._run
+            self._raw.append({
+                "t": now,
+                "state": state.value,
+                "pgm_state": raw.pgm_state if raw else None,
+                "exec_mode": raw.exec_mode if raw else None,
+                "program": raw.program if raw else None,
+                "current_program": raw.current_program if raw else None,
+                "line_before": self._raw_last.line_no if self._raw_last else None,
+                "line_no": raw.line_no if raw else None,
+                "tool": raw.tool if raw else None,
+                "errors": " | ".join(raw.errors) if raw else None,
+                "counted_program": snap.program if snap else None,
+                "caller": snap.caller if snap else None,
+                "run_id": run.id if run else None,
+                "run_program": run.program if run else None,
+                "reason": reason,
+            })
+            self._raw_key = key
+        self._raw_last = raw
+
+    def raw_log(self) -> list[dict[str, Any]]:
+        return list(self._raw)
 
     def _resolve_program(self, snap: Snapshot) -> Snapshot:
         """Auftragsprogramm statt Oberprogramm: Die Steuerung meldet das angewählte Hauptprogramm
@@ -200,6 +245,18 @@ class MachineCollector:
         order_calls = self._calls_of(order)
         return order_calls is None or name not in order_calls
 
+    def _reached_end(self, run: _Run) -> bool:
+        """Manche Steuerungen melden nach dem Programmende gleich "inaktiv" statt "beendet" (z. B.
+        ohne M30, oder "beendet" stand kürzer als ein Abfragetakt an). Fertig ist das Programm, wenn
+        es bis zuletzt lief – ein Abbruch geht über NC-Stopp – oder zuletzt in seinen letzten Sätzen stand."""
+        if self._prev_state is MachineState.RUNNING:
+            return True
+        prev = self._snapshot
+        if prev is None or prev.line_no is None or (prev.current_program or prev.program) != run.program:
+            return False
+        blocks = self._blocks(run.program)
+        return bool(blocks) and prev.line_no >= blocks * END_BLOCK_SHARE
+
     def _update_run(self, snap: Snapshot, state: MachineState, now: float) -> None:
         run = self._run
         cur = self._interval
@@ -220,8 +277,11 @@ class MachineCollector:
             # Lief der Lauf bis eben durchgehend, endet er jetzt; nach einer Unterbrechung
             # (offline / Neustart) beim letzten Lebenszeichen.
             continuous = cur is not None and cur.key[-1] == run.id
-            # Geht es im Oberprogramm weiter, hat das aufgerufene Programm sein Ende erreicht.
-            pgm_state = "FINISHED" if snap.caller is not None and state is not MachineState.READY else snap.pgm_state
+            pgm_state = snap.pgm_state
+            if snap.caller is not None and state is not MachineState.READY:
+                pgm_state = "FINISHED"  # Geht es im Oberprogramm weiter, hat das aufgerufene Programm sein Ende erreicht
+            elif pgm_state == "IDLE" and self._reached_end(run):
+                pgm_state = "FINISHED"
             self._db.end_run(run.id, now if continuous else run.last_active, run_result(pgm_state, run.had_error))
             self._db.prune_progress(self.machine.id, run.program, PROGRESS_KEEP_RUNS)
             self._forecaster.invalidate(run.program)

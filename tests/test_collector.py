@@ -116,6 +116,30 @@ def test_program_change_starts_new_run(db, make_collector):
     assert (second["program"], second["started_at"], second["ended_at"], second["result"]) == ("P2", 10, 20, "finished")
 
 
+def test_idle_right_after_running_counts_as_finished(db, make_collector):
+    """Programmende ohne "beendet" (z. B. ohne M30): die Steuerung meldet gleich "inaktiv"."""
+    c = make_collector()
+    feed(c, (0, snap("IDLE")), (1, snap("STARTED", line_no=5)), (100, snap("STARTED", line_no=190)), (102, snap("IDLE", line_no=0)))
+    [run] = runs(db)
+    assert (run["ended_at"], run["result"]) == (102, "finished")
+
+
+def test_idle_after_stop_in_the_middle_stays_aborted(db, make_collector):
+    c = make_collector()
+    db.save_program_file("m1", "P1", 5000, 1.0, 200, None, 0, ())
+    feed(c, (0, snap("IDLE")), (1, snap("STARTED", line_no=5)), (50, snap("STOPPED", line_no=80)), (60, snap("IDLE", line_no=0)))
+    [run] = runs(db)
+    assert run["result"] == "aborted"
+
+
+def test_idle_after_stop_at_the_last_blocks_counts_as_finished(db, make_collector):
+    c = make_collector()
+    db.save_program_file("m1", "P1", 5000, 1.0, 200, None, 0, ())
+    feed(c, (0, snap("IDLE")), (1, snap("STARTED", line_no=5)), (50, snap("STOPPED", line_no=196)), (60, snap("IDLE", line_no=0)))
+    [run] = runs(db)
+    assert run["result"] == "finished"
+
+
 def test_unknown_state_suspends_but_does_not_end_run(db, make_collector):
     c = make_collector()
     feed(c, (0, snap("IDLE")), (1, snap("STARTED")), (3, snap("UNDEFINED")), (5, snap("STARTED")), (9, snap("FINISHED")))

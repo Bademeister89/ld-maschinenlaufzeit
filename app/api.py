@@ -6,6 +6,7 @@ oder ISO-Zeitstempel (ohne Zeitzone = lokale Zeitzone aus der Konfiguration).
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import time
@@ -16,7 +17,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import BUILD, __version__, changelog, stats, tools
+from . import BUILD, __version__, changelog, diagnostics, stats, tools
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, RUN_RESULT_LABELS, STATE_LABELS
 
 if TYPE_CHECKING:
@@ -88,6 +89,24 @@ def meta(request: Request) -> dict[str, Any]:
 @router.get("/version")
 def version() -> dict[str, Any]:
     return {"version": __version__, "build": BUILD, "changelog": changelog.load()}
+
+
+@router.get("/diagnose.zip")
+async def diagnose(
+    request: Request,
+    days: int = Query(7, ge=1, le=365, description="Zeitraum der Auswertungsdaten in Tagen"),
+    db: bool = Query(False, description="Datenbank beifügen"),
+) -> Response:
+    """Diagnose-Datei für Fehlermeldungen (siehe diagnostics.py)."""
+    ctx = _ctx(request)
+    captured = diagnostics.capture(ctx)  # in der Ereignisschleife, wie die Erfassung
+    data = await asyncio.to_thread(diagnostics.build_zip, ctx, captured, days, db)
+    stamp = datetime.now(ctx.tz).strftime("%Y-%m-%d_%H%M")
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="ld-diagnose_{stamp}.zip"'},
+    )
 
 
 @router.get("/machines")

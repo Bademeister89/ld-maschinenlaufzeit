@@ -327,6 +327,10 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
 - **Programmdurchlauf:** beginnt bei „Läuft“ und bleibt über Stopps und Fehler offen. Er endet, wenn
   die Maschine „Bereit“ meldet oder ein anderes Programm läuft. Kurze Verbindungsabbrüche beenden
   keinen Lauf. Ergebnis: fertig, abgebrochen, Fehler oder unterbrochen.
+  - **Fertig** ist ein Lauf, wenn die Steuerung „beendet“ meldet. Manche Steuerungen melden nach
+    dem Programmende gleich „inaktiv“, z. B. ohne M30. Auch das zählt als fertig, wenn das Programm
+    bis zuletzt lief oder zuletzt in seinen letzten 5 % Sätzen stand. Ein Abbruch über NC-Stopp
+    mitten im Programm bleibt „unterbrochen“.
 - **„Start beobachtet“ / ≥:** Lief ein Programm schon, als die Erfassung begann, ist der echte Start
   unbekannt. Solche Läufe zählen nicht in die Ø-Stückzeiten.
 - **Auslastung:** Laufzeit geteilt durch die Einschaltzeit (Zeit, in der die Steuerung erreichbar war).
@@ -356,6 +360,26 @@ andere Werte liefert, wird nur dort angepasst.
 - **Sicherung:** immer den ganzen Datenordner sichern, also Datenbank **und** `images/`. Eine
   gesicherte `data.db` allein enthält nur die Dateinamen der Bilder.
 
+## Fehler melden (Diagnose-Datei)
+
+Unter **Konfiguration → Diagnose** lädt „Diagnose-Datei herunterladen“ eine ZIP-Datei
+`ld-diagnose_<Datum>_<Uhrzeit>.zip` herunter. Sie gehört zu jeder Fehlermeldung. Zeitraum: 1, 7
+oder 30 Tage, auf Wunsch mit der ganzen Datenbank. Inhalt:
+
+| Datei | Inhalt |
+|---|---|
+| `info.json` | Version, Build, Startzeit, Einstellungen, Maschinen mit Verbindungsstatus |
+| `live.json` | Live-Status aller Maschinen beim Erstellen |
+| `mitschnitt_<maschine>.csv` | Jede Änderung der Steuerungsdaten seit dem Start der App (bis 5000 je Maschine): Programmstatus, Betriebsart, Haupt- und aktuelles Programm, Satz davor und danach, Werkzeug, Fehlermeldungen. Dazu, was die Erfassung daraus gemacht hat (gezähltes Programm, Oberprogramm, Lauf). |
+| `laeufe.csv` | Läufe mit Ergebnis und Programmstatus am Laufende und danach |
+| `zustaende.csv`, `ereignisse.csv` | Zustandsabschnitte und Ereignisse des Zeitraums |
+| `programmdateien.csv` | Gelesene Programmdateien mit Satzanzahl, aufgerufenen Programmen und Fehlern |
+| `logs/` | Log-Dateien der App |
+| `data.db` | Datenbank (nur wenn ausgewählt) |
+
+Die Datei enthält Maschinenadressen und Programmnamen, aber keine Passwörter. Direkt abrufbar ist sie
+auch über `/api/diagnose.zip?days=7&db=true`.
+
 ## API
 
 | Endpunkt | Inhalt |
@@ -375,6 +399,7 @@ andere Werte liefert, wird nur dort angepasst.
 | `PUT/DELETE /api/tools/{maschine}/{nr}`, `POST …/reset` | Werkzeugdaten/Standzeit, Entfernen, Zurücksetzen |
 | `GET /api/tools/export.csv` | Werkzeugliste als CSV |
 | `GET /api/version` | Versionsnummer, Build-Kennung, Änderungsprotokoll |
+| `GET /api/diagnose.zip?days=&db=` | Diagnose-Datei für Fehlermeldungen (siehe oben) |
 
 `from`/`to` sind Unix-Sekunden oder ISO-Zeitpunkte. Ohne Angabe gilt: heute 0 Uhr bis jetzt.
 Interaktive Doku: <http://localhost:8000/docs>.
