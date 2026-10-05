@@ -145,20 +145,25 @@ def run_probe(host: str, port: int = 19000, timeout: float = 5.0, check_host: st
     steps.append(Step("Statusabfrage", True, " · ".join(parts)))
     if snap.program:
         steps.append(_program_step(adapter, snap.current_program or snap.program, snap.line_no))
+        if snap.current_program and snap.current_program != snap.program:
+            # Hauptprogramm ruft gerade ein anderes auf (z. B. Palettenprogramm): seine Aufrufe zeigen
+            steps.append(_program_step(adapter, snap.program, None, "Hauptprogramm lesen"))
     steps.append(_tool_table_step(adapter, snap.tool))
     return result
 
 
-def _program_step(adapter: Lsv2Adapter, path: str, line_no: int | None) -> Step:
-    """Angewähltes Programm lesen: Satzanzahl für Fortschritt und Restlaufzeit."""
+def _program_step(adapter: Lsv2Adapter, path: str, line_no: int | None, title: str = "Programm lesen") -> Step:
+    """Angewähltes Programm lesen: Satzanzahl für Fortschritt und Restlaufzeit, aufgerufene Programme
+    für Oberprogramme (z. B. Palettenprogramm)."""
     try:
         info = adapter.fetch_program(path, None, 20_000_000)
     except AdapterError as exc:
-        return Step("Programm lesen", False, str(exc), required=False)
+        return Step(title, False, str(exc), required=False)
     if info is None or info.blocks is None:
-        return Step("Programm lesen", False, f"{path}: {info.error if info else 'unbekannt'}", required=False)
+        return Step(title, False, f"{path}: {info.error if info else 'unbekannt'}", required=False)
     current = f", aktuell Satz {line_no}" if line_no is not None else ""
-    return Step("Programm lesen", True, f"{path}: {info.blocks} Sätze{current}", required=False)
+    calls = f", ruft auf: {', '.join(info.calls)}" if info.calls else ""
+    return Step(title, True, f"{path}: {info.blocks} Sätze{current}{calls}", required=False)
 
 
 def _tool_table_step(adapter: Lsv2Adapter, tool: str | None) -> Step:

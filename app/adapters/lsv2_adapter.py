@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pyLSV2
 
-from ..nc_program import ProgramFile, count_blocks
+from ..nc_program import ProgramFile, count_blocks, program_calls
 from ..netcheck import reachable
 from ..tool_table import TOOL_TABLE, TOOL_TABLE_MAX_BYTES, ToolTableFile, parse_tool_table
 from .base import AdapterError, Snapshot
@@ -126,7 +126,8 @@ class Lsv2Adapter:
                 # Heidenhain-Steuerungen speichern Programme in ISO-8859-1
                 text = local.read_text(encoding="latin-1")
             blocks = count_blocks(path, text)
-            return ProgramFile(path, size, mtime, blocks, None if blocks is not None else "Satzanzahl nicht erkennbar")
+            error = None if blocks is not None else "Satzanzahl nicht erkennbar"
+            return ProgramFile(path, size, mtime, blocks, error, program_calls(text))
         except Exception as exc:
             raise AdapterError(f"Lesen von {path} fehlgeschlagen ({exc})") from exc
         finally:

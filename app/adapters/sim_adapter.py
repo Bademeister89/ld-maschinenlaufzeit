@@ -253,7 +253,7 @@ class SimAdapter:
         size, mtime = blocks * 28, 1_750_000_000.0
         if known == (size, mtime):
             return None
-        return ProgramFile(path, size, mtime, blocks)
+        return ProgramFile(path, size, mtime, blocks, calls=())
 
 
 def tool_table_text() -> str:

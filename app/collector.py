@@ -16,7 +16,8 @@ Regeln:
   Läufe die Auftragsnummer; ein neuer Auftrag wird dabei automatisch angelegt (orders.py).
 - Oberprogramme (z. B. ein Palettenprogramm auf der Automation) werden übersprungen: Ruft ein
   Hauptprogramm ohne Auftragsnummer ein Auftragsprogramm per CALL PGM auf, zählt alles für das
-  aufgerufene Programm. Läuft das Oberprogramm selbst (Palettenwechsel zwischen den Aufrufen),
+  aufgerufene Programm. Läuft das Oberprogramm selbst (Palettenwechsel zwischen den Aufrufen) oder
+  ein Programm ohne Auftragsnummer, das es laut seiner Datei selbst aufruft (z. B. Reinigung),
   entsteht kein Lauf. Kehrt die Steuerung ins Oberprogramm zurück, ist das aufgerufene Programm fertig.
 """
 
@@ -33,6 +34,7 @@ from .adapters.base import MachineAdapter, Snapshot
 from .config import MachineConfig
 from .db import Database
 from .forecast import Forecaster
+from .nc_program import call_name
 from .orders import parse_program
 from .state import RUN_ACTIVE_STATES, MachineState, classify, run_result
 from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, is_call, parse_tool, spindle_number
@@ -162,13 +164,22 @@ class MachineCollector:
             return replace(snap, program=called, caller=main)
         run = self._run
         if called and run is not None and run.program != main and parse_program(run.program):
-            # Das aufgerufene Auftragsprogramm ruft seinerseits ein Unterprogramm auf. Die Steuerung
-            # meldet nur Haupt- und innerstes Programm, der Lauf bleibt beim Auftragsprogramm.
+            # Ein Auftragsprogramm lief unter diesem Hauptprogramm, es ist also ein Oberprogramm. Die
+            # Steuerung meldet nur Haupt- und innerstes Programm: Ruft das Oberprogramm das Programm laut
+            # seiner Datei selbst auf (z. B. eine Reinigung), ist das Auftragsprogramm fertig; sonst ist es
+            # ein Unterprogramm des Auftragsprogramms, und der Lauf bleibt beim Auftragsprogramm.
             self._callers.add(main)
-            return replace(snap, program=run.program, caller=main)
+            if not self._calls_directly(main, called):
+                return replace(snap, program=run.program, caller=main)
         if main in self._callers:
             return replace(snap, caller=main)  # das Oberprogramm selbst, z. B. Palettenwechsel
         return snap
+
+    def _calls_directly(self, caller: str, program: str) -> bool:
+        """Ruft ``caller`` laut seiner eingelesenen Programmdatei ``program`` selbst auf?
+        Unbekannt (Datei noch nicht oder nicht lesbar) = nein."""
+        row = self._program_row(caller)
+        return bool(row and row["calls"]) and call_name(program) in row["calls"]
 
     def _update_run(self, snap: Snapshot, state: MachineState, now: float) -> None:
         run = self._run
@@ -370,9 +381,10 @@ class MachineCollector:
                 self._db.touch_program_file(self.machine.id, path, now)
             else:
                 self._db.save_program_file(
-                    self.machine.id, path, result.size, result.mtime, result.blocks, result.error, now
+                    self.machine.id, path, result.size, result.mtime, result.blocks, result.error, now, result.calls
                 )
-                log.info("%s: %s eingelesen – %s", self.machine.name, path, result.error or f"{result.blocks} Sätze")
+                calls = f", ruft auf: {', '.join(result.calls)}" if result.calls else ""
+                log.info("%s: %s eingelesen – %s%s", self.machine.name, path, result.error or f"{result.blocks} Sätze", calls)
             self._programs.pop(path, None)
             self._program_checked[path] = marker
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Softwarestand nach dem Schema MAJOR.MINOR.PATCH (siehe README „Versionen“). Bei jeder
 # Auslieferung erhöhen und in CHANGELOG.md beschreiben – ein Test prüft, dass beides zusammenpasst.
-__version__ = "1.10.1"
+__version__ = "1.10.2"
 
 
 def _build() -> str | None:

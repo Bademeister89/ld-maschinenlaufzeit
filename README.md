@@ -168,13 +168,23 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Hat das angewählte Hauptprogramm keine Auftragsnummer, ruft aber ein Auftragsprogramm auf, zählen
     Lauf, Auftrag, Restlaufzeit und Werkzeugaufrufe für das aufgerufene Programm. Die Live-Karte zeigt
     „aufgerufen von PAL1“.
-  - Ruft das Auftragsprogramm selbst Unterprogramme auf, bleibt es beim Auftragsprogramm.
   - Kehrt die Steuerung ins Oberprogramm zurück, ist der Lauf des aufgerufenen Programms fertig.
   - Die Zeit im Oberprogramm selbst (z. B. Palettenwechsel zwischen zwei Aufrufen) ist Laufzeit
     der Maschine, gehört aber zu keinem Lauf und keinem Auftrag.
-  - Ruft das Oberprogramm dasselbe Auftragsprogramm mehrmals direkt hintereinander auf, kann daraus
-    ein einziger Lauf werden: Die Steuerung wird alle 2 s abgefragt, und die Zeilen dazwischen
-    laufen meist schneller ab.
+  - **Zwischenprogramme** wie eine Reinigung zählen genauso. Die App liest dazu die
+    `CALL PGM`-Zeilen (auch `SEL PGM` und Zyklus 12) aus der Datei des Oberprogramms:
+    - Ruft das Oberprogramm ein Programm ohne Auftragsnummer selbst auf, endet damit der Lauf
+      des Auftragsprogramms.
+    - Ruft dagegen das Auftragsprogramm ein Unterprogramm auf, das im Oberprogramm nicht vorkommt,
+      bleibt es beim Auftragsprogramm.
+  - Der Verbindungstest zeigt unter „Hauptprogramm lesen“, welche Programme das Oberprogramm
+    aufruft. Im Log steht es beim Einlesen („ruft auf: …“).
+  - Ist die Datei des Oberprogramms nicht lesbar, oder ruft es Programme über Parameter auf, zählt
+    jedes Programm, das unter einem Auftragsprogramm läuft, zu dessen Lauf. Dann kann das
+    Auftragsprogramm, das Zwischenprogramm und das nächste Auftragsprogramm zu einem Lauf werden.
+  - Ruft das Oberprogramm dasselbe Auftragsprogramm mehrmals direkt hintereinander auf, ohne
+    Zwischenprogramm, kann daraus ein einziger Lauf werden. Die Steuerung wird alle 2 s abgefragt,
+    und die Zeilen dazwischen laufen meist schneller ab.
 - **Gezählt wird die Zeit der Programmdurchläufe:** Laufzeit sowie Stopps und Fehler innerhalb der
   Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
   angewähltes Programm dem Auftrag Tage gutschreiben.

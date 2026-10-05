@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS program_files (
     blocks     INTEGER,
     error      TEXT,
     checked_at REAL NOT NULL,
+    calls      TEXT,
     PRIMARY KEY (machine_id, path)
 );
 CREATE TABLE IF NOT EXISTS tools (
@@ -214,6 +215,12 @@ class Database:
         # einmalig nach – eine Datenbank, die schon Aufrufe zählt, würde sonst doppelt zählen.
         if "events" in tables and "tool_calls" not in tables:
             self.set_meta("tool_calls_backfill", "pending")
+        # v9 → v10: aufgerufene Programme je Programmdatei (Oberprogramme, z. B. Palettenprogramm).
+        # Schon gelesene Dateien einmal neu einlesen, damit die Aufrufe bekannt werden.
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(program_files)")}
+        if "calls" not in columns:
+            self._con.execute("ALTER TABLE program_files ADD COLUMN calls TEXT")
+            self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def get_meta(self, key: str) -> str | None:
@@ -707,21 +714,27 @@ class Database:
 
     def program_file(self, machine_id: str, path: str) -> dict[str, Any] | None:
         rows = self._query(
-            "SELECT path, size, mtime, blocks, error, checked_at FROM program_files WHERE machine_id = ? AND path = ?",
+            "SELECT path, size, mtime, blocks, error, checked_at, calls FROM program_files "
+            "WHERE machine_id = ? AND path = ?",
             (machine_id, path),
         )
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        row = rows[0]
+        # Gespeichert zeilenweise; "" = ruft nichts auf, NULL = unbekannt (nicht gelesen)
+        row["calls"] = tuple(row["calls"].split("\n")) if row["calls"] else (() if row["calls"] == "" else None)
+        return row
 
     def save_program_file(
         self, machine_id: str, path: str, size: int | None, mtime: float | None, blocks: int | None,
-        error: str | None, checked_at: float,
+        error: str | None, checked_at: float, calls: tuple[str, ...] | None = None,
     ) -> None:
         self._execute(
-            "INSERT INTO program_files(machine_id, path, size, mtime, blocks, error, checked_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine_id, path) DO UPDATE SET "
+            "INSERT INTO program_files(machine_id, path, size, mtime, blocks, error, checked_at, calls) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine_id, path) DO UPDATE SET "
             "size = excluded.size, mtime = excluded.mtime, blocks = excluded.blocks, "
-            "error = excluded.error, checked_at = excluded.checked_at",
-            (machine_id, path, size, mtime, blocks, error, checked_at),
+            "error = excluded.error, checked_at = excluded.checked_at, calls = excluded.calls",
+            (machine_id, path, size, mtime, blocks, error, checked_at, None if calls is None else "\n".join(calls)),
         )
 
     def touch_program_file(self, machine_id: str, path: str, checked_at: float) -> None:

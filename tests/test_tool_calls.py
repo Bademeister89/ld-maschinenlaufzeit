@@ -140,7 +140,7 @@ def test_backfill_after_update(tmp_path):
     path = tmp_path / "v8.db"
     _old_database(path, OLD_EVENTS)
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "9"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     assert db.get_meta("tool_calls_backfill") == "pending"
     assert tools.backfill_calls(db) == 4
     assert call_rows(db) == [("m1", 5, 10), ("m1", 5, 40), ("m1", 1, 50), ("m2", 5, 60)]

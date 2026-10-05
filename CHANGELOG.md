@@ -10,6 +10,22 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.10.2] – 2026-10-05
+
+### Behoben
+- Palettenprogramme mit Zwischenprogramm, z. B. einer Reinigung zwischen den Auftragsprogrammen:
+  - **Fehler:** Die Reinigung wurde dem Auftragsprogramm davor zugerechnet. Lief danach
+    dasselbe Auftragsprogramm noch einmal, wurden beide Teile samt Reinigung zu einem einzigen Lauf.
+  - **Jetzt:** Die App liest aus der Datei des Palettenprogramms, welche Programme es selbst
+    aufruft (`CALL PGM`, `SEL PGM`, Zyklus 12).
+    - Ruft das Palettenprogramm ein Programm ohne Auftragsnummer auf, endet der Lauf des
+      Auftragsprogramms, und die Reinigung zählt zu keinem Auftrag.
+    - Unterprogramme, die nur das Auftragsprogramm aufruft, bleiben in dessen Lauf.
+- Verbindungstest: Neuer Schritt „Hauptprogramm lesen“, wenn das Hauptprogramm gerade ein
+  anderes Programm aufruft, mit der Liste „ruft auf: …“.
+- Datenbank-Schema 10: Schon gelesene Programmdateien werden nach dem Update einmal neu
+  eingelesen.
+
 ## [1.10.1] – 2026-10-05
 
 ### Behoben
