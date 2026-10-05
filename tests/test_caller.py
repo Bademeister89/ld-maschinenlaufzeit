@@ -404,6 +404,45 @@ def test_pallet_table_as_main_program(db, make_collector):
     assert c.live()["caller_file"] == {"calls": ["PAL1", "26-21053-01-01", "DREH", "PAL_HOLEN"], "error": None}
 
 
+def test_pallet_table_never_gets_its_own_run(db, make_collector):
+    """DMU 70, 13:58: Palette.p nur für einen Palettenwechsel gestartet, kein Auftragsprogramm."""
+    c = make_collector()
+    table = "TNC:\\Programme\\Palette.p"
+    feed(
+        c,
+        (0, snap("IDLE", table)),
+        (10, snap("STARTED", table, current_program="TNC:\\Palett.H", line_no=6)),
+        (57, snap("IDLE", table)),
+    )
+    assert runs(db) == []
+
+
+def test_restart_of_the_pallet_after_the_order_program_ended_continues_the_run(db, make_collector):
+    """DMU 70, 15:00: Die Palette blieb bei Satz 42087 von 42136 stehen (vermutlich M30 im
+    Auftragsprogramm) und wurde per Satzvorlauf bei Satz 42091 wieder gestartet."""
+    c = make_collector()
+    order = "TNC:\\Programme\\26-21051-01-01.h"
+    db.save_program_file("m1", order, 900, 1.0, 42136, None, 0, ())
+
+    def p(state, current, line=None):
+        return snap(state, PAL_TABLE, current_program=current, line_no=line)
+
+    feed(
+        c,
+        (0, p("IDLE", PAL_TABLE)),
+        (10, p("STARTED", order, 18)),
+        (1700, p("STARTED", order, 42087)),
+        (1702, p("IDLE", None, 0)),  # Palette steht
+        (1776, p("STARTED", order, 42091)),  # Satzvorlauf
+        (1828, p("STARTED", "TNC:\\Programme\\Dreh.h", 1)),
+        (1950, p("STARTED", order, 15)),  # nächste Palette
+        (2000, p("STARTED", order, 900)),
+    )
+    first, second = db.runs(0, 10_000)
+    assert (first["started_at"], first["ended_at"], first["result"], first["start_observed"]) == (10, 1828, "finished", 1)
+    assert (second["started_at"], second["start_observed"]) == (1950, 1)
+
+
 def test_update_rereads_pallet_tables_once(tmp_path):
     """Version 1.10.3 hat Palettentabellen wie Klartext gelesen und keine Programme gefunden."""
     path = tmp_path / "v10.db"

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import orders, tools
+from . import history, orders, tools
 from .adapters.base import MachineAdapter
 from .collector import MachineCollector
 from .config import MachineConfig, Settings
@@ -178,6 +178,10 @@ class MachineManager:
         calls = tools.backfill_calls(self.db)
         if calls:
             log.info("Werkzeuge: %d Aufruf(e) aus bisherigen Werkzeugwechseln nachgetragen", calls)
+        # Einmalig: schon erfasste Läufe nach den Regeln von 1.11.1 bereinigen (MDI, Programmende, Satzvorlauf)
+        cleaned = history.cleanup_runs(self.db)
+        if cleaned:
+            log.info("Läufe bereinigt: %s", ", ".join(f"{n} {what}" for what, n in cleaned.items()))
         for machine in self.machines():
             self._spawn(machine)
 

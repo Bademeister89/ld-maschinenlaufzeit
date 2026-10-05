@@ -3,8 +3,13 @@
 Regeln:
 - Ein neues Zustandsintervall beginnt, sobald sich Zustand, Programmstatus, Betriebsart,
   Programm oder zugehöriger Lauf ändern; sonst wird nur ``last_seen`` fortgeschrieben.
-- Ein Programmdurchlauf beginnt bei LÄUFT und bleibt über GESTOPPT/FEHLER offen. Er endet,
-  sobald die Maschine BEREIT meldet oder ein anderes Programm aktiv ist.
+- Ein Programmdurchlauf beginnt bei LÄUFT im Programmlauf (nicht im Handbetrieb oder bei MDI) und
+  bleibt über GESTOPPT/FEHLER offen. Er endet, sobald die Maschine BEREIT meldet oder ein anderes
+  Programm aktiv ist. Fertig ist er bei "beendet" oder, wie bei der iTNC 530, wenn die Steuerung
+  aus dem Programmlauf direkt auf "inaktiv" geht.
+- Ein Satzvorlauf dort, wo der letzte Lauf desselben Programms endete (z. B. nach einer Störung),
+  setzt diesen Lauf fort. Ein anderer Start mitten im Programm gilt als Teillauf (ohne beobachteten
+  Start, zählt nicht in Ø-Stückzeiten und Prognose).
 - OFFLINE/UNBEKANNT beenden keinen Lauf (kurze Netzstörungen per VPN zerreißen ihn nicht).
 - Ist eine Prüfadresse am Standort hinterlegt und antwortet auch sie nicht, ist nicht die
   Maschine aus, sondern die Verbindung zum Standort weg (z. B. VPN). Dann wird nichts
@@ -39,7 +44,7 @@ from .db import Database
 from .forecast import Forecaster
 from .nc_program import call_name
 from .orders import parse_program
-from .state import RUN_ACTIVE_STATES, MachineState, classify, run_result
+from .state import MANUAL_MODES, RUN_ACTIVE_STATES, MachineState, classify, run_result
 from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, is_call, parse_tool, spindle_number
 
 log = logging.getLogger(__name__)
@@ -51,7 +56,10 @@ TOOL_TABLE_CHECK_S = 600  # Werkzeugtabelle (Namen) alle 10 min auf Änderungen 
 TOOL_TABLE_RETRY_S = 60  # … und früher, wenn ein Werkzeug ohne bekannten Namen auftaucht
 PROGRAM_RETRY_S = 60  # nicht lesbare Programmdatei jede Minute erneut versuchen
 RAW_LOG_KEEP = 5000  # Mitschnitt: so viele Statusänderungen je Maschine im Speicher halten
-END_BLOCK_SHARE = 0.95  # Programm stand am Ende: zuletzt in den letzten 5 % seiner Sätze
+# Start mitten im Programm (Satzvorlauf): erste Satznummer jenseits von 5 % der Sätze (mind. 100)
+MID_START_SHARE = 0.05
+MID_START_LINES = 100
+RESUME_MAX_GAP_S = 12 * 3600  # so lange nach dem Ende kann ein Satzvorlauf den Lauf noch fortsetzen
 
 
 @dataclass
@@ -70,6 +78,16 @@ class _Run:
     start_observed: bool
     last_active: float
     run_s: float = 0.0  # reine Laufzeit (Zustand LÄUFT) seit Start
+
+
+@dataclass(frozen=True)
+class _Ended:
+    """Zuletzt beendeter Lauf – ein Satzvorlauf an dieser Stelle setzt ihn fort."""
+
+    id: int
+    program: str | None
+    ended_at: float
+    last_line: int | None
 
 
 class MachineCollector:
@@ -95,6 +113,7 @@ class MachineCollector:
         db.close_stale_intervals(machine.id)
         self._interval: _Interval | None = None
         self._run = self._load_open_run()
+        self._ended: _Ended | None = None
         self._callers: set[str] = set()  # erkannte Oberprogramme (rufen Auftragsprogramme auf)
 
         # None = noch kein durchgehender Kontakt (Programmstart / Neustart des Tools)
@@ -208,6 +227,8 @@ class MachineCollector:
         main, current = snap.program, snap.current_program
         if not main or parse_program(main):
             return snap  # Auftragsprogramm direkt angewählt (oder gar keins)
+        if main.upper().endswith(".P"):
+            self._callers.add(main)  # Palettentabelle: immer ein Oberprogramm, nie ein eigener Lauf
         called = current if current and current != main else None
         if called and parse_program(called):
             self._callers.add(main)
@@ -245,17 +266,46 @@ class MachineCollector:
         order_calls = self._calls_of(order)
         return order_calls is None or name not in order_calls
 
-    def _reached_end(self, run: _Run) -> bool:
-        """Manche Steuerungen melden nach dem Programmende gleich "inaktiv" statt "beendet" (z. B.
-        ohne M30, oder "beendet" stand kürzer als ein Abfragetakt an). Fertig ist das Programm, wenn
-        es bis zuletzt lief – ein Abbruch geht über NC-Stopp – oder zuletzt in seinen letzten Sätzen stand."""
-        if self._prev_state is MachineState.RUNNING:
-            return True
+    def _reached_end(self) -> bool:
+        """Die iTNC 530 meldet nach dem Programmende gleich "inaktiv" statt "beendet". Fertig ist das
+        Programm, wenn es bis zuletzt im Programmlauf lief: Ein Abbruch geht über NC-Stopp ("gestoppt"),
+        und ein MDI-Satz oder Handbetrieb ist kein Programmende."""
         prev = self._snapshot
-        if prev is None or prev.line_no is None or (prev.current_program or prev.program) != run.program:
-            return False
-        blocks = self._blocks(run.program)
-        return bool(blocks) and prev.line_no >= blocks * END_BLOCK_SHARE
+        return self._prev_state is MachineState.RUNNING and prev is not None and prev.exec_mode not in MANUAL_MODES
+
+    @staticmethod
+    def _position(snap: Snapshot) -> int | None:
+        """Satznummer im gezählten Programm (None, wenn gerade ein Unterprogramm läuft)."""
+        return snap.line_no if (snap.current_program or snap.program) == snap.program else None
+
+    def _start_run(self, snap: Snapshot, now: float) -> None:
+        """Neuer Lauf – oder Fortsetzung des letzten, wenn das Programm mitten im Programm per
+        Satzvorlauf dort wieder gestartet wird, wo der letzte Lauf endete (z. B. nach einer Störung)."""
+        line = self._position(snap)
+        blocks = self._blocks(snap.program)
+        margin = max(MID_START_LINES, blocks * MID_START_SHARE if blocks else 0)
+        mid_start = line is not None and line > margin
+        ended = self._ended
+        if (
+            mid_start
+            and ended is not None
+            and ended.program == snap.program
+            and now - ended.ended_at <= RESUME_MAX_GAP_S
+            and ended.last_line is not None
+            and abs(line - ended.last_line) <= margin
+        ):
+            self._db.reopen_run(ended.id)
+            self._run = self._load_open_run()
+            self._db.add_event(self.machine.id, now, "run_resumed", {"run": ended.id, "program": snap.program, "line": line})
+            log.info("%s: Lauf %d fortgesetzt (Satzvorlauf bis Satz %d)", self.machine.name, ended.id, line)
+            self._ended = None
+            return
+        # Ohne beobachteten Start (Neustart der Erfassung) oder mitten im Programm begonnen: kein
+        # vollständiger Lauf, zählt nicht in Ø-Stückzeiten und Prognose
+        start_observed = self._prev_state not in (None, MachineState.OFFLINE) and not mid_start
+        code = parse_program(snap.program)
+        run_id = self._db.start_run(self.machine.id, snap.program, now, start_observed, code.key if code else None)
+        self._run = _Run(run_id, snap.program, now, False, start_observed, now)
 
     def _update_run(self, snap: Snapshot, state: MachineState, now: float) -> None:
         run = self._run
@@ -280,20 +330,24 @@ class MachineCollector:
             pgm_state = snap.pgm_state
             if snap.caller is not None and state is not MachineState.READY:
                 pgm_state = "FINISHED"  # Geht es im Oberprogramm weiter, hat das aufgerufene Programm sein Ende erreicht
-            elif pgm_state == "IDLE" and self._reached_end(run):
+            elif pgm_state == "IDLE" and self._reached_end():
                 pgm_state = "FINISHED"
-            self._db.end_run(run.id, now if continuous else run.last_active, run_result(pgm_state, run.had_error))
+            ended_at = now if continuous else run.last_active
+            self._db.end_run(run.id, ended_at, run_result(pgm_state, run.had_error))
             self._db.prune_progress(self.machine.id, run.program, PROGRESS_KEEP_RUNS)
             self._forecaster.invalidate(run.program)
+            last = self._snapshot
+            self._ended = _Ended(run.id, run.program, ended_at, self._position(last) if last else None)
             self._run = run = None
 
-        if run is None and state is MachineState.RUNNING and snap.program not in self._callers:
-            start_observed = self._prev_state not in (None, MachineState.OFFLINE)
-            code = parse_program(snap.program)
-            run_id = self._db.start_run(
-                self.machine.id, snap.program, now, start_observed, code.key if code else None
-            )
-            self._run = run = _Run(run_id, snap.program, now, False, start_observed, now)
+        if (
+            run is None
+            and state is MachineState.RUNNING
+            and snap.exec_mode not in MANUAL_MODES
+            and snap.program not in self._callers
+        ):
+            self._start_run(snap, now)
+            run = self._run
 
         if run is not None and state is MachineState.ERROR and not run.had_error:
             run.had_error = True

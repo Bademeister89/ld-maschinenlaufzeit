@@ -10,6 +10,35 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.11.1] – 2026-10-05
+
+### Behoben
+Grundlage ist die Diagnose-Datei aus dem Feldtest an DMU 70 und DMU 105.
+
+- **Handbetrieb und MDI** erzeugen keine Läufe mehr.
+  - MDI-Sätze und Makros im Handbetrieb wurden als kurze Läufe des angewählten Programms gebucht
+    und seit 1.11.0 sogar als „fertig“. Allein an der DMU 105 waren das am 5.10. über 50 Läufe von
+    2–11 s.
+  - Sie verfälschten Ø-Zeit je Teil, Restlaufzeit und die Zahl der fertigen Läufe.
+- **Programmende:** Fertig ist ein Lauf, der bis zuletzt im Programmlauf lief und dann „inaktiv“
+  meldet. Die 5-%-Regel aus 1.11.0 entfällt, denn sie hat gestoppte und dann abgebrochene Läufe
+  kurz vor dem Ende als fertig gezählt.
+- **Satzvorlauf nach einer Störung:** Startet das Programm dort wieder, wo sein letzter Lauf
+  endete, läuft dieser Lauf weiter.
+  - Beispiel DMU 105: Störung „WZW Klappe“ bei Satz 91.049, danach zwei Satzvorläufe. Bisher
+    ergab das drei Läufe, jetzt einen.
+  - Ein anderer Start mitten im Programm gilt als Teillauf und zählt nicht in die Ø-Stückzeiten.
+- **Palettentabellen** (`.P`) bekommen nie einen eigenen Lauf, auch wenn sie nur einen
+  Palettenwechsel ausführen.
+- **Einmalige Bereinigung** beim ersten Start nach dem Update. Für die schon erfassten Läufe gelten
+  dieselben Regeln:
+  - Läufe im Handbetrieb, unter MDI und von Palettentabellen werden verworfen. Die Zeit bleibt
+    als Maschinenzeit erhalten.
+  - Programmenden mit „inaktiv“ werden zu „fertig“, gestoppte und dann abgebrochene Läufe zu
+    „unterbrochen“.
+  - Fertige Läufe, die per Satzvorlauf mitten im Programm begannen, werden zu Teilläufen.
+  - Das Log zeigt, wie viele Läufe geändert wurden.
+
 ## [1.11.0] – 2026-10-05
 
 ### Neu

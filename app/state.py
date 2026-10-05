@@ -70,6 +70,10 @@ EXEC_MODE_LABELS = {
 # (NC-Stopp und Fehler zählen als Standzeit innerhalb des Laufs).
 RUN_ACTIVE_STATES = frozenset({MachineState.RUNNING, MachineState.STOPPED, MachineState.ERROR})
 
+# Betriebsarten ohne Programmlauf: Auch hier meldet die Steuerung "gestartet" (z. B. ein MDI-Satz oder
+# ein Makro des Maschinenherstellers im Handbetrieb), daraus entsteht aber kein Programmdurchlauf.
+MANUAL_MODES = frozenset({"MANUAL", "MDI", "PASS_REFERENCES"})
+
 RUN_RESULT_LABELS = {
     "finished": "fertig",
     "cancelled": "abgebrochen",

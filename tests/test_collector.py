@@ -1,3 +1,5 @@
+import pytest
+
 from app.collector import MachineCollector
 
 from .conftest import NullAdapter, feed, snap
@@ -132,12 +134,77 @@ def test_idle_after_stop_in_the_middle_stays_aborted(db, make_collector):
     assert run["result"] == "aborted"
 
 
-def test_idle_after_stop_at_the_last_blocks_counts_as_finished(db, make_collector):
+def test_idle_after_stop_near_the_end_is_aborted(db, make_collector):
+    """DMU 105: Störung "WZW Klappe" bei Satz 91049 von 92281, danach abgebrochen."""
     c = make_collector()
-    db.save_program_file("m1", "P1", 5000, 1.0, 200, None, 0, ())
-    feed(c, (0, snap("IDLE")), (1, snap("STARTED", line_no=5)), (50, snap("STOPPED", line_no=196)), (60, snap("IDLE", line_no=0)))
+    db.save_program_file("m1", "P1", 5000, 1.0, 92281, None, 0, ())
+    feed(c, (0, snap("IDLE")), (1, snap("STARTED", line_no=15)), (50, snap("STOPPED", line_no=91049)), (60, snap("IDLE", line_no=0)))
     [run] = runs(db)
-    assert run["result"] == "finished"
+    assert run["result"] == "aborted"
+
+
+def test_mdi_and_manual_mode_start_no_run(db, make_collector):
+    """DMU 105: MDI-Sätze ($MDI.H) und Herstellermakros im Handbetrieb sind keine Programmläufe."""
+    c = make_collector()
+    feed(
+        c,
+        (0, snap("IDLE", exec_mode="MANUAL")),
+        (10, snap("STARTED", exec_mode="MANUAL", current_program="TNC:\\M301_MB_AT_AC.h", line_no=15)),
+        (12, snap("STARTED", exec_mode="MANUAL", current_program="TNC:\\NETZ.H", line_no=114)),
+        (14, snap("IDLE", exec_mode="MANUAL")),
+        (20, snap("IDLE", exec_mode="MDI")),
+        (22, snap("STARTED", exec_mode="MDI", current_program="TNC:\\$MDI.H", line_no=1)),
+        (28, snap("IDLE", exec_mode="MDI")),
+    )
+    assert runs(db) == []
+    rows = intervals(db)
+    assert [(r["state"], r["run_id"]) for r in rows if r["state"] == "RUNNING"] == [("RUNNING", None), ("RUNNING", None)]
+
+
+def test_mdi_during_interrupted_run_is_no_program_end(db, make_collector):
+    c = make_collector()
+    feed(
+        c,
+        (0, snap("IDLE")),
+        (1, snap("STARTED", line_no=15)),
+        (50, snap("STOPPED", line_no=400)),
+        (60, snap("STARTED", exec_mode="MDI", current_program="TNC:\\$MDI.H", line_no=1)),
+        (66, snap("IDLE", exec_mode="MDI")),
+    )
+    [run] = runs(db)
+    assert run["result"] == "aborted"
+
+
+def test_satzvorlauf_after_a_fault_continues_the_run(db, make_collector):
+    """DMU 105, 5.10.: Störung bei Satz 91049, Abbruch, zwei Satzvorläufe – ein Teil, ein Lauf."""
+    c = make_collector()
+    db.save_program_file("m1", "P1", 5000, 1.0, 92281, None, 0, ())
+    feed(
+        c,
+        (0, snap("IDLE")),
+        (10, snap("STARTED", line_no=15)),
+        (3000, snap("STOPPED", line_no=91049)),
+        (3360, snap("IDLE", line_no=0)),  # abgebrochen
+        (3400, snap("IDLE", exec_mode="MANUAL")),
+        (4800, snap("STARTED", line_no=91049)),  # Satzvorlauf
+        (4807, snap("STOPPED", line_no=91049)),
+        (4836, snap("IDLE", line_no=0)),  # wieder abgebrochen
+        (5200, snap("STARTED", line_no=91059)),  # Satzvorlauf
+        (5568, snap("IDLE", line_no=0)),  # Programmende
+    )
+    [run] = runs(db)
+    assert (run["started_at"], run["ended_at"], run["result"], run["start_observed"]) == (10, 5568, "finished", 1)
+    assert run["run_s"] == pytest.approx((3000 - 10) + (4807 - 4800) + (5568 - 5200))
+    resumed = [e for e in db.events(0, 10_000) if e["type"] == "run_resumed"]
+    assert len(resumed) == 2
+
+
+def test_mid_program_start_elsewhere_is_a_partial_run(db, make_collector):
+    c = make_collector()
+    db.save_program_file("m1", "P1", 5000, 1.0, 92281, None, 0, ())
+    feed(c, (0, snap("IDLE")), (10, snap("STARTED", line_no=50_000)), (300, snap("IDLE", line_no=0)))
+    [run] = runs(db)
+    assert (run["result"], run["start_observed"]) == ("finished", 0)  # zählt nicht in Ø-Stückzeiten
 
 
 def test_unknown_state_suspends_but_does_not_end_run(db, make_collector):

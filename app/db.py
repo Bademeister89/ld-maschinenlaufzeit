@@ -399,6 +399,15 @@ class Database:
     def end_run(self, run_id: int, t: float, result: str) -> None:
         self._execute("UPDATE program_runs SET ended_at = ?, result = ? WHERE id = ?", (t, result, run_id))
 
+    def reopen_run(self, run_id: int) -> None:
+        self._execute("UPDATE program_runs SET ended_at = NULL, result = NULL WHERE id = ?", (run_id,))
+
+    def set_run_result(self, run_id: int, result: str) -> None:
+        self._execute("UPDATE program_runs SET result = ? WHERE id = ?", (result, run_id))
+
+    def set_run_observed(self, run_id: int, observed: bool) -> None:
+        self._execute("UPDATE program_runs SET start_observed = ? WHERE id = ?", (int(observed), run_id))
+
     def mark_run_error(self, run_id: int) -> None:
         self._execute("UPDATE program_runs SET had_error = 1 WHERE id = ?", (run_id,))
 

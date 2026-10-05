@@ -324,13 +324,19 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
 | **Offline** | Steuerung nicht erreichbar (Maschine aus, Netzwerk weg) |
 | **Keine Daten** | das Tool lief nicht oder der Standort war nicht erreichbar (Prüfadresse); die Zeit wird nicht geschätzt |
 
-- **Programmdurchlauf:** beginnt bei „Läuft“ und bleibt über Stopps und Fehler offen. Er endet, wenn
-  die Maschine „Bereit“ meldet oder ein anderes Programm läuft. Kurze Verbindungsabbrüche beenden
-  keinen Lauf. Ergebnis: fertig, abgebrochen, Fehler oder unterbrochen.
-  - **Fertig** ist ein Lauf, wenn die Steuerung „beendet“ meldet. Manche Steuerungen melden nach
-    dem Programmende gleich „inaktiv“, z. B. ohne M30. Auch das zählt als fertig, wenn das Programm
-    bis zuletzt lief oder zuletzt in seinen letzten 5 % Sätzen stand. Ein Abbruch über NC-Stopp
-    mitten im Programm bleibt „unterbrochen“.
+- **Programmdurchlauf:** beginnt bei „Läuft“ im Programmlauf und bleibt über Stopps und Fehler offen.
+  Er endet, wenn die Maschine „Bereit“ meldet oder ein anderes Programm läuft. Kurze
+  Verbindungsabbrüche beenden keinen Lauf. Ergebnis: fertig, abgebrochen, Fehler oder unterbrochen.
+  - **Handbetrieb und MDI** („Positionieren mit Handeingabe“): Auch hier meldet die Steuerung
+    „gestartet“, z. B. für einen MDI-Satz oder ein Makro. Daraus entsteht kein Lauf. Die Zeit zählt
+    als Laufzeit der Maschine, aber zu keinem Programm und keinem Auftrag.
+  - **Fertig** ist ein Lauf, wenn die Steuerung „beendet“ meldet. Die iTNC 530 meldet nach dem
+    Programmende gleich „inaktiv“. Das zählt als fertig, wenn das Programm bis zuletzt im
+    Programmlauf lief. Gestoppt und dann abgebrochen bleibt „unterbrochen“.
+  - **Satzvorlauf:** Wird ein Programm dort per Satzvorlauf wieder gestartet, wo sein letzter Lauf
+    endete (z. B. nach einer Störung), läuft dieser Lauf weiter. Ein Teil ergibt so einen Lauf.
+    Beginnt ein Lauf sonst mitten im Programm (jenseits von 5 % der Sätze), ist er ein Teillauf und
+    zählt nicht in die Ø-Stückzeiten und die Restlaufzeit.
 - **„Start beobachtet“ / ≥:** Lief ein Programm schon, als die Erfassung begann, ist der echte Start
   unbekannt. Solche Läufe zählen nicht in die Ø-Stückzeiten.
 - **Auslastung:** Laufzeit geteilt durch die Einschaltzeit (Zeit, in der die Steuerung erreichbar war).
