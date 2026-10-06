@@ -255,6 +255,58 @@ def test_api_export(client):
     assert (first[0], first[1], first[2], first[7], first[8]) == ("26-21055", "1", "26-21055-01-01", "fertig", "5,00")
 
 
+def test_delete_run_removes_it_from_order_but_keeps_machine_time(client):
+    db = client.app.state.ctx.db
+    finished, running = sorted(r["id"] for r in db.order_runs("26-21055"))
+    stats_before = client.get("/api/stats", params={"from": 0}).json()
+    machine_running = stats_before["machines"]["m1"]["totals"]["RUNNING"]
+    assert client.get("/api/orders/26-21055").json()["totals"]["running_s"] == pytest.approx(300 + 0)
+
+    r = client.delete(f"/api/orders/26-21055/runs/{finished}")
+    assert r.status_code == 204
+    detail = client.get("/api/orders/26-21055").json()
+    assert [run["id"] for run in detail["runs"]] == [running]
+    assert (detail["totals"]["finished"], detail["totals"]["running_s"]) == (0, 0)
+    assert detail["totals"]["part_complete"] is False  # kein fertiger Lauf mehr für die Ø-Zeit
+    [row] = client.get("/api/orders").json()["orders"]
+    assert (row["runs"], row["finished"], row["running_s"]) == (1, 0, 0)
+    assert len(client.get("/api/orders/26-21055/export.csv").content.decode("utf-8").strip().split("\r\n")) == 2
+
+    # Die Maschine ist trotzdem gelaufen: Maschinenzeit bleibt, der Lauf fehlt in den Stückzeiten
+    stats = client.get("/api/stats", params={"from": 0}).json()
+    assert stats["machines"]["m1"]["totals"]["RUNNING"] == pytest.approx(machine_running)
+    assert not [p for p in stats["programs"] if p["program"] == P11 and p["runs"]]
+    assert db.reference_runs("m1", P11, 5) == []
+
+    [event] = [e for e in db.events(0, 1e10) if e["type"] == "run_deleted"]
+    assert event["payload"]["run"] == finished
+    assert (event["payload"]["program"], event["payload"]["result"], event["payload"]["run_s"]) == (P11, "finished", 300)
+
+
+def test_delete_run_checks(client):
+    db = client.app.state.ctx.db
+    finished, running = sorted(r["id"] for r in db.order_runs("26-21055"))
+    assert client.delete(f"/api/orders/26-21055/runs/{running}").status_code == 409  # läuft noch
+    assert client.delete("/api/orders/26-21055/runs/99999").status_code == 404
+    assert client.delete(f"/api/orders/99-1/runs/{finished}").status_code == 404
+    db.ensure_order("26-4711", 2026, "4711", 0)
+    r = client.delete(f"/api/orders/26-4711/runs/{finished}")  # gehört zu einem anderen Auftrag
+    assert r.status_code == 404 and "gehört nicht" in r.json()["detail"]
+    assert len(db.order_runs("26-21055")) == 2  # nichts gelöscht
+
+
+def test_deleted_run_is_not_resumed(db, make_collector):
+    """Der Collector merkt sich den letzten Lauf für einen Satzvorlauf – nach dem Löschen nicht mehr."""
+    c = make_collector()
+    run_part(c, 0, P11, 300)
+    ended = c._ended
+    assert ended is not None
+    c.forget_run(ended.id + 1, P11)  # ein anderer Lauf: bleibt
+    assert c._ended is ended
+    c.forget_run(ended.id, P11)
+    assert c._ended is None
+
+
 def test_meta_has_version_and_page(client):
     assert client.get("/api/meta").json()["version"]
     assert client.get("/api/config").json()["settings"]["version"]

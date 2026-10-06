@@ -202,6 +202,15 @@ zugeordnet, z. B. `26-21055-01-01`:
   - **Ø Bearbeitungszeit je Teil:** die Summe der Ø-Laufzeiten aller Programme über alle
     Aufspannungen, gerechnet nur aus vollständig erfassten, fertigen Läufen.
   - Laufzeit je Tag, alle Läufe, CSV-Export.
+  - **Lauf löschen** (Programmdurchläufe → „Löschen“): für Fehlläufe oder ein Nachprogramm.
+    - Der Lauf zählt danach nicht mehr zum Auftrag, zu den Ø-Stückzeiten (auch in der Auswertung
+      je Programm) und zur Restlaufzeit-Prognose.
+    - Die Laufzeit der Maschine bleibt in der Auswertung erhalten, denn die Maschine ist ja gelaufen.
+      Die Zeit gehört dann zu keinem Lauf, wie bei verworfenen MDI-Läufen.
+    - Nur beendete Läufe lassen sich löschen. Die App fragt vorher nach; rückgängig machen geht
+      nicht.
+    - Was gelöscht wurde, steht als Ereignis `run_deleted` in der Datenbank und in der
+      Diagnose-Datei.
 - **Bild je Auftrag** (fertiges Bauteil):
   - Am PC im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“.
   - Am Handy zwei Buttons: „Foto aufnehmen“ öffnet direkt die Kamera, „Aus Galerie“ die
@@ -398,6 +407,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
+| `DELETE /api/orders/{key}/runs/{id}` | Beendeten Lauf aus dem Auftrag löschen (Zeit bleibt Maschinenzeit) |
 | `GET /api/orders/{key}/image?size=full\|thumb` | Bild des Auftrags (großes Bild bzw. Vorschaubild) |
 | `PUT/DELETE /api/orders/{key}/image` | Bild setzen/ersetzen bzw. entfernen. Upload: großes Bild und Vorschaubild (beide JPEG) hintereinander in einem Rumpf, Kopfzeile `X-Image-Length` = Länge des großen Bildes |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |

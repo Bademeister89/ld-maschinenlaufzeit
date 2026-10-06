@@ -1,9 +1,10 @@
-"""API für den Tab „Aufträge“: Liste, Detail, Bezeichnung/Status ändern, Bild, CSV-Export."""
+"""API für den Tab „Aufträge“: Liste, Detail, Bezeichnung/Status ändern, Lauf löschen, Bild, CSV-Export."""
 
 from __future__ import annotations
 
 import csv
 import io
+import logging
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,8 @@ from .state import RUN_RESULT_LABELS
 
 if TYPE_CHECKING:
     from .main import AppContext
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/orders")
 
@@ -83,6 +86,45 @@ def update_order(request: Request, key: str, payload: dict[str, Any] = Body(...)
         raise HTTPException(400, "Status muss „open“ oder „closed“ sein.")
     db.update_order(key, title, status, time.time())
     return _ctx(request).order_images.public(db.order(key))
+
+
+# --- Lauf löschen ------------------------------------------------------------------------------
+
+
+@router.delete("/{key}/runs/{run_id}", status_code=204)
+def delete_run(request: Request, key: str, run_id: int) -> Response:
+    """Lauf aus dem Auftrag löschen, z. B. einen Fehllauf oder ein Nachprogramm.
+
+    Wie beim Verwerfen von MDI-Läufen bleibt seine Zeit als Maschinenzeit erhalten (Auswertung je
+    Maschine und Tag), zählt aber zu keinem Lauf mehr: nicht zum Auftrag, nicht zu den Ø-Stückzeiten
+    und nicht zur Prognose. Was gelöscht wurde, steht als Ereignis ``run_deleted`` in der Datenbank.
+    """
+    ctx = _ctx(request)
+    if ctx.db.order(key) is None:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    run = ctx.db.run(run_id)
+    if run is None or run["order_key"] != key:
+        raise HTTPException(404, f"Lauf {run_id} gehört nicht zu Auftrag {key}.")
+    if run["ended_at"] is None:
+        raise HTTPException(409, "Der Lauf läuft noch. Löschen geht erst, wenn er beendet ist.")
+    payload = {
+        "run": run_id,
+        "order": key,
+        "program": run["program"],
+        "started_at": run["started_at"],
+        "ended_at": run["ended_at"],
+        "result": run["result"],
+        "run_s": round(run["run_s"], 1),
+        "stop_s": round(run["stop_s"], 1),
+    }
+    with ctx.db.transaction():
+        ctx.db.discard_run(run_id)
+        ctx.db.add_event(run["machine_id"], time.time(), "run_deleted", payload)
+    collector = ctx.collectors.get(run["machine_id"])
+    if collector is not None:
+        collector.forget_run(run_id, run["program"])
+    log.info("Auftrag %s: Lauf %d (%s) gelöscht", key, run_id, run["program"])
+    return Response(status_code=204)
 
 
 # --- Bild (fertiges Bauteil) ----------------------------------------------------------------

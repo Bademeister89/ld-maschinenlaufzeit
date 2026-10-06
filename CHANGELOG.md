@@ -10,6 +10,21 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.12.0] – 2026-10-06
+
+### Neu
+- **Lauf löschen** im Auftrag (Programmdurchläufe → „Löschen“), z. B. für einen Fehllauf oder ein
+  Nachprogramm.
+  - Der Lauf zählt danach nicht mehr zum Auftrag, zu den Ø-Stückzeiten und zur
+    Restlaufzeit-Prognose.
+  - Die Laufzeit der Maschine in der Auswertung bleibt erhalten.
+  - Nur beendete Läufe, mit Rückfrage. Das Löschen wird als Ereignis protokolliert.
+
+### Behoben
+- Die Liste „Programmdurchläufe“ klappte beim automatischen Aktualisieren alle 20 s wieder zu.
+- Ein neuer Auftrag, dessen erster Lauf noch lief, zeigte in der Auftragsliste bei „Fertige Läufe“
+  „null“ statt 0.
+
 ## [1.11.1] – 2026-10-05
 
 ### Behoben

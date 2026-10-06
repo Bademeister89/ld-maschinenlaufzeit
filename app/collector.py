@@ -433,6 +433,13 @@ class MachineCollector:
         if active is not None:
             self._tool_use = (self._db.open_tool_usage(self.machine.id, active, now), active)
 
+    def forget_run(self, run_id: int, program: str | None) -> None:
+        """Nach dem Löschen eines beendeten Laufs (Tab Aufträge): ihn nicht mehr per Satzvorlauf
+        fortsetzen und die Prognose des Programms ohne ihn neu berechnen."""
+        if self._ended is not None and self._ended.id == run_id:
+            self._ended = None
+        self._forecaster.invalidate(program)
+
     def forget_tool(self, number: int) -> None:
         """Nach dem Entfernen eines Werkzeugs: steckt es noch in der Spindel, bei der nächsten
         Abfrage neu anlegen."""

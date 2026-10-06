@@ -587,6 +587,7 @@ details[open] > summary { margin-bottom: 12px; }
 .btn.danger { color: var(--critical-text); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn.icon { padding: 3px 8px; min-width: 32px; justify-content: center; }
+.btn.small { padding: 2px 8px; font-size: 13px; }
 
 .config-list { display: grid; }
 

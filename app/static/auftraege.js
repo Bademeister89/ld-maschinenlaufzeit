@@ -237,18 +237,58 @@ function daysChart(days) {
   return node;
 }
 
-function runsTable(runs) {
+const programName = (path) => path.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+
+function runsTable(key, runs) {
   const columns = [
     { label: "Nr.", value: (r) => String(r.id), cls: "r" },
-    { label: "Programm", value: (r) => r.program.split(/[\\/]/).pop().replace(/\.[^.]+$/, "") },
+    { label: "Programm", value: (r) => programName(r.program) },
     { label: "Maschine", value: (r) => machineName(r.machine_id) },
     { label: "Start", value: (r) => (r.start_observed ? "" : "≥ ") + fmtDateTime(r.started_at), cls: "r" },
     { label: "Ende", value: (r) => fmtDateTime(r.ended_at), cls: "r" },
     { label: "Ergebnis", value: (r) => resultLabel(r.result) },
     { label: "Laufzeit", value: (r) => fmtDuration(r.run_s), cls: "r" },
     { label: "Gestoppt / Fehler", value: (r) => fmtDuration(r.stop_s), cls: "r" },
+    {
+      label: "",
+      // Nur beendete Läufe: Ein laufender Lauf wird noch fortgeschrieben
+      value: (r) =>
+        r.ended_at == null
+          ? el("span", { class: "muted", text: "läuft" })
+          : el("button", {
+              type: "button",
+              class: "btn small danger",
+              "aria-label": `Lauf ${r.id} löschen`,
+              onclick: () => deleteRun(key, r),
+              text: "Löschen",
+            }),
+      cls: "r",
+    },
   ];
   return runs.length ? table(columns, runs.slice().reverse()) : el("p", { class: "empty", text: "Noch keine Läufe." });
+}
+
+/** Fehllauf oder Nachprogramm aus dem Auftrag löschen (mit Rückfrage, nicht umkehrbar). */
+async function deleteRun(key, r) {
+  const what = [
+    programName(r.program),
+    machineName(r.machine_id),
+    `${fmtDateTime(r.started_at)} – ${fmtDateTime(r.ended_at)}`,
+    resultLabel(r.result),
+    `Laufzeit ${fmtDuration(r.run_s)}`,
+  ].join(" · ");
+  const ok = confirm(
+    `Lauf ${r.id} löschen?\n\n${what}\n\n` +
+      "Der Lauf zählt danach nicht mehr zum Auftrag, zur Ø-Bearbeitungszeit je Teil und zur Restlaufzeit-Prognose. " +
+      "Die Laufzeit der Maschine in der Auswertung bleibt erhalten.\n\nDas lässt sich nicht rückgängig machen.",
+  );
+  if (!ok) return;
+  try {
+    await send("DELETE", `/api/orders/${encodeURIComponent(key)}/runs/${r.id}`);
+    await refresh();
+  } catch (err) {
+    showError(err);
+  }
 }
 
 async function saveOrder(key, changes) {
@@ -263,6 +303,7 @@ async function saveOrder(key, changes) {
 // --- Bild des Auftrags (fertiges Bauteil) ------------------------------------------------------
 
 let current = null; // angezeigter Auftrag
+let runsOpen = false; // Liste „Programmdurchläufe“ aufgeklappt
 const imageState = { key: null, text: null, error: false, busy: false }; // Hinweis zum Hochladen
 // Handy/Tablet: eigener Kamera-Button. Android (ab 13) zeigt bei einem Bild-Dateifeld nur die
 // Fotoauswahl ohne Kamera; die Kamera öffnet sich nur über ein eigenes Feld mit "capture".
@@ -425,7 +466,17 @@ function renderDetail(d) {
       el("div", { class: "section-head" }, el("h2", { text: "Laufzeit je Tag" }), legend(["RUNNING", "STOPPED"])),
       daysChart(d.days),
     ),
-    el("div", { class: "card section" }, el("details", {}, el("summary", { text: `Programmdurchläufe (${d.runs.length})` }), el("div", { class: "table-wrap" }, runsTable(d.runs)))),
+    el(
+      "div",
+      { class: "card section" },
+      el(
+        "details",
+        // Aufgeklappt bleiben, wenn die Seite alle 20 s neu aufgebaut wird
+        { open: runsOpen, ontoggle: (e) => (runsOpen = e.currentTarget.open) },
+        el("summary", { text: `Programmdurchläufe (${d.runs.length})` }),
+        el("div", { class: "table-wrap" }, runsTable(o.key, d.runs)),
+      ),
+    ),
   );
 }
 

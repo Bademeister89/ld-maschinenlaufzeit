@@ -419,11 +419,16 @@ class Database:
 
     _RUN_SELECT = (
         "SELECT r.id, r.machine_id, r.program, r.started_at, r.ended_at, r.result, r.had_error, r.start_observed, "
+        "r.order_key, "
         f"COALESCE(SUM(CASE WHEN i.state = 'RUNNING' THEN {_END} - i.started_at END), 0) AS run_s, "
         f"COALESCE(SUM(CASE WHEN i.state IN ('STOPPED', 'ERROR') THEN {_END} - i.started_at END), 0) AS stop_s, "
         f"COALESCE(MAX({_END}), r.started_at) AS last_active "
         "FROM program_runs r LEFT JOIN state_intervals i ON i.run_id = r.id "
     )
+
+    def run(self, run_id: int) -> dict[str, Any] | None:
+        rows = self._query(self._RUN_SELECT + "WHERE r.id = ? GROUP BY r.id", (run_id,))
+        return rows[0] if rows else None
 
     def open_run(self, machine_id: str) -> dict[str, Any] | None:
         rows = self._query(
@@ -517,7 +522,8 @@ class Database:
 
     def order_run_counts(self) -> list[dict[str, Any]]:
         return self._query(
-            "SELECT order_key, COUNT(*) AS runs, SUM(result = 'finished') AS finished FROM program_runs "
+            # COALESCE: Läuft nur ein Lauf (result noch NULL), wäre die Summe sonst NULL statt 0
+            "SELECT order_key, COUNT(*) AS runs, COALESCE(SUM(result = 'finished'), 0) AS finished FROM program_runs "
             "WHERE order_key IS NOT NULL GROUP BY order_key"
         )
 
