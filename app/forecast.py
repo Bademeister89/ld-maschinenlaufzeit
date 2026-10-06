@@ -66,6 +66,11 @@ class Forecaster:
         """Nach einem abgeschlossenen Lauf neu berechnen."""
         self._refs.pop(program, None)
 
+    def typical_run_s(self, program: str | None) -> float | None:
+        """Übliche reine Laufzeit eines Programms (Median der letzten fertigen Läufe); None = unbekannt."""
+        ref = self._reference(program)
+        return ref.typical_run_s if ref else None
+
     def _reference(self, program: str | None) -> _Reference | None:
         if program not in self._refs:
             self._refs[program] = self._load_reference(program)

@@ -213,10 +213,96 @@ function overrideBar(label, value) {
   );
 }
 
-/** Poti-Stellung Vorschub und Spindel; fehlt beides (Steuerung liefert nichts), entfällt der Block. */
+/** Poti-Stellung Vorschub, Spindel und Eilgang (unter dem Vorschub); liefert die Steuerung nichts, entfällt der Block. */
 function overrideBlock(o) {
-  if (o.feed == null && o.spindle == null) return null;
-  return el("div", { class: "overrides" }, overrideBar("Vorschub", o.feed), overrideBar("Spindel", o.spindle));
+  if (o.feed == null && o.spindle == null && o.rapid == null) return null;
+  return el("div", { class: "overrides" }, overrideBar("Vorschub", o.feed), overrideBar("Spindel", o.spindle), overrideBar("Eilgang", o.rapid));
+}
+
+// --- Ablaufliste des Palettenprogramms (.P) ------------------------------------------------------
+
+const palletLabel = (name) => (name == null ? "" : /^\d+$/.test(name) ? `Palette ${name}` : name);
+const programLabel = (path) => baseName(path).replace(/\.[^.]+$/, "");
+const PAL_MARK = { done: "✓", current: "▶", pending: "", skipped: "–" };
+const PAL_STATUS = { done: "fertig", current: "läuft", pending: "offen", skipped: "gesperrt" };
+
+/** Aufeinanderfolgende Zeilen derselben Palette zusammenfassen (eine Zeile je Palette). */
+function palletGroups(entries) {
+  const groups = [];
+  for (const e of entries) {
+    const last = groups.at(-1);
+    if (last && e.pallet != null && last.pallet === e.pallet) last.entries.push(e);
+    else groups.push({ pallet: e.pallet, entries: [e] });
+  }
+  for (const g of groups) {
+    const states = g.entries.map((e) => e.status).filter((s) => s !== "skipped");
+    g.status = !states.length ? "skipped" : states.includes("current") ? "current" : states.every((s) => s === "done") ? "done" : "pending";
+  }
+  return groups;
+}
+
+/** Summe der erwarteten Zeiten; fehlt eine, ist es eine Mindestzeit. */
+function expectedText(entries) {
+  const active = entries.filter((e) => e.status !== "skipped");
+  const known = active.filter((e) => e.expected_s != null);
+  if (!known.length) return active.length ? "Zeit unbekannt" : "";
+  const sum = known.reduce((total, e) => total + e.expected_s, 0);
+  return `${known.length < active.length ? "mind. " : "ca. "}${fmtDuration(sum)}`;
+}
+
+/** Welche Programme das Palettenprogramm nacheinander abarbeitet, mit erwarteter Zeit und Restzeit. */
+function palletBlock(m) {
+  const p = m.pallet;
+  if (!p) return null;
+  const groups = palletGroups(p.entries);
+  let summary = null;
+  if (p.remaining_s != null) {
+    const prefix = p.remaining_unknown ? "mind. " : "ca. ";
+    summary = `noch ${prefix}${fmtDuration(p.remaining_s)}`;
+    if (m.state !== "RUNNING") summary += " (pausiert)";
+    else summary += ` · fertig ${p.remaining_unknown ? "frühestens" : "ca."} ${fmtTime(p.eta)} Uhr`;
+  }
+  const pallets = groups.filter((g) => g.pallet != null && g.status !== "skipped").length;
+  const missing = [...new Set(p.entries.filter((e) => e.status !== "skipped" && e.expected_s == null).map((e) => programLabel(e.program)))];
+  const foot = [
+    `Gesamt ${expectedText(p.entries)}${pallets ? ` für ${pallets} ${pallets === 1 ? "Palette" : "Paletten"}` : ""}`,
+    missing.length ? `ohne Zeit (noch nie gelaufen): ${missing.join(", ")}` : null,
+    // Gemessen wird ab der ersten fertigen Zeile; bis dahin fehlt der Palettenwechsel in den Zeiten
+    p.entries.some((e) => e.measured) ? "Zeiten mit Palettenwechsel gemessen" : "Zeiten aus früheren Läufen, ohne Palettenwechsel",
+  ];
+  return el(
+    "section",
+    { class: "pallet", "aria-label": "Ablauf des Palettenprogramms" },
+    el(
+      "div",
+      { class: "pallet-head" },
+      el("span", { class: "pallet-title", text: `Palettenprogramm ${baseName(p.table)}` }),
+      summary ? el("span", { class: "pallet-sum num", text: summary }) : null,
+    ),
+    el(
+      "ol",
+      { class: "pallet-list" },
+      groups.map((g) =>
+        el(
+          "li",
+          { class: `pal-${g.status}` },
+          el("span", { class: "pal-mark", "aria-hidden": "true", text: PAL_MARK[g.status] }),
+          el("span", { class: "visually-hidden", text: `${PAL_STATUS[g.status]}: ` }),
+          el("span", { class: "pal-name", text: palletLabel(g.pallet) }),
+          el(
+            "span",
+            { class: "pal-programs" },
+            g.entries.flatMap((e, i) => [
+              i ? " · " : null,
+              el("span", { class: `pal-pgm${e.status === "current" ? " is-current" : ""}${e.status === "skipped" ? " is-skipped" : ""}`, text: programLabel(e.program) }),
+            ]),
+          ),
+          el("span", { class: "pal-time num", text: g.status === "skipped" ? "gesperrt" : expectedText(g.entries) }),
+        ),
+      ),
+    ),
+    el("div", { class: "pallet-foot", text: foot.filter(Boolean).join(" · ") }),
+  );
 }
 
 /** Großer Statusbalken: Symbol + Zustand, rechts wie lange schon. */
@@ -291,7 +377,8 @@ function renderLive(m, now) {
       : m.caller === m.program ? "Oberprogramm – zählt zu keinem Auftrag"
       : `aufgerufen von ${baseName(m.caller)}`;
     // Zur Kontrolle: Welche Programme ruft das Oberprogramm laut seiner Datei auf?
-    const cf = m.caller_file;
+    // (Bei einer lesbaren Palettentabelle steht der Ablauf als eigene Liste darunter.)
+    const cf = m.pallet ? null : m.caller_file;
     const callerFile = !cf ? null
       : cf.calls ? `${baseName(m.caller)} ruft auf: ${cf.calls.length ? cf.calls.join(", ") : "– (kein Programmaufruf erkannt)"}`
       : `${baseName(m.caller)} nicht gelesen: ${cf.error}`;
@@ -327,7 +414,6 @@ function renderLive(m, now) {
         fact("Programmstatus", pgmStateLabel(m.pgm_state)),
         fact("Satz", m.blocks ? blocksText(m.blocks).replace("Satz ", "") : null),
         toolFact(m),
-        fact("Eilgang (FMAX)", pctText(m.override.rapid)),
         fact("Lauf-Nr.", m.run ? String(m.run.id) : null),
       ),
     );
@@ -336,6 +422,7 @@ function renderLive(m, now) {
     if (m.errors.length) {
       parts.push(el("ul", { class: "errors" }, m.errors.map((text) => el("li", { text }))));
     }
+    parts.push(palletBlock(m));
   }
   // Leere Bausteine (z. B. kein Fortschritt ohne laufendes Programm) auslassen – sonst stünde „null“ da
   c.live.replaceChildren(...parts.filter(Boolean));

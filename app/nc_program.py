@@ -13,6 +13,11 @@ die es aufruft.
       1   PGM  TNC:\\Programme\\21 Motor\\…\\26-21053-01-01.h
       2   PGM  DREH.H
       [END]
+
+  Die Steuerung arbeitet die Zeilen von oben nach unten ab: Zeilen PAL (Palette) und FIX
+  (Spannmittel) gelten für die Programmzeilen PGM darunter. Ein „*“ in der Spalte LOCK sperrt eine
+  Zeile (bei PAL/FIX alles darunter bis zur nächsten Palette bzw. zum nächsten Spannmittel),
+  ebenso der Bearbeitungsstatus EMPTY (Leerplatz) oder SKIP in der Spalte W-STATE.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ _BLOCK_NO = re.compile(r"^\s*(\d+)\s", re.MULTILINE)
 _CALL = re.compile(r"\b(?:CALL\s+PGM|SEL\s+PGM|SEL\s+CYCLE|12\.1\s+PGM)\s+(?:\"([^\"]+)\"|([^\s\"]+))", re.IGNORECASE)
 _TABLE_HEADER = re.compile(r"^\s*NR\s.*\bNAME\b", re.IGNORECASE)
 _PROGRAM_FILE = re.compile(r"([^\s\\/:\"]+\.[HI])(?=[\s\"]|$)", re.IGNORECASE)
+_SKIP_STATES = frozenset({"EMPTY", "SKIP"})  # W-STATE: Leerplatz bzw. Bearbeitung überspringen
 
 
 @dataclass(frozen=True)
@@ -35,6 +41,16 @@ class ProgramFile:
     blocks: int | None = None  # Nummer des letzten Satzes (= Satzanzahl der Anzeige)
     error: str | None = None
     calls: tuple[str, ...] | None = None  # aufgerufene Programme (``call_name``), None = nicht gelesen
+    content: str | None = None  # Text der Datei – nur bei Palettentabellen (für die Ablaufliste)
+
+
+@dataclass(frozen=True)
+class PalletEntry:
+    """Programmzeile (PGM) einer Palettentabelle."""
+
+    program: str  # wie in der Tabelle: Name oder Pfad
+    pallet: str | None = None  # Name der Palette (Zeile PAL darüber)
+    skipped: bool = False  # gesperrt (LOCK) oder laut W-STATE nicht zu bearbeiten
 
 
 def _extension(path: str) -> str:
@@ -60,25 +76,71 @@ def program_calls(path: str, text: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _pallet_programs(text: str) -> tuple[str, ...]:
-    """Einträge der Spalte NAME (Paletten, Spannmittel, Programme) und dazu jeder Dateiname auf
-    .H/.I in einer Zeile – so wird ein Programm auch erkannt, wenn die Spalte anders heißt."""
+Span = tuple[int, int | None]
+
+
+def _table(text: str) -> tuple[dict[str, Span], list[str]]:
+    """Spalten der Kopfzeile ``NR … NAME …`` (Titel → Anfang/Ende) und die Zeilen danach bis
+    ``[END]``. Ohne Kopfzeile: keine Spalten und alle Zeilen."""
     lines = text.splitlines()
     head = next((i for i, line in enumerate(lines) if _TABLE_HEADER.match(line)), None)
-    column: tuple[int, int | None] | None = None
+    columns: dict[str, Span] = {}
     if head is not None:
         titles = [(m.group().upper(), m.start()) for m in re.finditer(r"\S+", lines[head])]
-        index = next(i for i, (title, _) in enumerate(titles) if title == "NAME")
-        column = (titles[index][1], titles[index + 1][1] if index + 1 < len(titles) else None)
-    names: dict[str, None] = {}
+        for i, (title, start) in enumerate(titles):
+            columns.setdefault(title, (start, titles[i + 1][1] if i + 1 < len(titles) else None))
+    rows = []
     for line in lines[head + 1 :] if head is not None else lines:
         if line.strip().upper().startswith("[END]"):
             break
-        if column is not None and (value := line[column[0] : column[1]].strip().strip('"')):
+        rows.append(line)
+    return columns, rows
+
+
+def _cell(line: str, span: Span | None) -> str:
+    return line[span[0] : span[1]].strip().strip('"') if span else ""
+
+
+def _pallet_programs(text: str) -> tuple[str, ...]:
+    """Einträge der Spalte NAME (Paletten, Spannmittel, Programme) und dazu jeder Dateiname auf
+    .H/.I in einer Zeile – so wird ein Programm auch erkannt, wenn die Spalte anders heißt."""
+    columns, rows = _table(text)
+    names: dict[str, None] = {}
+    for line in rows:
+        if value := _cell(line, columns.get("NAME")):
             names[call_name(value)] = None
         for found in _PROGRAM_FILE.findall(line):
             names[call_name(found)] = None
     return tuple(names)
+
+
+def pallet_entries(text: str) -> tuple[PalletEntry, ...]:
+    """Programmzeilen einer Palettentabelle in der Reihenfolge, in der die Steuerung sie abarbeitet –
+    jede Zeile einzeln, auch wenn ein Programm mehrmals vorkommt. Leer, wenn die Tabelle keine
+    Kopfzeile mit Spalte NAME hat."""
+    columns, rows = _table(text)
+    name = columns.get("NAME")
+    if name is None:
+        return ()
+    # Zeilentyp PAL/FIX/PGM: Spalte "TYPE" bzw. "PAL/PGM"
+    kind = next((span for title, span in columns.items() if title == "TYPE" or "PGM" in title), None)
+    lock = columns.get("LOCK")
+    state = next((span for title, span in columns.items() if title.startswith("W-STAT")), None)
+    entries: list[PalletEntry] = []
+    pallet: str | None = None
+    pallet_locked = fixture_locked = False
+    for line in rows:
+        value = _cell(line, name)
+        row_type = _cell(line, kind).upper() if kind else ("PGM" if _PROGRAM_FILE.search(value) else "")
+        locked = "*" in _cell(line, lock)
+        if row_type == "PAL":
+            pallet, pallet_locked, fixture_locked = value or None, locked, False
+        elif row_type == "FIX":
+            fixture_locked = locked
+        elif row_type == "PGM" and value:
+            skipped = pallet_locked or fixture_locked or locked or _cell(line, state).upper() in _SKIP_STATES
+            entries.append(PalletEntry(value, pallet, skipped))
+    return tuple(entries)
 
 
 def count_blocks(path: str, text: str) -> int | None:

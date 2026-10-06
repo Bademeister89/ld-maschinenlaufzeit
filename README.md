@@ -8,10 +8,13 @@ Erfasst laufend den Zustand der Heidenhain-Steuerungen (iTNC 530) der DMG-Fräse
 spätere Laufzeitauswertungen:
 
 - **Live:** Läuft die Maschine? Welches Programm, seit wann, welcher Satz, welches Werkzeug?
-  - Die Poti-Stellung für Vorschub und Spindel steht als Balken auf der Karte: Skala 0–150 %, ein
-    Strich markiert 100 %.
+  - Die Poti-Stellung für Vorschub, Spindel und Eilgang (unter dem Vorschub) steht als Balken auf
+    der Karte: Skala 0–150 %, ein Strich markiert 100 %.
   - Farben: unter 50 % rot, unter 100 % gelb, 100–120 % grün, über 120 % orange. Im Hintergrund des
     Balkens sind die Zonen blass zu sehen, der Wert steht immer als Zahl daneben.
+  - Bei einem Palettenprogramm (`.P`) steht die Reihenfolge der Paletten und Programme mit
+    erwarteter Zeit, Restzeit und voraussichtlichem Ende auf der Karte, siehe
+    [Palettenprogramm](#palettenprogramm-ablaufliste).
 - **Auswertung:** Laufzeit und Auslastung je Tag und Maschine, Zeitleiste, Programme mit Stückzeiten,
   CSV-Export für Excel.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
@@ -142,6 +145,39 @@ Voraussetzungen an jeder Steuerung:
   angewählte Programm und zeigt Satzanzahl und aktuellen Satz. Die Satznummer sollte der Anzeige
   an der Steuerung entsprechen.
 
+### Palettenprogramm (Ablaufliste)
+
+Ist eine Palettentabelle (`.P`) angewählt, zeigt die Live-Karte, welche Programme sie nacheinander
+abarbeitet:
+
+- Eine Zeile je Palette mit ihren Programmen, z. B. „Palette 3 · 26-21053-01-01 · DREH · ca. 16 min“.
+  - ✓ heißt fertig, ▶ heißt läuft (das laufende Programm ist unterstrichen).
+  - Durchgestrichen und „gesperrt“ sind Zeilen, die die Steuerung überspringt: `*` in der Spalte
+    `LOCK` (bei einer Palette oder einem Spannmittel alles darunter) oder `EMPTY`/`SKIP` in `W-STATE`.
+- **Zeiten:**
+  - Zuerst die übliche Laufzeit früherer Läufe des Programms (Median der letzten 5, wie bei der
+    Restlaufzeit). Steht das Programm ohne Pfad in der Tabelle, gilt das Verzeichnis der Tabelle;
+    sonst zählt derselbe Name auch in einem anderen Verzeichnis.
+  - Sobald ein Programm in diesem Palettenprogramm einmal fertig ist, die gemessene Zeit bis zum
+    nächsten Programm. Darin steckt der Palettenwechsel, ab der zweiten Palette wird die Restzeit
+    also genauer.
+  - Ein Programm, das noch nie gelaufen ist, hat keine Zeit. Dann heißt es „mind.“ und
+    „fertig frühestens“.
+- **Kopf:** „noch ca. 1 h 11 min · fertig ca. 18:08 Uhr“, also die Restzeit des laufenden Programms
+  plus die Zeiten der offenen Zeilen. Im Stopp steht „(pausiert)“. **Fuß:** Gesamtzeit aller
+  Zeilen und die Programme ohne Zeit.
+- **Wie die App die Stelle findet:** Die Steuerung meldet nur Hauptprogramm (die Tabelle) und
+  aktuelles Programm, nicht die Zeile. Jeder Wechsel auf ein Programm der Tabelle rückt deshalb zur
+  nächsten Zeile mit diesem Programm vor.
+  - Nach einem Abbruch geht es an derselben Zeile weiter, zum Beispiel per Satzvorlauf. Startet ein
+    anderes Programm, beginnt die Liste von vorn.
+  - Nach einem Neustart der App beginnt die Zählung bei der ersten passenden Zeile. Die Palette
+    stimmt dann erst ab dem nächsten Durchgang.
+  - Folgt dasselbe Programm ohne anderes Programm dazwischen (nur Palettenwechsel), ist kein
+    Wechsel zu sehen. In den bisherigen Tabellen steht immer DREH dazwischen.
+- Den Text der Tabelle hebt die App auf (wenige KB). Die Diagnose-Datei enthält ihn unter
+  `paletten/`.
+
 ## Aufträge (Tab „Aufträge“)
 
 Programme nach dem Schema **`JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM`** werden automatisch einem Auftrag
@@ -187,7 +223,9 @@ zugeordnet, z. B. `26-21055-01-01`:
        Maschinenherstellers) laufen im Auftragsprogramm weiter.
   - Programmdateien, die nicht gelesen werden konnten, versucht die App jede Minute erneut.
   - **Zur Kontrolle** zeigt die Live-Karte unter dem Programm, was über das Oberprogramm bekannt ist:
-    „HAUPT.H ruft auf: …“ oder „HAUPT.H nicht gelesen: <Grund>“. Der Verbindungstest zeigt es
+    „HAUPT.H ruft auf: …“ oder „HAUPT.H nicht gelesen: <Grund>“. Bei einer lesbaren
+    Palettentabelle steht stattdessen die [Ablaufliste](#palettenprogramm-ablaufliste) auf der Karte.
+    Der Verbindungstest zeigt es
     unter „Hauptprogramm lesen“, das Log beim Einlesen („ruft auf: …“).
   - Ruft das Oberprogramm dasselbe Auftragsprogramm mehrmals direkt hintereinander auf, ohne
     Zwischenprogramm, kann daraus ein einziger Lauf werden. Die Steuerung wird alle 2 s abgefragt,
@@ -222,6 +260,13 @@ zugeordnet, z. B. `26-21055-01-01`:
       Diagnose-Datei.
 - **Bild je Auftrag** (fertiges Bauteil):
   - Am PC im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“.
+  - **Aus der Zwischenablage:** ein Bild kopieren (z. B. Screenshot mit Win+Umschalt+S oder
+    „Bild kopieren“ im Browser) und im geöffneten Auftrag Strg+V drücken. Ist schon ein Bild da,
+    fragt die App vor dem Ersetzen. Text einfügen (z. B. in die Bezeichnung) funktioniert weiter
+    wie gewohnt.
+    - Der Button „Aus Zwischenablage“ erscheint nur, wenn der Browser ihn erlaubt: bei
+      `http://localhost` (portable Version am selben PC) oder über https. Über die IP-Adresse
+      (z. B. Unraid) geht Strg+V.
   - Am Handy zwei Buttons: „Foto aufnehmen“ öffnet direkt die Kamera, „Aus Galerie“ die
     Fotoauswahl. Getrennt deshalb, weil Android bei nur einem Button lediglich die Galerie zeigt.
   - Der Browser verkleinert das Foto vor dem Hochladen:
@@ -398,6 +443,7 @@ oder 30 Tage, auf Wunsch mit der ganzen Datenbank. Inhalt:
 | `laeufe.csv` | Läufe mit Ergebnis und Programmstatus am Laufende und danach |
 | `zustaende.csv`, `ereignisse.csv` | Zustandsabschnitte und Ereignisse des Zeitraums |
 | `programmdateien.csv` | Gelesene Programmdateien mit Satzanzahl, aufgerufenen Programmen und Fehlern |
+| `paletten/<maschine>/` | Palettentabellen (`.P`) im Original, wie zuletzt von der Steuerung gelesen |
 | `logs/` | Log-Dateien der App |
 | `data.db` | Datenbank (nur wenn ausgewählt) |
 

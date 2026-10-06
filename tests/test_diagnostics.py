@@ -62,7 +62,7 @@ def test_diagnose_zip_contents(client):
     assert any(n.startswith("logs/") for n in names)  # Log-Datei aus dem Datenordner
 
     info = json.loads(z.read("info.json"))
-    assert info["version"] and info["zeitraum_tage"] == 7 and info["schema"] == "10"
+    assert info["version"] and info["zeitraum_tage"] == 7 and info["schema"] == "11"
     assert [m["id"] for m in info["maschinen"]] == ["m1", "m2"]
     assert set(json.loads(z.read("live.json"))) == {"m1", "m2"}
 
@@ -97,6 +97,16 @@ def test_diagnose_zip_with_database(client):
     con = sqlite3.connect(path)
     assert con.execute("SELECT COUNT(*) FROM program_runs").fetchone()[0] == 1
     con.close()
+
+
+def test_diagnose_zip_contains_pallet_tables(client):
+    """Palettentabellen im Original (Zeichensatz der Steuerung), damit sich das Format prüfen lässt."""
+    text = "BEGIN PAL1SP .P MM\nNR  TYPE NAME          LOCK\n0   PAL  1\n1   PGM  Bügel.H\n[END]\n"
+    client.app.state.ctx.db.save_program_file("m1", "TNC:\\PROD\\pal1sp.p", len(text), 1.0, None, None, 0, ("1", "BÜGEL"), text)
+    z = _zip(client.get("/api/diagnose.zip"))
+    assert [n for n in z.namelist() if n.startswith("paletten/")] == ["paletten/m1/TNC_PROD_pal1sp.p"]
+    assert z.read("paletten/m1/TNC_PROD_pal1sp.p") == text.encode("latin-1")
+    assert "paletten/" in z.read("LIESMICH.txt").decode()
 
 
 def test_diagnose_days_are_limited(client):

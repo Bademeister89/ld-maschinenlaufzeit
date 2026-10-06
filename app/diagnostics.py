@@ -10,6 +10,7 @@ Inhalt (Zeiten als Ortszeit der Konfiguration):
 - ``zustaende.csv``          Zustandsabschnitte des Zeitraums
 - ``ereignisse.csv``         Ereignisse des Zeitraums
 - ``programmdateien.csv``    gelesene Programmdateien (Satzanzahl, Aufrufe, Fehler)
+- ``paletten/<id>/``         Palettentabellen (.P), wie zuletzt von der Steuerung gelesen
 - ``logs/``                  Log-Dateien der App
 - ``data.db``                auf Wunsch die ganze Datenbank
 
@@ -22,6 +23,7 @@ import csv
 import io
 import json
 import platform
+import re
 import sys
 import tempfile
 import time
@@ -49,6 +51,7 @@ laeufe.csv           Programmläufe mit Ergebnis und dem Programmstatus am Ende 
 zustaende.csv        Zustandsabschnitte (Läuft, Gestoppt, Bereit …) mit Programmstatus
 ereignisse.csv       Ereignisse (Verbindung, Werkzeugwechsel, NC-Fehler, Aufträge …)
 programmdateien.csv  Gelesene Programmdateien mit Satzanzahl, aufgerufenen Programmen und Fehlern
+paletten/            Palettentabellen (.P) je Maschine, wie zuletzt von der Steuerung gelesen
 logs/                Log-Dateien der App
 data.db              Datenbank (nur wenn beim Herunterladen ausgewählt)
 """
@@ -196,6 +199,11 @@ def build_zip(ctx: AppContext, captured: dict[str, Any], days: int = 7, include_
         z.writestr("programmdateien.csv", _csv(files, [
             "machine_id", "path", "size", "blocks", "error", "calls", "gelesen", "geaendert",
         ]))
+        for f in files:
+            if f["content"] is not None:
+                # Ganzer Pfad als Dateiname (Tabellen gleichen Namens in verschiedenen Verzeichnissen)
+                name = re.sub(r'[\\/:*?"<>|]+', "_", f["path"]).strip("_")
+                z.writestr(f"paletten/{f['machine_id']}/{name}", f["content"].encode("latin-1", errors="replace"))
 
         log_dir = ctx.settings.data_dir / "logs"
         for path in sorted(log_dir.glob("*.log*")) if log_dir.is_dir() else []:

@@ -312,11 +312,16 @@ const imageState = { key: null, text: null, error: false, busy: false }; // Hinw
 // Handy/Tablet: eigener Kamera-Button. Android (ab 13) zeigt bei einem Bild-Dateifeld nur die
 // Fotoauswahl ohne Kamera; die Kamera öffnet sich nur über ein eigenes Feld mit "capture".
 const touch = matchMedia("(pointer: coarse)").matches;
+// Zwischenablage per Button nur in sicherer Umgebung (https oder localhost); Strg+V geht überall
+const clipboardButton = !touch && typeof navigator.clipboard?.read === "function";
 
 function imageButtons(o, disabled) {
   const button = (text, source) => el("button", { type: "button", class: "btn", disabled, onclick: () => pickImage(o.key, source) }, text);
   if (touch) return [button("Foto aufnehmen", "camera"), button("Aus Galerie", "gallery")];
-  return [button(o.image_url ? "Bild ersetzen" : "Bild hinzufügen", "gallery")];
+  return [
+    button(o.image_url ? "Bild ersetzen" : "Bild hinzufügen", "gallery"),
+    clipboardButton ? el("button", { type: "button", class: "btn", disabled, onclick: () => imageFromClipboardApi(o) }, "Aus Zwischenablage") : null,
+  ];
 }
 
 function imageBlock(o) {
@@ -342,7 +347,9 @@ function imageBlock(o) {
     ),
     own && imageState.text
       ? el("div", { class: imageState.error ? "form-error" : "order-image-note", role: "status", text: imageState.text })
-      : null,
+      : !touch
+        ? el("div", { class: "order-image-hint", text: "Tipp: Bild kopieren (z. B. Screenshot) und hier mit Strg+V einfügen" })
+        : null,
   );
 }
 
@@ -360,10 +367,48 @@ function pickImage(key, source) {
 
 const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-async function uploadImage(e) {
+function uploadImage(e) {
   const file = e.target.files[0];
   const key = e.target.dataset.key;
-  if (!file || !key) return;
+  if (file && key) uploadFile(key, file);
+}
+
+/** Bild aus der Zwischenablage (Strg+V auf der Seite). Text einfügen, z. B. in die Bezeichnung, bleibt unberührt. */
+function pasteImage(e) {
+  const o = current;
+  if (!o || $("detail").hidden || imageState.busy) return;
+  const item = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === "file" && i.type.startsWith("image/"));
+  const file = item?.getAsFile();
+  if (!file) return;
+  e.preventDefault();
+  if (o.image_url && !confirm(`Bild von Auftrag ${o.number} durch das Bild aus der Zwischenablage ersetzen?`)) return;
+  uploadFile(o.key, file);
+}
+
+/** Button „Aus Zwischenablage“ (Clipboard-API; der Browser fragt evtl. nach Erlaubnis). */
+async function imageFromClipboardApi(o) {
+  let file = null;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => t.startsWith("image/"));
+      if (type) {
+        file = new File([await item.getType(type)], "Zwischenablage", { type });
+        break;
+      }
+    }
+  } catch {
+    setImageState(o.key, "Kein Zugriff auf die Zwischenablage – Bild bitte mit Strg+V einfügen.", { error: true });
+    return;
+  }
+  if (!file) {
+    setImageState(o.key, "In der Zwischenablage ist kein Bild. Bild kopieren (z. B. Screenshot) und erneut versuchen.", { error: true });
+    return;
+  }
+  if (o.image_url && !confirm(`Bild von Auftrag ${o.number} durch das Bild aus der Zwischenablage ersetzen?`)) return;
+  uploadFile(o.key, file);
+}
+
+async function uploadFile(key, file) {
   setImageState(key, "Bild wird verkleinert …", { busy: true });
   try {
     const [full, thumb] = await shrinkImage(file, [ORDER_IMAGE, ORDER_THUMB]);
@@ -534,6 +579,7 @@ async function main() {
   });
   $("image-input").addEventListener("change", uploadImage);
   $("camera-input").addEventListener("change", uploadImage);
+  document.addEventListener("paste", pasteImage);
   await refresh();
   if (state.selected) $("detail").scrollIntoView({ block: "start" });
   setInterval(refresh, REFRESH_MS);

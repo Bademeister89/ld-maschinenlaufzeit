@@ -10,6 +10,25 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.14.0] – 2026-10-06
+
+### Neu
+- **Eilgang-Poti** als Balken auf der Live-Karte, unter dem Vorschub. Skala und Farben wie bei
+  Vorschub und Spindel. Die Zeile „Eilgang (FMAX)“ bei den Angaben darunter entfällt dafür.
+- **Auftragsbild aus der Zwischenablage:** Bild kopieren (z. B. Screenshot) und im geöffneten
+  Auftrag Strg+V drücken.
+  - Ist schon ein Bild da, fragt die App vor dem Ersetzen.
+  - Am PC unter `localhost` gibt es dafür zusätzlich den Button „Aus Zwischenablage“.
+- **Ablaufliste beim Palettenprogramm (.P):** Die Live-Karte zeigt, welche Programme die
+  Palettentabelle nacheinander abarbeitet.
+  - Eine Zeile je Palette mit Programmen und erwarteter Zeit, fertige mit ✓, die laufende mit ▶.
+    Gesperrte Paletten sind durchgestrichen.
+  - Darüber die Restzeit und das voraussichtliche Ende, darunter die Gesamtzeit.
+  - Die Zeiten kommen aus früheren Läufen. Sobald ein Programm in diesem Palettenprogramm fertig ist,
+    gilt die gemessene Zeit, dann mit Palettenwechsel.
+  - Die Diagnose-Datei enthält die Palettentabellen jetzt unter `paletten/`.
+  - Beim Update liest die App die Palettentabellen einmal neu ein.
+
 ## [1.13.0] – 2026-10-06
 
 ### Neu

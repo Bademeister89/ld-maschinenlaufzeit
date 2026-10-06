@@ -32,17 +32,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from statistics import median
 from typing import Any
 
 from .adapters.base import MachineAdapter, Snapshot
 from .config import MachineConfig
 from .db import Database
 from .forecast import Forecaster
-from .nc_program import call_name
+from .nc_program import PalletEntry, call_name, pallet_entries
 from .orders import parse_program
 from .state import MANUAL_MODES, RUN_ACTIVE_STATES, MachineState, classify, run_result
 from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, is_call, parse_tool, spindle_number
@@ -90,6 +92,21 @@ class _Ended:
     last_line: int | None
 
 
+@dataclass
+class _PalletRun:
+    """Stand des angewählten Palettenprogramms (.P) – nur im Speicher."""
+
+    table: str
+    pos: int | None = None  # Index der Programmzeile, die gerade läuft (bzw. zuletzt lief)
+    name: str | None = None  # zuletzt gesehenes Programm der Tabelle (``call_name``), None = dazwischen
+    stopped: bool = False  # Palettenprogramm beendet/abgebrochen: weiter an derselben Zeile oder von vorn
+    entry_run_s: float = 0.0  # reine Laufzeit seit Beginn der aktuellen Zeile
+    entry_observed: bool = False  # Beginn der aktuellen Zeile gesehen, ohne Lücke (sonst nicht messen)
+    # Gemessene reine Laufzeit je Programm (``call_name``) von Beginn einer Zeile bis zur nächsten,
+    # also einschließlich Palettenwechsel
+    durations: dict[str, list[float]] = field(default_factory=dict)
+
+
 class MachineCollector:
     def __init__(
         self,
@@ -115,6 +132,9 @@ class MachineCollector:
         self._run = self._load_open_run()
         self._ended: _Ended | None = None
         self._callers: set[str] = set()  # erkannte Oberprogramme (rufen Auftragsprogramme auf)
+        self._pallet: _PalletRun | None = None  # angewähltes Palettenprogramm (Ablaufliste)
+        # Programme mit fertigen Läufen nach Name (``call_name``) – für die Zeiten der Ablaufliste
+        self._run_paths: dict[str, list[str]] | None = None
 
         # None = noch kein durchgehender Kontakt (Programmstart / Neustart des Tools)
         self._prev_state: MachineState | None = None
@@ -180,6 +200,7 @@ class MachineCollector:
             self._update_tool(snap, state, now)
             self._record_events(snap, state, now, reason)
             self._update_progress(snap, state)
+        self._track_pallet(raw, snap, state, now)
         self._record_raw(raw, snap, state, now, reason)
         self._prev_state = state
         self._snapshot = snap
@@ -337,6 +358,7 @@ class MachineCollector:
             self._db.end_run(run.id, ended_at, run_result(pgm_state, run.had_error))
             self._db.prune_progress(self.machine.id, run.program, PROGRESS_KEEP_RUNS)
             self._forecaster.invalidate(run.program)
+            self._run_paths = None
             last = self._snapshot
             self._ended = _Ended(run.id, run.program, ended_at, self._position(last) if last else None)
             self._run = run = None
@@ -440,6 +462,7 @@ class MachineCollector:
         if self._ended is not None and self._ended.id == run_id:
             self._ended = None
         self._forecaster.invalidate(program)
+        self._run_paths = None
 
     def forget_tool(self, number: int) -> None:
         """Nach dem Entfernen eines Werkzeugs: steckt es noch in der Spindel, bei der nächsten
@@ -487,7 +510,11 @@ class MachineCollector:
 
     def _program_row(self, path: str) -> dict[str, Any] | None:
         if path not in self._programs:
-            self._programs[path] = self._db.program_file(self.machine.id, path)
+            row = self._db.program_file(self.machine.id, path)
+            if row is not None:
+                # Palettentabelle: Programmzeilen in Reihenfolge (Ablaufliste)
+                row["pallet"] = pallet_entries(row["content"]) if row["content"] else None
+            self._programs[path] = row
         return self._programs[path]
 
     def _blocks(self, path: str | None) -> int | None:
@@ -546,7 +573,8 @@ class MachineCollector:
                 self._db.touch_program_file(self.machine.id, path, now)
             else:
                 self._db.save_program_file(
-                    self.machine.id, path, result.size, result.mtime, result.blocks, result.error, now, result.calls
+                    self.machine.id, path, result.size, result.mtime, result.blocks, result.error, now, result.calls,
+                    result.content,
                 )
                 parts = [result.error or (f"{result.blocks} Sätze" if result.blocks is not None else "")]
                 if result.calls:
@@ -589,6 +617,152 @@ class MachineCollector:
             log.info("%s: Werkzeugtabelle gelesen – %d Namen, %d übernommen", self.machine.name, len(result.names), changed)
         self._tool_names_logged = True
 
+    # --- Palettenprogramm (Ablaufliste) ------------------------------------------------
+
+    def _track_pallet(self, raw: Snapshot | None, snap: Snapshot | None, state: MachineState, now: float) -> None:
+        """Welche Zeile des angewählten Palettenprogramms (.P) läuft? Die Steuerung meldet nur Haupt-
+        und aktuelles Programm, nicht die Zeile der Tabelle: Jeder Wechsel auf ein Programm der Tabelle
+        rückt zur nächsten Zeile mit diesem Programm vor. Je Zeile wird die reine Laufzeit bis zur
+        nächsten Zeile gemessen (mit Palettenwechsel) – daraus die Restzeit der weiteren Zeilen.
+        Grenze: Folgt dasselbe Auftragsprogramm direkt noch einmal (nur ein Palettenwechsel per
+        PLC-Makro dazwischen), ist kein Wechsel zu sehen – im Feldtest steht immer Drehen dazwischen."""
+        p = self._pallet
+        if raw is None:
+            if p is not None:
+                p.entry_observed = False  # Lücke: diese Zeile nicht messen
+            return
+        table = raw.program
+        if not table or not table.upper().endswith(".P"):
+            self._pallet = None
+            return
+        if p is None or p.table != table:
+            p = self._pallet = _PalletRun(table)
+        if self._prev_state is MachineState.RUNNING and self._last_update is not None:
+            p.entry_run_s += now - self._last_update  # lief seit der letzten Abfrage (wie die Laufzeit eines Laufs)
+        if raw.exec_mode in MANUAL_MODES:
+            return
+        if not raw.current_program:
+            p.stopped, p.name = True, None  # Palettenprogramm beendet oder abgebrochen
+            return
+        name = self._pallet_program(raw, snap)
+        if name == p.name:
+            return
+        p.name = name
+        entries = (self._program_row(table) or {}).get("pallet")
+        if name is None or not entries:
+            return
+        index = self._next_entry(entries, name, p.pos, p.stopped)
+        if index is None:
+            return  # kein Programm der Tabelle
+        resumed, p.stopped = p.stopped, False
+        if index == p.pos and resumed:
+            return  # nach einer Unterbrechung an derselben Zeile weiter (z. B. Satzvorlauf)
+        if p.pos is not None and p.entry_observed and index > p.pos and all(e.skipped for e in entries[p.pos + 1 : index]):
+            p.durations.setdefault(call_name(entries[p.pos].program), []).append(p.entry_run_s)
+        p.pos, p.entry_run_s = index, 0.0
+        p.entry_observed = self._prev_state not in (None, MachineState.OFFLINE, MachineState.NETWORK)
+
+    @staticmethod
+    def _pallet_program(raw: Snapshot, snap: Snapshot | None) -> str | None:
+        """Programm der Palettentabelle, das gerade läuft (``call_name``): das gezählte Auftrags-
+        programm (auch während seiner Unterprogramme) oder ein Programm, das die Tabelle selbst
+        aufruft (z. B. Drehen). None = Tabelle selbst bzw. Palettenwechsel (PLC-Makro)."""
+        if snap is not None and snap.program and snap.program != raw.program:
+            return call_name(snap.program)
+        current = raw.current_program
+        if current and current != raw.program and not current.upper().startswith("PLC:"):
+            return call_name(current)
+        return None
+
+    @staticmethod
+    def _next_entry(entries: tuple[PalletEntry, ...], name: str, pos: int | None, resume: bool) -> int | None:
+        """Zeile, die jetzt läuft: die nächste mit diesem Programm nach der aktuellen (am Ende wieder
+        von vorn); nach einer Unterbrechung dieselbe Zeile oder ein Neustart von vorn. Gesperrte
+        Zeilen nur, wenn das Programm sonst nirgends steht."""
+        if resume and pos is not None and call_name(entries[pos].program) == name:
+            return pos
+        start = 0 if resume or pos is None else pos + 1
+        found = [i for i in (*range(start, len(entries)), *range(start)) if call_name(entries[i].program) == name]
+        return next((i for i in found if not entries[i].skipped), found[0] if found else None)
+
+    def _entry_path(self, table: str, program: str) -> str | None:
+        """Pfad, unter dem das Programm einer Tabellenzeile schon fertig gelaufen ist. Ohne Pfad in der
+        Tabelle sucht die Steuerung im Verzeichnis der Tabelle; sonst zählt derselbe Name anderswo."""
+        if self._run_paths is None:
+            self._run_paths = {}
+            for path in self._db.run_programs(self.machine.id):
+                self._run_paths.setdefault(call_name(path), []).append(path)
+        same_name = self._run_paths.get(call_name(program), [])
+        if not same_name:
+            return None
+        folder = table.rsplit("\\", 1)[0]
+        wanted = (program if re.search(r"[\\/:]", program) else f"{folder}\\{program}").upper()
+        return next((path for path in same_name if path.upper() == wanted), same_name[0])
+
+    def _entry_expected(self, p: _PalletRun, entry: PalletEntry) -> tuple[float | None, bool]:
+        """Erwartete reine Laufzeit einer Zeile und ob sie in diesem Palettenprogramm gemessen ist
+        (dann mit Palettenwechsel) – sonst die übliche Laufzeit früherer Läufe des Programms."""
+        measured = p.durations.get(call_name(entry.program))
+        if measured:
+            return median(measured), True
+        path = self._entry_path(p.table, entry.program)
+        return (self._forecaster.typical_run_s(path) if path else None), False
+
+    def _pallet_info(self) -> dict[str, Any] | None:
+        """Ablaufliste des angewählten Palettenprogramms für die Live-Seite."""
+        p = self._pallet
+        row = self._program_row(p.table) if p is not None else None
+        entries: tuple[PalletEntry, ...] | None = row["pallet"] if row else None
+        if p is None or not entries:
+            return None
+        pos = p.pos
+        last = max((i for i, e in enumerate(entries) if not e.skipped), default=-1)
+        finished = pos is not None and p.stopped and pos >= last
+        items = []
+        for i, entry in enumerate(entries):
+            expected, measured = self._entry_expected(p, entry)
+            if entry.skipped:
+                status = "skipped"
+            elif pos is None or i > pos:
+                status = "pending"
+            elif i < pos or finished:
+                status = "done"
+            else:
+                status = "current"
+            items.append({
+                "program": entry.program, "pallet": entry.pallet, "status": status,
+                "expected_s": expected, "measured": measured,
+            })
+        active = [it for it in items if it["status"] != "skipped"]
+        remaining = remaining_unknown = None
+        if pos is not None and not finished:
+            run, forecast = self._run, self._forecast
+            remaining, remaining_unknown = 0.0, 0
+            for i, it in enumerate(items):
+                if it["status"] == "current":
+                    if forecast is not None and run is not None and call_name(run.program or "") == call_name(it["program"]):
+                        rest = forecast["remaining_s"]  # Prognose des laufenden Auftragsprogramms
+                    else:
+                        rest = None if it["expected_s"] is None else max(it["expected_s"] - p.entry_run_s, 0.0)
+                elif it["status"] == "pending":
+                    rest = it["expected_s"]
+                else:
+                    continue
+                if rest is None:
+                    remaining_unknown += 1
+                else:
+                    remaining += rest
+        return {
+            "table": p.table,
+            "entries": items,
+            "position": pos,
+            "total_s": sum(it["expected_s"] or 0.0 for it in active),
+            "unknown": sum(it["expected_s"] is None for it in active),
+            "remaining_s": remaining,
+            "remaining_unknown": remaining_unknown,
+            "eta": self._last_update + remaining if remaining is not None and self._last_update is not None else None,
+        }
+
     # --- Live-Status ---------------------------------------------------------------
 
     def live(self) -> dict[str, Any]:
@@ -621,6 +795,7 @@ class MachineCollector:
             "current_program": snap.current_program if snap else None,
             "caller": snap.caller if snap else None,
             "caller_file": self._caller_file(snap.caller) if snap and snap.caller else None,
+            "pallet": self._pallet_info(),
             "line_no": snap.line_no if snap else None,
             "blocks": blocks,
             "order": (code.public() if (code := parse_program(snap.program if snap else None)) else None),

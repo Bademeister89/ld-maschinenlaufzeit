@@ -127,9 +127,11 @@ class Lsv2Adapter:
                 text = local.read_text(encoding="latin-1")
             blocks = count_blocks(path, text)
             calls = program_calls(path, text)
-            # Eine Palettentabelle hat keine Satzanzahl, nur die Programme, die sie abarbeitet
-            error = None if blocks is not None or path.upper().endswith(".P") else "Satzanzahl nicht erkennbar"
-            return ProgramFile(path, size, mtime, blocks, error, calls)
+            # Eine Palettentabelle hat keine Satzanzahl, nur die Programme, die sie abarbeitet. Ihr
+            # Text (wenige KB) wird für die Ablaufliste auf der Live-Seite aufgehoben.
+            pallet = path.upper().endswith(".P")
+            error = None if blocks is not None or pallet else "Satzanzahl nicht erkennbar"
+            return ProgramFile(path, size, mtime, blocks, error, calls, text if pallet else None)
         except Exception as exc:
             raise AdapterError(f"Lesen von {path} fehlgeschlagen ({exc})") from exc
         finally:

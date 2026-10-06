@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS program_files (
     error      TEXT,
     checked_at REAL NOT NULL,
     calls      TEXT,
+    content    TEXT,
     PRIMARY KEY (machine_id, path)
 );
 CREATE TABLE IF NOT EXISTS tools (
@@ -221,6 +222,11 @@ class Database:
         if "calls" not in columns:
             self._con.execute("ALTER TABLE program_files ADD COLUMN calls TEXT")
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL")
+        # v10 → v11: Text der Palettentabellen (Ablaufliste auf der Live-Seite). Schon gelesene
+        # Tabellen einmal neu einlesen, damit der Text vorliegt.
+        if "content" not in columns:
+            self._con.execute("ALTER TABLE program_files ADD COLUMN content TEXT")
+            self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
         # Seit 1.10.4 werden Palettentabellen (.P) ausgewertet: einmal neu einlesen
         if self.get_meta("pallet_tables_reread") is None:
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
@@ -742,7 +748,7 @@ class Database:
 
     def program_file(self, machine_id: str, path: str) -> dict[str, Any] | None:
         rows = self._query(
-            "SELECT path, size, mtime, blocks, error, checked_at, calls FROM program_files "
+            "SELECT path, size, mtime, blocks, error, checked_at, calls, content FROM program_files "
             "WHERE machine_id = ? AND path = ?",
             (machine_id, path),
         )
@@ -755,14 +761,18 @@ class Database:
 
     def save_program_file(
         self, machine_id: str, path: str, size: int | None, mtime: float | None, blocks: int | None,
-        error: str | None, checked_at: float, calls: tuple[str, ...] | None = None,
+        error: str | None, checked_at: float, calls: tuple[str, ...] | None = None, content: str | None = None,
     ) -> None:
         self._execute(
-            "INSERT INTO program_files(machine_id, path, size, mtime, blocks, error, checked_at, calls) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine_id, path) DO UPDATE SET "
+            "INSERT INTO program_files(machine_id, path, size, mtime, blocks, error, checked_at, calls, content) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine_id, path) DO UPDATE SET "
             "size = excluded.size, mtime = excluded.mtime, blocks = excluded.blocks, "
-            "error = excluded.error, checked_at = excluded.checked_at, calls = excluded.calls",
-            (machine_id, path, size, mtime, blocks, error, checked_at, None if calls is None else "\n".join(calls)),
+            "error = excluded.error, checked_at = excluded.checked_at, calls = excluded.calls, "
+            "content = excluded.content",
+            (
+                machine_id, path, size, mtime, blocks, error, checked_at,
+                None if calls is None else "\n".join(calls), content,
+            ),
         )
 
     def touch_program_file(self, machine_id: str, path: str, checked_at: float) -> None:
@@ -772,9 +782,18 @@ class Database:
 
     def program_files(self) -> list[dict[str, Any]]:
         return self._query(
-            "SELECT machine_id, path, size, mtime, blocks, error, checked_at, calls FROM program_files "
+            "SELECT machine_id, path, size, mtime, blocks, error, checked_at, calls, content FROM program_files "
             "ORDER BY machine_id, checked_at DESC"
         )
+
+    def run_programs(self, machine_id: str) -> list[str]:
+        """Programme mit mindestens einem fertigen, vollständig beobachteten Lauf (für Zeitangaben)."""
+        rows = self._query(
+            "SELECT DISTINCT program FROM program_runs WHERE machine_id = ? AND program IS NOT NULL "
+            "AND result = 'finished' AND start_observed = 1",
+            (machine_id,),
+        )
+        return [r["program"] for r in rows]
 
     def program_blocks(self) -> dict[tuple[str, str], int]:
         rows = self._query("SELECT machine_id, path, blocks FROM program_files WHERE blocks IS NOT NULL")
