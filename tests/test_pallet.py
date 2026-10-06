@@ -83,7 +83,7 @@ def history(db, c):
 
 def view(c):
     info = c.live()["pallet"]
-    return [(e["status"], e["expected_s"], e["measured"]) for e in info["entries"]], info
+    return [(e["status"], e["expected_s"], e["source"]) for e in info["entries"]], info
 
 
 def test_pallet_list_follows_the_table_and_learns_times(db, make_collector):
@@ -93,10 +93,10 @@ def test_pallet_list_follows_the_table_and_learns_times(db, make_collector):
     feed(c, (1000, pal("IDLE", None)))  # Palettenprogramm angewählt, noch nicht gestartet
     entries, info = view(c)
     assert entries == [
-        ("pending", 840, False), ("pending", 45, False),  # Drehen: gleicher Name in anderem Verzeichnis
-        ("pending", 840, False), ("pending", 45, False),
-        ("pending", 840, False), ("pending", 45, False),
-        ("pending", None, False),  # P-Ende lief noch nie
+        ("pending", 840, "history"), ("pending", 45, "history"),  # Drehen: gleicher Name, anderes Verzeichnis
+        ("pending", 840, "history"), ("pending", 45, "history"),
+        ("pending", 840, "history"), ("pending", 45, "history"),
+        ("pending", None, None),  # P-Ende lief noch nie
     ]
     assert (info["table"], info["position"], info["total_s"], info["unknown"]) == (TABLE, None, 3 * 885, 1)
     assert info["remaining_s"] is None and info["eta"] is None
@@ -121,7 +121,8 @@ def test_pallet_list_follows_the_table_and_learns_times(db, make_collector):
     )
     entries, info = view(c)
     # Gemessen je Zeile bis zur nächsten (Drehen mit Palettenwechsel: 50 + 70 s)
-    assert entries[:4] == [("done", 840, True), ("done", 120, True), ("current", 840, True), ("pending", 120, True)]
+    assert entries[:4] == [("done", 840, "measured"), ("done", 120, "measured"), ("current", 840, "measured"), ("pending", 120, "measured")]
+    assert [e["started_at"] for e in info["entries"]] == [1080, 1920, 2040, None, None, None, None]
     assert (info["remaining_s"], info["remaining_unknown"]) == (840 + 120 + 840 + 120, 1)
 
     # Störung: Palettenprogramm abgebrochen und per Satzvorlauf an derselben Palette fortgesetzt
@@ -142,8 +143,8 @@ def test_pallet_list_follows_the_table_and_learns_times(db, make_collector):
         (3920, pal("STARTED", MACRO)),
     )
     entries, info = view(c)
-    assert entries[0] == ("done", 840, True)  # Median aus 840, 760, 840
-    assert entries[6] == ("current", None, False)
+    assert entries[0] == ("done", 840, "measured")  # Median aus 840, 760, 840
+    assert entries[6] == ("current", None, None)
     assert info["remaining_unknown"] == 1
 
     feed(c, (3990, pal("IDLE", None, 0)))  # Palettenprogramm zu Ende
@@ -154,7 +155,8 @@ def test_pallet_list_follows_the_table_and_learns_times(db, make_collector):
     # Neustart: wieder von vorn, gemessene Zeiten bleiben
     feed(c, (4100, pal("STARTED", MACRO)), (4170, pal("STARTED", ORDER, 15)))
     entries, info = view(c)
-    assert entries[0] == ("current", 840, True) and info["position"] == 0
+    assert entries[0] == ("current", 840, "measured") and info["position"] == 0
+    assert [e["started_at"] for e in info["entries"]] == [4170] + [None] * 6  # neuer Durchgang
 
 
 def test_locked_pallet_is_skipped(db, make_collector):
@@ -173,7 +175,7 @@ def test_locked_pallet_is_skipped(db, make_collector):
     )
     entries, info = view(c)
     assert [e[0] for e in entries] == ["done", "done", "skipped", "skipped", "current", "pending"]
-    assert entries[1] == ("done", 70, True)  # Drehen gemessen bis zur nächsten freien Zeile (Palette 3)
+    assert entries[1] == ("done", 70, "measured")  # Drehen gemessen bis zur nächsten freien Zeile (Palette 3)
     assert info["total_s"] == 2 * (90 + 70) and info["unknown"] == 0  # gesperrte Palette zählt nicht
 
 
@@ -184,7 +186,59 @@ def test_start_of_the_collector_mid_table_does_not_measure(db, make_collector):
     db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
     feed(c, (0, pal("STARTED", ORDER, 20000)), (300, pal("STARTED", DREH, 1)))
     entries, info = view(c)
-    assert entries[0] == ("done", None, False) and entries[1][0] == "current"
+    assert entries[0] == ("done", None, None) and entries[1][0] == "current"
+    assert (info["entries"][0]["started_at"], info["entries"][0]["started_observed"]) == (0, False)
+
+
+def test_restart_of_the_app_continues_at_the_running_pallet(db, make_collector):
+    """Update am 06.10. um 17:05 mitten in pal2sp.p: Die Liste begann bei der ersten Zeile – und weil
+    die Tabelle in dem Moment noch nicht neu gelesen war, wurde gar keine Zeile markiert."""
+    first = make_collector()
+    history(db, first)
+    feed(
+        first,
+        (1000, pal("IDLE", None)),
+        (1010, pal("STARTED", MACRO)),
+        (1080, pal("STARTED", ORDER, 15)),
+        (1920, pal("STARTED", DREH, 1)),
+        (1970, pal("STARTED", MACRO)),
+        (2040, pal("STARTED", ORDER, 15)),  # Palette 2
+        (2100, pal("STARTED", ORDER, 900)),
+    )
+    second = make_collector()  # Neustart der App
+    feed(second, (2400, pal("STARTED", ORDER, 9000)))
+    entries, info = view(second)
+    assert [e[0] for e in entries] == ["done", "done", "current"] + ["pending"] * 4
+    started = [(e["started_at"], e["started_observed"]) for e in info["entries"][:3]]
+    assert started == [(1080, True), (None, None), (2040, True)]  # Palette 2 läuft seit 2040
+    feed(second, (2900, pal("STARTED", DREH, 1)))
+    assert view(second)[1]["position"] == 3
+
+
+def test_table_read_after_the_start_still_marks_the_running_line(db, make_collector):
+    c = make_collector()
+    feed(c, (0, pal("STARTED", MACRO)), (60, pal("STARTED", ORDER, 15)))
+    assert c.live()["pallet"] is None  # Tabelle noch nicht gelesen
+    text = table(FIELD_ROWS)
+    db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+    c._programs.clear()  # wie nach dem Einlesen
+    feed(c, (62, pal("STARTED", ORDER, 40)))
+    entries, info = view(c)
+    assert entries[0][0] == "current" and info["entries"][0]["started_at"] == 60  # Beginn des Laufs
+
+
+def test_program_without_history_uses_the_forecast_of_the_running_run(db, make_collector):
+    """26-21051-02-01 lief noch nie fertig: Statt „mind. 47 s“ je Palette die Prognose des laufenden
+    Laufs (bisherige Laufzeit + Rest) auch für die weiteren Paletten."""
+    c = make_collector()
+    text = table(FIELD_ROWS)
+    db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+    db.save_program_file("m1", ORDER, 9000, 1.0, 1000, None, 0, ())
+    feed(c, (0, pal("IDLE", None)), (10, pal("STARTED", ORDER, 10)), (110, pal("STARTED", ORDER, 100)))
+    entries, info = view(c)
+    # Grobe Schätzung aus der Satznummer: 10 % in 100 s → Rest 900 s, gesamt 1000 s
+    assert entries[0] == ("current", 1000, "forecast") and entries[2] == ("pending", 1000, "forecast")
+    assert (info["remaining_s"], info["remaining_unknown"]) == (900 + 2 * 1000, 4)
 
 
 def test_no_list_without_readable_table(db, make_collector):

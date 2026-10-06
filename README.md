@@ -151,7 +151,10 @@ Ist eine Palettentabelle (`.P`) angewählt, zeigt die Live-Karte, welche Program
 abarbeitet:
 
 - Eine Zeile je Palette mit ihren Programmen, z. B. „Palette 3 · 26-21053-01-01 · DREH · ca. 16 min“.
-  - ✓ heißt fertig, ▶ heißt läuft (das laufende Programm ist unterstrichen).
+  - ✓ heißt fertig, ▶ heißt läuft (das laufende Programm ist unterstrichen, darunter „seit 16:49 Uhr“).
+  - Im Programmfeld oben auf der Karte steht dazu ein grüner **Marker**, z. B.
+    „▶ Palette 8 · seit 16:49 Uhr (23 min) · 1 von 4“: die laufende Palette, seit wann sie bearbeitet
+    wird (Beginn ihres ersten Programms) und die wievielte der nicht gesperrten Paletten sie ist.
   - Durchgestrichen und „gesperrt“ sind Zeilen, die die Steuerung überspringt: `*` in der Spalte
     `LOCK` (bei einer Palette oder einem Spannmittel alles darunter) oder `EMPTY`/`SKIP` in `W-STATE`.
 - **Zeiten:**
@@ -161,8 +164,12 @@ abarbeitet:
   - Sobald ein Programm in diesem Palettenprogramm einmal fertig ist, die gemessene Zeit bis zum
     nächsten Programm. Darin steckt der Palettenwechsel, ab der zweiten Palette wird die Restzeit
     also genauer.
-  - Ein Programm, das noch nie gelaufen ist, hat keine Zeit. Dann heißt es „mind.“ und
-    „fertig frühestens“.
+  - Läuft ein Programm gerade zum ersten Mal, gilt für alle seine Zeilen die Prognose des laufenden
+    Laufs (bisherige Laufzeit plus Restlaufzeit). Ist das nur die grobe Schätzung aus der
+    Satznummer, ist auch die Liste entsprechend grob.
+  - Ein Programm, das noch nie gelaufen ist und gerade nicht läuft, hat keine Zeit. Dann heißt es
+    „mind.“ und „fertig frühestens“.
+- Liegt das Ende nicht mehr am selben Tag, steht „morgen“ bzw. der Wochentag davor.
 - **Kopf:** „noch ca. 1 h 11 min · fertig ca. 18:08 Uhr“, also die Restzeit des laufenden Programms
   plus die Zeiten der offenen Zeilen. Im Stopp steht „(pausiert)“. **Fuß:** Gesamtzeit aller
   Zeilen und die Programme ohne Zeit.
@@ -171,8 +178,9 @@ abarbeitet:
   nächsten Zeile mit diesem Programm vor.
   - Nach einem Abbruch geht es an derselben Zeile weiter, zum Beispiel per Satzvorlauf. Startet ein
     anderes Programm, beginnt die Liste von vorn.
-  - Nach einem Neustart der App beginnt die Zählung bei der ersten passenden Zeile. Die Palette
-    stimmt dann erst ab dem nächsten Durchgang.
+  - Startet die App neu, während das Palettenprogramm läuft (z. B. Update), sucht sie die Läufe
+    dieses Durchgangs in der Datenbank: rückwärts bis zum letzten Halt (Bereit länger als 5 min,
+    Handbetrieb/MDI oder ein anderes Programm). Daraus ergeben sich Palette und Beginn.
   - Folgt dasselbe Programm ohne anderes Programm dazwischen (nur Palettenwechsel), ist kein
     Wechsel zu sehen. In den bisherigen Tabellen steht immer DREH dazwischen.
 - Den Text der Tabelle hebt die App auf (wenige KB). Die Diagnose-Datei enthält ihn unter

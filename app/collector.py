@@ -62,6 +62,10 @@ RAW_LOG_KEEP = 5000  # Mitschnitt: so viele Statusänderungen je Maschine im Spe
 MID_START_SHARE = 0.05
 MID_START_LINES = 100
 RESUME_MAX_GAP_S = 12 * 3600  # so lange nach dem Ende kann ein Satzvorlauf den Lauf noch fortsetzen
+# Palettenprogramm nach einem Neustart der App: so weit zurück nach Läufen des Durchgangs suchen; ein
+# längeres Bereit trennt zwei Durchgänge (zwischen den Paletten meldet die Steuerung nur Sekunden)
+PALLET_LOOKBACK_S = 7 * 86_400
+PALLET_PAUSE_S = 300
 
 
 @dataclass
@@ -102,6 +106,12 @@ class _PalletRun:
     stopped: bool = False  # Palettenprogramm beendet/abgebrochen: weiter an derselben Zeile oder von vorn
     entry_run_s: float = 0.0  # reine Laufzeit seit Beginn der aktuellen Zeile
     entry_observed: bool = False  # Beginn der aktuellen Zeile gesehen, ohne Lücke (sonst nicht messen)
+    # Lief das Palettenprogramm schon, als die App es zum ersten Mal sah (Neustart, Update)? Dann wird
+    # die Stelle einmal aus den Läufen in der Datenbank bestimmt.
+    joined_running: bool = False
+    recovered: bool = False
+    # Beginn je Zeile in diesem Durchgang: Zeile → (Zeitpunkt, Beginn beobachtet)
+    started: dict[int, tuple[float, bool]] = field(default_factory=dict)
     # Gemessene reine Laufzeit je Programm (``call_name``) von Beginn einer Zeile bis zur nächsten,
     # also einschließlich Palettenwechsel
     durations: dict[str, list[float]] = field(default_factory=dict)
@@ -636,7 +646,9 @@ class MachineCollector:
             self._pallet = None
             return
         if p is None or p.table != table:
-            p = self._pallet = _PalletRun(table)
+            current = raw.current_program
+            running = bool(current) and current != table and raw.exec_mode not in MANUAL_MODES
+            p = self._pallet = _PalletRun(table, joined_running=running)
         if self._prev_state is MachineState.RUNNING and self._last_update is not None:
             p.entry_run_s += now - self._last_update  # lief seit der letzten Abfrage (wie die Laufzeit eines Laufs)
         if raw.exec_mode in MANUAL_MODES:
@@ -647,10 +659,17 @@ class MachineCollector:
         name = self._pallet_program(raw, snap)
         if name == p.name:
             return
-        p.name = name
         entries = (self._program_row(table) or {}).get("pallet")
-        if name is None or not entries:
+        if name is not None and not entries:
+            return  # Tabelle noch nicht gelesen (z. B. gleich nach dem Start): später zuordnen
+        p.name = name
+        if name is None:
             return
+        if p.pos is None and p.joined_running and not p.stopped and not p.recovered:
+            p.recovered = True
+            self._recover_pallet(p, entries, now)
+            if p.pos is not None and call_name(entries[p.pos].program) == name:
+                return  # das laufende Programm ist die zuletzt gelaufene Zeile
         index = self._next_entry(entries, name, p.pos, p.stopped)
         if index is None:
             return  # kein Programm der Tabelle
@@ -659,8 +678,42 @@ class MachineCollector:
             return  # nach einer Unterbrechung an derselben Zeile weiter (z. B. Satzvorlauf)
         if p.pos is not None and p.entry_observed and index > p.pos and all(e.skipped for e in entries[p.pos + 1 : index]):
             p.durations.setdefault(call_name(entries[p.pos].program), []).append(p.entry_run_s)
-        p.pos, p.entry_run_s = index, 0.0
-        p.entry_observed = self._prev_state not in (None, MachineState.OFFLINE, MachineState.NETWORK)
+        if p.pos is None or index < p.pos:
+            p.started.clear()  # neuer Durchgang
+        observed = self._prev_state not in (None, MachineState.OFFLINE, MachineState.NETWORK)
+        p.pos, p.entry_run_s, p.entry_observed = index, 0.0, observed
+        p.started[index] = (now, observed)
+
+    def _recover_pallet(self, p: _PalletRun, entries: tuple[PalletEntry, ...], now: float) -> None:
+        """Die App kam mitten in ein laufendes Palettenprogramm (Neustart, Update): Die Läufe dieses
+        Durchgangs stehen in der Datenbank. Rückwärts durch die Zustandsabschnitte bis zum letzten Halt
+        (Bereit länger als PALLET_PAUSE_S, Handbetrieb/MDI oder ein anderes Programm), dann die Läufe
+        der Reihe nach den Zeilen zuordnen wie live."""
+        names = {call_name(e.program) for e in entries}
+        run_ids: set[int] = set()
+        for iv in reversed(self._db.intervals(now - PALLET_LOOKBACK_S, now, self.machine.id)):
+            if iv["state"] in (MachineState.OFFLINE.value, MachineState.UNKNOWN.value):
+                continue  # Verbindungslücke: weiter zurück
+            if iv["run_id"] is not None:
+                if call_name(iv["program"] or "") not in names:
+                    break
+                run_ids.add(iv["run_id"])
+                continue
+            if iv["program"] != p.table or iv["exec_mode"] in MANUAL_MODES:
+                break
+            if iv["state"] == MachineState.READY.value and iv["end"] - iv["start"] > PALLET_PAUSE_S:
+                break
+        runs = sorted(filter(None, map(self._db.run, run_ids)), key=lambda r: r["started_at"])
+        for run in runs:
+            index = self._next_entry(entries, call_name(run["program"] or ""), p.pos, False)
+            if index is None:
+                continue
+            if p.pos is None or index < p.pos:
+                p.started.clear()
+            p.pos = index
+            p.started[index] = (run["started_at"], bool(run["start_observed"]))
+        if p.pos is not None:
+            log.info("%s: Palettenprogramm %s läuft schon – weiter bei Zeile %d", self.machine.name, p.table, p.pos + 1)
 
     @staticmethod
     def _pallet_program(raw: Snapshot, snap: Snapshot | None) -> str | None:
@@ -699,14 +752,23 @@ class MachineCollector:
         wanted = (program if re.search(r"[\\/:]", program) else f"{folder}\\{program}").upper()
         return next((path for path in same_name if path.upper() == wanted), same_name[0])
 
-    def _entry_expected(self, p: _PalletRun, entry: PalletEntry) -> tuple[float | None, bool]:
-        """Erwartete reine Laufzeit einer Zeile und ob sie in diesem Palettenprogramm gemessen ist
-        (dann mit Palettenwechsel) – sonst die übliche Laufzeit früherer Läufe des Programms."""
-        measured = p.durations.get(call_name(entry.program))
+    def _entry_expected(self, p: _PalletRun, entry: PalletEntry) -> tuple[float | None, str | None]:
+        """Erwartete reine Laufzeit einer Zeile und woher sie stammt, in dieser Reihenfolge:
+        ``measured`` in diesem Palettenprogramm gemessen (mit Palettenwechsel), ``history`` übliche
+        Laufzeit früherer Läufe, ``forecast`` das Programm läuft gerade zum ersten Mal – bisherige
+        Laufzeit plus Restlaufzeit-Prognose."""
+        name = call_name(entry.program)
+        measured = p.durations.get(name)
         if measured:
-            return median(measured), True
+            return median(measured), "measured"
         path = self._entry_path(p.table, entry.program)
-        return (self._forecaster.typical_run_s(path) if path else None), False
+        typical = self._forecaster.typical_run_s(path) if path else None
+        if typical is not None:
+            return typical, "history"
+        run, forecast = self._run, self._forecast
+        if run is not None and forecast is not None and call_name(run.program or "") == name:
+            return run.run_s + forecast["remaining_s"], "forecast"
+        return None, None
 
     def _pallet_info(self) -> dict[str, Any] | None:
         """Ablaufliste des angewählten Palettenprogramms für die Live-Seite."""
@@ -720,7 +782,7 @@ class MachineCollector:
         finished = pos is not None and p.stopped and pos >= last
         items = []
         for i, entry in enumerate(entries):
-            expected, measured = self._entry_expected(p, entry)
+            expected, source = self._entry_expected(p, entry)
             if entry.skipped:
                 status = "skipped"
             elif pos is None or i > pos:
@@ -729,9 +791,12 @@ class MachineCollector:
                 status = "done"
             else:
                 status = "current"
+            started = p.started.get(i) if status in ("done", "current") else None
             items.append({
                 "program": entry.program, "pallet": entry.pallet, "status": status,
-                "expected_s": expected, "measured": measured,
+                "expected_s": expected, "source": source,
+                "started_at": started[0] if started else None,  # Beginn in diesem Durchgang
+                "started_observed": started[1] if started else None,
             })
         active = [it for it in items if it["status"] != "skipped"]
         remaining = remaining_unknown = None

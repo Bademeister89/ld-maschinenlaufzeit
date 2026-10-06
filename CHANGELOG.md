@@ -10,6 +10,26 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.15.0] – 2026-10-06
+
+### Neu
+- **Marker für die laufende Palette:** Im Programmfeld der Live-Karte steht z. B.
+  „▶ Palette 8 · seit 16:49 Uhr (23 min) · 1 von 4“. In der Ablaufliste steht bei der laufenden
+  Palette zusätzlich „seit …“.
+- **Programm zum ersten Mal auf der Palette:** Statt „mind. 47 s“ je Palette gilt die Prognose des
+  laufenden Laufs (bisherige Laufzeit plus Rest) auch für die weiteren Paletten mit diesem Programm.
+  Der Fuß der Liste nennt das („geschätzt aus dem laufenden Lauf“).
+- Liegt das voraussichtliche Ende nicht mehr heute, steht „morgen“ bzw. der Wochentag davor, auch
+  bei der Restlaufzeit des Programms.
+
+### Behoben
+- **Nach einem Neustart der App** (z. B. Update) mitten im Palettenprogramm war keine Palette
+  markiert. Beobachtet an der DMU 70 mit pal2sp.p um 17:05.
+  - Ursache: Die Palettentabelle war in dem Moment noch nicht neu eingelesen. Das laufende Programm
+    galt danach als schon zugeordnet.
+  - Außerdem bestimmt die App die Stelle jetzt aus den Läufen in der Datenbank, statt bei der ersten
+    passenden Zeile anzufangen. Palette und Beginn stimmen damit auch nach einem Neustart.
+
 ## [1.14.0] – 2026-10-06
 
 ### Neu

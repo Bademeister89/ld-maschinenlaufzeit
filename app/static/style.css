@@ -385,6 +385,21 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 .pal-skipped { color: var(--muted); }
 .pal-skipped .pal-name, .pal-skipped .pal-programs, .pal-pgm.is-skipped { color: var(--muted); text-decoration: line-through; }
 .pallet-foot { font-size: 13px; color: var(--muted); }
+.pal-since { display: block; font-size: 12px; font-weight: 400; }
+/* Marker im Programmfeld: laufende Palette und seit wann */
+.pallet-marker {
+  justify-self: start;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--st-running);
+  background: color-mix(in srgb, var(--st-running) 14%, var(--surface));
+  font-size: 14px;
+}
+.pallet-marker-icon { color: var(--st-running); font-size: 12px; }
 /* Schmale Karte: Programme in eine eigene Zeile unter Palette und Zeit */
 @container (max-width: 520px) {
   .pallet-list li { grid-template-columns: 1.1em minmax(0, 1fr) auto; row-gap: 0; }

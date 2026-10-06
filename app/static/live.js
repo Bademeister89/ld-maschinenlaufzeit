@@ -9,6 +9,7 @@ import {
   epoch,
   execLabel,
   fmtDuration,
+  fmtEta,
   fmtHours,
   fmtInt,
   fmtPct,
@@ -114,7 +115,7 @@ function progressBlock(m) {
 
   let headline = "Restlaufzeit noch unbekannt";
   if (f?.overdue_s) headline = `Läuft länger als üblich (+${fmtDuration(f.overdue_s)})`;
-  else if (f) headline = `Rest ca. ${fmtDuration(f.remaining_s)} · fertig ca. ${fmtTime(f.eta)} Uhr`;
+  else if (f) headline = `Rest ca. ${fmtDuration(f.remaining_s)} · fertig ca. ${fmtEta(f.eta)}`;
   if (f && m.state !== "RUNNING") headline += " (pausiert)";
 
   const pct = progress != null ? Math.round(progress * 100) : null;
@@ -250,25 +251,56 @@ function expectedText(entries) {
   return `${known.length < active.length ? "mind. " : "ca. "}${fmtDuration(sum)}`;
 }
 
+/** Laufende Palette: Gruppe, Beginn (erste Zeile mit bekanntem Beginn) und Stelle unter den freien Paletten. */
+function currentPallet(groups) {
+  const active = groups.filter((g) => g.status !== "skipped");
+  const index = active.findIndex((g) => g.status === "current");
+  if (index < 0) return null;
+  const group = active[index];
+  const first = group.entries.find((e) => e.started_at != null);
+  return { group, number: index + 1, count: active.length, since: first?.started_at ?? null, observed: first?.started_observed ?? false };
+}
+
+const programsOf = (entries) => [...new Set(entries.map((e) => programLabel(e.program)))].join(", ");
+
+/** Marker im Programmfeld: welche Palette gerade bearbeitet wird und seit wann. */
+function palletMarker(m, now) {
+  const cur = m.pallet ? currentPallet(palletGroups(m.pallet.entries)) : null;
+  if (!cur) return null;
+  const name = palletLabel(cur.group.pallet) || programsOf(cur.group.entries.filter((e) => e.status === "current"));
+  const since = cur.since != null ? ` · seit ${fmtTime(cur.since)} Uhr (${cur.observed ? "" : "≥ "}${fmtDuration(now - cur.since)})` : "";
+  return el(
+    "div",
+    { class: "pallet-marker" },
+    el("span", { class: "pallet-marker-icon", "aria-hidden": "true", text: "▶" }),
+    el("span", {}, el("strong", { text: name }), `${since} · ${cur.number} von ${cur.count}`),
+  );
+}
+
 /** Welche Programme das Palettenprogramm nacheinander abarbeitet, mit erwarteter Zeit und Restzeit. */
 function palletBlock(m) {
   const p = m.pallet;
   if (!p) return null;
   const groups = palletGroups(p.entries);
+  const cur = currentPallet(groups);
   let summary = null;
   if (p.remaining_s != null) {
     const prefix = p.remaining_unknown ? "mind. " : "ca. ";
     summary = `noch ${prefix}${fmtDuration(p.remaining_s)}`;
     if (m.state !== "RUNNING") summary += " (pausiert)";
-    else summary += ` · fertig ${p.remaining_unknown ? "frühestens" : "ca."} ${fmtTime(p.eta)} Uhr`;
+    else summary += ` · fertig ${p.remaining_unknown ? "frühestens" : "ca."} ${fmtEta(p.eta)}`;
   }
+  const active = p.entries.filter((e) => e.status !== "skipped");
   const pallets = groups.filter((g) => g.pallet != null && g.status !== "skipped").length;
-  const missing = [...new Set(p.entries.filter((e) => e.status !== "skipped" && e.expected_s == null).map((e) => programLabel(e.program)))];
+  const missing = programsOf(active.filter((e) => e.expected_s == null));
+  const estimated = programsOf(active.filter((e) => e.source === "forecast"));
+  const sources = new Set(active.map((e) => e.source));
   const foot = [
     `Gesamt ${expectedText(p.entries)}${pallets ? ` für ${pallets} ${pallets === 1 ? "Palette" : "Paletten"}` : ""}`,
-    missing.length ? `ohne Zeit (noch nie gelaufen): ${missing.join(", ")}` : null,
+    missing ? `ohne Zeit (noch nie gelaufen): ${missing}` : null,
     // Gemessen wird ab der ersten fertigen Zeile; bis dahin fehlt der Palettenwechsel in den Zeiten
-    p.entries.some((e) => e.measured) ? "Zeiten mit Palettenwechsel gemessen" : "Zeiten aus früheren Läufen, ohne Palettenwechsel",
+    sources.has("measured") ? "Zeiten mit Palettenwechsel gemessen" : sources.has("history") ? "Zeiten aus früheren Läufen, ohne Palettenwechsel" : null,
+    estimated ? `${estimated}: geschätzt aus dem laufenden Lauf` : null,
   ];
   return el(
     "section",
@@ -297,7 +329,12 @@ function palletBlock(m) {
               el("span", { class: `pal-pgm${e.status === "current" ? " is-current" : ""}${e.status === "skipped" ? " is-skipped" : ""}`, text: programLabel(e.program) }),
             ]),
           ),
-          el("span", { class: "pal-time num", text: g.status === "skipped" ? "gesperrt" : expectedText(g.entries) }),
+          el(
+            "span",
+            { class: "pal-time num" },
+            g.status === "skipped" ? "gesperrt" : expectedText(g.entries),
+            g === cur?.group && cur.since != null ? el("span", { class: "pal-since", text: `seit ${fmtTime(cur.since)} Uhr` }) : null,
+          ),
         ),
       ),
     ),
@@ -403,6 +440,7 @@ function renderLive(m, now) {
               `Auftrag ${m.order.order} (${m.order.year}) · Aufspannung ${m.order.setup} · Programm ${String(m.order.program).padStart(2, "0")}`,
             )
           : null,
+        palletMarker(m, now),
         orderThumb,
       ),
       progressBlock(m),
