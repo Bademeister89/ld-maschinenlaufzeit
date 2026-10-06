@@ -150,4 +150,8 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
 
 
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+# pyLSV2 meldet jedes An-/Abmelden und bei jeder Abfrage der Fehlermeldungen "NO_NEXT_ERROR" – bei
+# 2-s-Abfragen rund 75.000 Zeilen am Tag, die Log-Dateien reichten nur noch 15 Stunden zurück.
+# Echte Fehler (ERROR) bleiben im Log.
+logging.getLogger("LSV2 Client").setLevel(logging.ERROR)
 app = create_app()

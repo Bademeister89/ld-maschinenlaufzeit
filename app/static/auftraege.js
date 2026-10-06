@@ -193,16 +193,20 @@ function setupCard(setup) {
     { label: "Ø Laufzeit je Teil", value: (p) => fmtDuration(p.avg_run_s), cls: "r" },
     { label: "Letzter Lauf", value: (p) => fmtDateTime(p.last_run), cls: "r" },
   ];
-  const partText = setup.part_complete
-    ? `Ø Bearbeitungszeit je Teil in dieser Aufspannung: ${fmtDuration(setup.part_run_s)}`
-    : "Ø je Teil erst, wenn jedes Programm dieser Aufspannung einmal vollständig gelaufen ist";
+  const spannung = String(setup.setup).padStart(2, "0");
+  let partText;
+  if (setup.fixture) partText = "Vorrichtungsbau: einmaliger Aufwand, zählt nicht in die Ø-Bearbeitungszeit je Teil";
+  else if (setup.part_complete) partText = `Ø Bearbeitungszeit je Teil in dieser Aufspannung: ${fmtDuration(setup.part_run_s)}`;
+  else partText = "Ø je Teil erst, wenn jedes Programm dieser Aufspannung einmal vollständig gelaufen ist";
+  let title = setup.setup ? `Aufspannung ${setup.setup}` : "Ohne Aufspannung";
+  if (setup.fixture) title = `Vorrichtung (Spannung ${spannung})`;
   return el(
     "div",
-    { class: "card" },
+    { class: `card${setup.fixture ? " setup-fixture" : ""}` },
     el(
       "div",
       { class: "section-head" },
-      el("h2", { text: setup.setup ? `Aufspannung ${setup.setup}` : "Ohne Aufspannung" }),
+      el("h2", { text: title }),
       el("span", { class: "muted", text: `${fmtHours(setup.running_s)} Laufzeit · ${setup.finished} fertige Läufe` }),
     ),
     el("div", { class: "table-wrap" }, table(columns, setup.programs)),
@@ -441,13 +445,15 @@ function renderDetail(d) {
       el(
         "div",
         { class: "kpi-tiles", style: { marginTop: "16px" } },
-        tile("Laufzeit", fmtHours(t.running_s), "reine Bearbeitungszeit"),
+        tile("Laufzeit", fmtHours(t.running_s), t.fixture_s > 0 ? `davon Vorrichtung ${fmtHours(t.fixture_s)}` : "reine Bearbeitungszeit"),
         tile("Gestoppt / Fehler", fmtHours(t.stopped_s), "innerhalb der Läufe"),
         tile("Fertige Läufe", String(t.finished), `${t.runs} Läufe gestartet`),
         tile(
           "Ø Bearbeitungszeit je Teil",
           t.part_complete ? fmtDuration(t.part_run_s) : "—",
-          t.part_complete ? "Summe über alle Aufspannungen" : "noch nicht jedes Programm vollständig gelaufen",
+          t.part_complete
+            ? `Summe über alle Aufspannungen${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
+            : "noch nicht jedes Programm vollständig gelaufen",
         ),
         tile(
           "Durchlaufzeit",

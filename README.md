@@ -123,7 +123,9 @@ Voraussetzungen an jeder Steuerung:
   - DIN/ISO-Programme (`.I`): Gezählt werden die Programmzeilen.
   - Neu geladen wird nur, wenn sich Größe oder Änderungsdatum der Datei ändern.
   - Programme über 20 MB werden übersprungen. Das lässt sich über `program_max_mb` und
-    `fetch_programs` in der `config.yaml` einstellen.
+    `fetch_programs` in der `config.yaml` einstellen. Ein zu großes Programm prüft die App danach
+    nur noch einmal je Lauf auf Änderungen.
+  - Makros des Maschinenherstellers (`PLC:\…`) liest die App nicht, dafür bräuchte sie PLC-Rechte.
 - **Restlaufzeit:** Die Live-Karte zeigt Fortschritt, Restzeit und voraussichtliches Ende. Welches
   Verfahren verwendet wurde, steht darunter. Es greift das erste passende:
   1. **Satzverlauf früherer Läufe** (genauestes Verfahren): Bei jedem Lauf wird mitgeschrieben,
@@ -149,7 +151,7 @@ zugeordnet, z. B. `26-21055-01-01`:
 |---|---|
 | `26` | Jahr (2026) |
 | `21055` | Auftragsnummer, 4- oder 5-stellig, optional mit Version: `21055V1`, `21055V2` |
-| `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …) |
+| `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); `08` und `09` = Vorrichtungsbau |
 | `01` | Programmnummer, fortlaufend |
 
 - Taucht ein Programm mit einer neuen Auftragsnummer an einer Maschine auf, wird der Auftrag
@@ -201,6 +203,13 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Je Aufspannung die Programme mit Läufen, Laufzeit und **Ø Laufzeit je Teil**.
   - **Ø Bearbeitungszeit je Teil:** die Summe der Ø-Laufzeiten aller Programme über alle
     Aufspannungen, gerechnet nur aus vollständig erfassten, fertigen Läufen.
+  - **Vorrichtung (Spannung 08 und 09):** Programme wie `26-21048-08-01` bauen eine Vorrichtung.
+    - Sie stehen als eigene Karte „Vorrichtung (Spannung 08)“ im Auftrag.
+    - Ihre Zeit zählt zur Laufzeit des Auftrags („davon Vorrichtung …“), aber nicht zur Ø-Bearbeitungszeit
+      je Teil, denn sie ist ein einmaliger Aufwand.
+  - Mehrere Fassungen desselben Programms (z. B. `26-21048-01-01` und `26-21048-01-01-neu`) zählen
+    beide in die Ø-Zeit je Teil. Den alten Stand an der Maschine ersetzen oder seine Läufe hier
+    löschen.
   - Laufzeit je Tag, alle Läufe, CSV-Export.
   - **Lauf löschen** (Programmdurchläufe → „Löschen“): für Fehlläufe oder ein Nachprogramm.
     - Der Lauf zählt danach nicht mehr zum Auftrag, zu den Ø-Stückzeiten (auch in der Auswertung

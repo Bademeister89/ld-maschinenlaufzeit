@@ -2,7 +2,7 @@
 
 - ``26``    Jahr (2026)
 - ``21055`` Auftragsnummer, 4- oder 5-stellig, optional mit Version: ``21055V1``, ``21055V2``
-- ``01``    Aufspannung (1 = Spannung 1, 2 = Spannung 2 …)
+- ``01``    Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); ``08`` und ``09`` sind Vorrichtungsbau
 - ``01``    Programmnummer, fortlaufend
 
 Ein Auftrag ist eindeutig über Jahr und Nummer (Schlüssel ``26-21055``). Jede Version ist ein eigener
@@ -30,6 +30,9 @@ _CODE = re.compile(
     r"^(?P<year>\d{2})[-_](?P<order>\d{4,5}(?:[Vv]\d{1,2})?)[-_](?P<setup>\d{1,2})[-_](?P<program>\d{1,3})(?:$|\D)"
 )
 RUN_TIME_STATES = (MachineState.RUNNING.value, MachineState.STOPPED.value, MachineState.ERROR.value)
+# Spannung 08 und 09 sind Vorrichtungsprogramme (Bau einer Vorrichtung): einmaliger Aufwand des
+# Auftrags, keine Bearbeitung je Teil – zählt zur Laufzeit, aber nicht zur Ø-Zeit je Teil
+FIXTURE_SETUPS = frozenset({8, 9})
 
 
 @dataclass(frozen=True)
@@ -189,8 +192,8 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         row["machines"] = sorted(row["machines"])
         setup = setups.setdefault(
             row["setup"],
-            {"setup": row["setup"], **_empty_totals(), "runs": 0, "finished": 0, "part_run_s": 0.0,
-             "part_complete": True, "programs": []},
+            {"setup": row["setup"], "fixture": row["setup"] in FIXTURE_SETUPS, **_empty_totals(), "runs": 0,
+             "finished": 0, "part_run_s": 0.0, "part_complete": True, "programs": []},
         )
         setup["programs"].append(row)
         setup["running_s"] += row["running_s"]
@@ -207,7 +210,9 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     for setup in setups.values():
         totals["running_s"] += setup["running_s"]
         totals["stopped_s"] += setup["stopped_s"]
-    part_complete = bool(setups) and all(s["part_complete"] for s in setups.values())
+    # Ø Bearbeitungszeit je Teil: nur Aufspannungen des Teils, nicht der Vorrichtungsbau
+    parts = [s for s in setups.values() if not s["fixture"]]
+    part_complete = bool(parts) and all(s["part_complete"] for s in parts)
 
     intervals = db.order_intervals(key, RUN_TIME_STATES)
     first = min((iv["start"] for iv in intervals), default=None)
@@ -219,13 +224,14 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             **totals,
             "runs": len(runs),
             "finished": sum(1 for r in runs if r["result"] == "finished"),
-            "part_run_s": sum(s["part_run_s"] for s in setups.values()) if setups else None,
+            "part_run_s": sum(s["part_run_s"] for s in parts) if parts else None,
             "part_complete": part_complete,
+            "fixture_s": sum(s["running_s"] for s in setups.values() if s["fixture"]),
             "first_activity": first,
             "last_activity": last,
             "machines": sorted({iv["machine_id"] for iv in intervals} | {r["machine_id"] for r in runs}),
         },
-        "setups": [setups[k] for k in sorted(setups)],
+        "setups": sorted(setups.values(), key=lambda s: (s["fixture"], s["setup"])),  # Vorrichtung zuletzt
         "days": _days(intervals, tz),
         "runs": runs,
     }

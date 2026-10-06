@@ -939,6 +939,7 @@ tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 v
 .active-list { display: grid; gap: 6px; }
 .active-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 550; }
 .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+.setup-fixture { border-style: dashed; } /* Vorrichtungsbau (Spannung 08/09): einmalig, nicht je Teil */
 input[type="search"] {
   font: inherit;
   font-size: 14px;

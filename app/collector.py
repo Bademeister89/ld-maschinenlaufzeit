@@ -141,6 +141,7 @@ class MachineCollector:
         self._tool_table: tuple[int, float] | None = None  # (Größe, Änderungszeit) beim letzten Lesen
         self._tool_table_checked: float | None = None
         self._tool_name_missing = False
+        self._tool_names_logged = False  # erstes Lesen der Werkzeugtabelle schon im Log
         # Mitschnitt der Rohdaten (nur im Speicher, seit dem Start) für die Diagnose-Datei
         self._raw: deque[dict[str, Any]] = deque(maxlen=RAW_LOG_KEEP)
         self._raw_key: tuple[Any, ...] | None = None
@@ -504,19 +505,31 @@ class MachineCollector:
         now = self._clock()
         paths = [
             p for p in dict.fromkeys((snap.program, snap.current_program))
-            if p and (
+            # PLC:\ sind Makros des Maschinenherstellers – ohne PLC-Login (den der Schreibschutz nicht
+            # zulässt) nicht lesbar
+            if p and not p.upper().startswith("PLC:") and (
                 self._program_checked.get(p, -1) != marker
-                or (self._calls_of(p) is None and now - self._program_tried.get(p, now) >= PROGRAM_RETRY_S)
+                or (
+                    self._calls_of(p) is None
+                    and not self._too_large(p)  # bleibt zu groß, bis sich die Datei ändert
+                    and now - self._program_tried.get(p, now) >= PROGRAM_RETRY_S
+                )
             )
         ]
         if paths:
             self._fetch_task = asyncio.create_task(self._fetch(fetch, paths, marker))
 
+    def _too_large(self, path: str) -> bool:
+        """Datei schon als zu groß zum Einlesen bekannt (dann nur prüfen, ob sie sich geändert hat)."""
+        row = self._program_row(path)
+        return row is not None and row["size"] is not None and row["size"] > self._program_max_bytes
+
     async def _fetch(self, fetch: Callable[..., Any], paths: list[str], marker: int | None) -> None:
         for path in paths:
             row = self._program_row(path)
-            # Nach einem Fehler (z. B. Übertragung abgebrochen) ganz neu lesen, nicht nur auf Änderung prüfen
-            failed = row is not None and row["calls"] is None and row["error"] is not None
+            # Nach einem Fehler (z. B. Übertragung abgebrochen) ganz neu lesen, nicht nur auf Änderung
+            # prüfen – außer die Datei ist zu groß: das bleibt so, bis sich Größe oder Datum ändern
+            failed = row is not None and row["calls"] is None and row["error"] is not None and not self._too_large(path)
             known = (row["size"], row["mtime"]) if row and row["size"] is not None and not failed else None
             self._program_tried[path] = self._clock()
             try:
@@ -568,8 +581,13 @@ class MachineCollector:
             return
         self._tool_table = (result.size, result.mtime)
         self._tool_names = dict(result.names)
+        first = not self._tool_names_logged
         changed = self._db.set_tool_names(self.machine.id, self._tool_names)
-        log.info("%s: Werkzeugtabelle gelesen – %d Namen, %d übernommen", self.machine.name, len(result.names), changed)
+        # TOOL.T ändert sich laufend (Standzeitzähler der Steuerung): nur das erste Lesen und echte
+        # Namensänderungen ins Log
+        if first or changed:
+            log.info("%s: Werkzeugtabelle gelesen – %d Namen, %d übernommen", self.machine.name, len(result.names), changed)
+        self._tool_names_logged = True
 
     # --- Live-Status ---------------------------------------------------------------
 

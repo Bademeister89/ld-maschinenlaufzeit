@@ -183,6 +183,28 @@ def test_order_detail_by_setup_and_program(db, make_collector):
     assert orders.order_detail(db, "99-99999", TZ) is None
 
 
+def test_fixture_setups_08_09_do_not_count_per_part(db, make_collector):
+    """Spannung 08 und 09 sind Vorrichtungsbau: Laufzeit des Auftrags ja, Ø-Zeit je Teil nein."""
+    c = make_collector()
+    t = run_part(c, 0, "TNC:\\AUFTRAG\\26-21055-08-01.H", 100)  # Vorrichtung zuerst gebaut
+    t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055-09-01.H", 50)
+    t = run_part(c, t + 10, P11, 300)
+    run_part(c, t + 10, P21, 200)
+    detail = orders.order_detail(db, "26-21055", TZ)
+    assert [(s["setup"], s["fixture"]) for s in detail["setups"]] == [(1, False), (2, False), (8, True), (9, True)]
+    totals = detail["totals"]
+    assert totals["part_run_s"] == pytest.approx(500)  # nur Spannung 1 + 2
+    assert totals["part_complete"] is True
+    assert totals["fixture_s"] == pytest.approx(150)
+    assert totals["running_s"] == pytest.approx(650)  # Gesamtaufwand inkl. Vorrichtung
+
+    # Auftrag, von dem bisher nur die Vorrichtung gebaut wurde: noch keine Ø-Zeit je Teil
+    run_part(c, 10_000, "TNC:\\AUFTRAG\\26-4711-08-01.H", 120)
+    only_fixture = orders.order_detail(db, "26-4711", TZ)["totals"]
+    assert (only_fixture["part_run_s"], only_fixture["part_complete"]) == (None, False)
+    assert only_fixture["fixture_s"] == pytest.approx(120)
+
+
 def test_order_days_split_at_midnight(db, make_collector):
     c = make_collector()
     start = datetime(2026, 9, 21, 23, 0, tzinfo=TZ).timestamp()

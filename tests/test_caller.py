@@ -353,6 +353,57 @@ def test_unreadable_programs_are_retried_every_minute(db):
     assert db.program_file("m1", A)["calls"] == ()
 
 
+class BigProgramAdapter(NullAdapter):
+    """Auftragsprogramm zu groß zum Einlesen – wie 26-21048-02-01 (57,8 MB) an der DMU 105."""
+
+    SIZE = 60_000_000
+
+    def __init__(self):
+        self.fetched = []
+
+    def fetch_program(self, path, known, max_bytes):
+        self.fetched.append((path, known))
+        if known == (self.SIZE, 1.0):
+            return None  # unverändert
+        return ProgramFile(path, self.SIZE, 1.0, error="Programm zu groß zum Einlesen (60.0 MB)")
+
+
+def test_too_large_and_plc_programs_are_not_retried_every_minute(db):
+    """Diagnose 06.10.: das zu große Programm und PLC:\\PLC\\Palett.H wurden jede Minute neu versucht,
+    jedes Mal mit eigener Verbindung zur Steuerung."""
+    adapter = BigProgramAdapter()
+    clock = [0.0]
+    c = MachineCollector(MACHINE, adapter, db, clock=lambda: clock[0], program_max_bytes=20_000_000)
+    macro = "PLC:\\PLC\\Palett.H"
+
+    async def poll(t, s):
+        clock[0] = t
+        c.process(s, t)
+        c._maybe_fetch_programs(s)
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if c._fetch_task is None or c._fetch_task.done():
+                break
+
+    async def scenario():
+        await poll(0, snap("IDLE", A))
+        await poll(10, snap("STARTED", A, current_program=macro))  # neuer Lauf: nur auf Änderung prüfen
+        for t in range(70, 900, 60):  # eine Viertelstunde im selben Lauf
+            await poll(t, snap("STARTED", A, current_program=macro))
+
+    asyncio.run(scenario())
+    assert adapter.fetched == [(A, None), (A, (BigProgramAdapter.SIZE, 1.0))]  # PLC:\ nie
+    assert db.program_file("m1", A)["error"].startswith("Programm zu groß")
+
+
+def test_pylsv2_routine_messages_are_not_logged():
+    import logging
+
+    import app.main  # noqa: F401  (richtet das Logging ein)
+
+    assert logging.getLogger("LSV2 Client").getEffectiveLevel() == logging.ERROR
+
+
 # --- Palettentabelle (.P) als Hauptprogramm, wie im Feldtest an der DMU 70 ---------------------------
 
 PAL_TABLE = "TNC:\\Programme\\pal1sp.p"

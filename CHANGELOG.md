@@ -10,6 +10,30 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.13.0] – 2026-10-06
+
+### Neu
+- **Vorrichtung:** Spannung 08 und 09 sind Vorrichtungsbau, z. B. `26-21048-08-01`.
+  - Im Auftrag stehen sie als eigene Karte „Vorrichtung (Spannung 08)“.
+  - Ihre Zeit zählt zur Laufzeit des Auftrags („davon Vorrichtung …“), aber nicht mehr zur
+    Ø-Bearbeitungszeit je Teil.
+  - Beispiel 26-21048 vom 06.10.: 952,7 statt 966,2 min je Teil.
+
+### Behoben
+Grundlage ist die Diagnose-Datei vom 06.10.
+
+- **Zu große Programme** (z. B. 26-21048-02-01 mit 57,8 MB an der DMU 105) und Makros wie
+  `PLC:\PLC\Palett.H` wurden jede Minute neu versucht, jedes Mal mit eigener Verbindung zur
+  Steuerung.
+  - Jetzt prüft die App ein zu großes Programm nur einmal je Lauf auf Änderungen.
+  - `PLC:\`-Makros liest sie gar nicht mehr, dafür bräuchte sie PLC-Rechte.
+- **Log-Dateien** reichten nur rund 15 Stunden zurück.
+  - Ursache: Die LSV2-Bibliothek schrieb bei jeder Abfrage der Fehlermeldungen zwei Zeilen
+    („NO_NEXT_ERROR“), rund 75.000 Zeilen am Tag.
+  - Jetzt stehen von ihr nur noch echte Fehler im Log. Die Diagnose-Datei enthält damit wieder
+    mehrere Tage.
+  - Auch „Werkzeugtabelle gelesen“ steht nur noch beim ersten Lesen und bei geänderten Namen im Log.
+
 ## [1.12.0] – 2026-10-06
 
 ### Neu
