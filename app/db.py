@@ -8,6 +8,7 @@ Auswertung auch nach einem Absturz des Tools korrekt (keine erfundene Laufzeit).
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -15,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -233,6 +234,11 @@ class Database:
 
             self._con.executemany("INSERT OR IGNORE INTO rim_designs(code, name) VALUES (?, ?)", RIM_DESIGNS.items())
             self.set_meta("rim_designs_seeded", "1")
+        # v12 → v13: Versionen (26-21053V1 …) gehören seit 1.17.0 zum Grundauftrag 26-21053; bis dahin
+        # waren sie eigene Aufträge. Einmalig zusammenführen.
+        if self.get_meta("order_versions_merged") is None:
+            self._merge_order_versions()
+            self.set_meta("order_versions_merged", "1")
         # v8 → v9: Werkzeugaufrufe. Die Tabelle tool_calls kommt über SCHEMA. Nur bei einem Update
         # (Ereignisse vorhanden, tool_calls neu) trägt tools.backfill_calls die bisherigen Werkzeugwechsel
         # einmalig nach – eine Datenbank, die schon Aufrufe zählt, würde sonst doppelt zählen.
@@ -254,6 +260,39 @@ class Database:
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
             self.set_meta("pallet_tables_reread", "1")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
+
+    def _merge_order_versions(self) -> None:
+        """Aufträge der Versionen in den Grundauftrag übernehmen: Abschnitte und Läufe umhängen. Gibt es
+        den Grundauftrag noch nicht, wird der Versionsauftrag zu ihm. Sonst bleiben Bezeichnung und Bild
+        des Grundauftrags (fehlen sie, die der Version), und er ist offen, wenn einer der beiden offen war."""
+        with self.transaction():
+            for row in self._con.execute("SELECT * FROM orders ORDER BY key").fetchall():
+                match = re.fullmatch(r"(\d{2}-(\d{4,5}))V\d{1,2}", row["key"], re.IGNORECASE)
+                if match is None:
+                    continue
+                base, number = match.groups()
+                for table in ("state_intervals", "program_runs"):
+                    self._con.execute(f"UPDATE {table} SET order_key = ? WHERE order_key = ?", (base, row["key"]))
+                target = self._con.execute("SELECT * FROM orders WHERE key = ?", (base,)).fetchone()
+                if target is None:
+                    self._con.execute("UPDATE orders SET key = ?, number = ? WHERE key = ?", (base, number, row["key"]))
+                    continue
+                is_open = "open" in (target["status"], row["status"])
+                self._con.execute(
+                    "UPDATE orders SET title = ?, image = ?, created_at = ?, opened_at = ?, status = ?, "
+                    "closed_at = ?, closed_auto = ? WHERE key = ?",
+                    (
+                        target["title"] or row["title"],
+                        target["image"] or row["image"],
+                        min(target["created_at"], row["created_at"]),
+                        max(v for v in (target["opened_at"], row["opened_at"], target["created_at"]) if v is not None),
+                        "open" if is_open else "closed",
+                        None if is_open else max(target["closed_at"] or 0, row["closed_at"] or 0) or None,
+                        0 if is_open else target["closed_auto"],
+                        base,
+                    ),
+                )
+                self._con.execute("DELETE FROM orders WHERE key = ?", (row["key"],))
 
     def get_meta(self, key: str) -> str | None:
         rows = self._query("SELECT value FROM meta WHERE key = ?", (key,))

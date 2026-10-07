@@ -243,7 +243,7 @@ def test_update_rereads_program_files_once(tmp_path):
     con.executescript("ALTER TABLE program_files DROP COLUMN calls; UPDATE meta SET value = '9' WHERE key = 'schema_version';")
     con.close()
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "12"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "13"
     row = db.program_file("m1", PAL)
     assert (row["size"], row["mtime"], row["blocks"], row["calls"]) == (None, None, 9, None)
     db.close()

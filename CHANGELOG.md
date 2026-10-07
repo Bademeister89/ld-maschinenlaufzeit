@@ -10,6 +10,20 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.17.0] – 2026-10-07
+
+### Geändert
+- **Versionen gehören zum Grundauftrag:** `26-21053V1-01-01`, `-V2-` … stehen jetzt im Auftrag
+  21053 statt als eigene Aufträge.
+  - Laufzeit, Stopps und Läufe des Auftrags zählen über alle Versionen.
+  - Im Detail hat jede Version einen eigenen Block mit ihren Aufspannungen und ihrer
+    Ø Bearbeitungszeit je Teil, denn eine Version ist eine andere Ausführung des Teils.
+  - In der Liste steht die Version hinter der Nummer, z. B. „21053 · 2026 · V1, V2“. Die Suche
+    findet den Auftrag auch über „21053V1“.
+  - Die Live-Karte zeigt „Auftrag 21053 V1 (2026) · …“. Der CSV-Export hat eine Spalte „Version“.
+  - Beim Update werden die bisherigen Versionsaufträge einmalig in den Grundauftrag übernommen.
+    Bezeichnung und Bild des Grundauftrags bleiben; fehlen sie, kommen sie von der Version.
+
 ## [1.16.0] – 2026-10-07
 
 ### Neu

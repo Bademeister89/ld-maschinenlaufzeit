@@ -201,7 +201,7 @@ def export_order(request: Request, key: str) -> Response:
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
     writer.writerow(
-        ["Auftrag", "Aufspannung", "Programm", "Lauf-Nr.", "Maschine", "Beginn", "Ende", "Ergebnis",
+        ["Auftrag", "Version", "Aufspannung", "Programm", "Lauf-Nr.", "Maschine", "Beginn", "Ende", "Ergebnis",
          "Laufzeit (min)", "Stoppzeit (min)", "Start beobachtet"]
     )
     for run in ctx.db.order_runs(key):
@@ -209,6 +209,7 @@ def export_order(request: Request, key: str) -> Response:
         writer.writerow(
             [
                 key,
+                code.version if code else "",
                 code.setup if code else "",
                 code.name if code else run["program"],
                 run["id"],

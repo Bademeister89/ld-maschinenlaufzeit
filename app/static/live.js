@@ -83,7 +83,8 @@ function orderText(o) {
   if (o.kind === "rim") {
     return [`Felge ${o.rim?.label ?? o.key}`, `Spannung ${o.setup}`, o.variant || null].filter(Boolean).join(" · ");
   }
-  return `Auftrag ${o.order} (${o.year}) · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
+  const version = o.version ? ` ${o.version}` : "";
+  return `Auftrag ${o.order}${version} (${o.year}) · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
 }
 
 /** Vorschaubild des Bauteils zum Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */

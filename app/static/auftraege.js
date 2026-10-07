@@ -116,7 +116,10 @@ function renderList() {
   const rows = orders.filter(
     (o) =>
       (state.kind === "all" || (o.kind ?? "order") === state.kind) &&
-      (!needle || `${o.key} ${o.number} ${o.title} ${o.rim?.label ?? ""}`.toLowerCase().includes(needle)),
+      (!needle ||
+        `${o.key} ${o.number} ${(o.versions ?? []).map((v) => o.number + v).join(" ")} ${o.title} ${o.rim?.label ?? ""}`
+          .toLowerCase()
+          .includes(needle)),
   );
   $("count").textContent = `${rows.length} ${COUNT_WORDS[state.kind][rows.length === 1 ? 0 : 1]}`;
   if (!rows.length) {
@@ -142,7 +145,10 @@ function renderList() {
               text: isRim(o) ? `${o.rim?.design_name} · ${o.rim?.size}` : o.number,
               onclick: (e) => e.preventDefault(),
             }),
-            el("span", { class: "muted", text: isRim(o) ? ` · ${o.rim?.kind_name} · Felge ${o.key}` : ` · ${o.year}` }),
+            el("span", {
+              class: "muted",
+              text: isRim(o) ? ` · ${o.rim?.kind_name} · Felge ${o.key}` : ` · ${o.year}${o.versions?.length ? ` · ${o.versions.join(", ")}` : ""}`,
+            }),
             o.title ? el("div", { class: "order-title", text: o.title }) : null,
           ),
         ),
@@ -190,6 +196,39 @@ function activeBanner(active) {
       const rest = f && !f.overdue_s ? ` · Rest ca. ${fmtDuration(f.remaining_s)} (fertig ca. ${fmtEta(f.eta)})` : "";
       return el("div", { class: "active-row" }, stateBadge(a.state), el("span", { text: `${a.machine}: ${a.program}${rest}` }));
     }),
+  );
+}
+
+const versionName = (version) => (version ? `Version ${version}` : "Grundversion");
+
+/** Aufspannungen; hat der Auftrag Versionen (andere Ausführungen des Teils), je Version ein Block
+ *  mit eigener Ø-Zeit je Teil. */
+function versionBlocks(d, o) {
+  const hasVersions = d.versions.length > 1 || d.versions.some((v) => v.version);
+  if (!hasVersions) return el("div", { class: "setup-grid" }, d.setups.map((s) => setupCard(s, o)));
+  return el(
+    "div",
+    { class: "version-blocks" },
+    d.versions.map((v) =>
+      el(
+        "section",
+        { class: "version-block", "aria-label": versionName(v.version) },
+        el(
+          "div",
+          { class: "version-head" },
+          el("h2", { text: `${versionName(v.version)} · ${o.number}${v.version}` }),
+          el("span", {
+            class: "muted",
+            text: [
+              `${fmtHours(v.running_s)} Laufzeit`,
+              `${v.finished} fertige Läufe`,
+              `Ø je ${partWord(o)} ${v.part_complete ? fmtDuration(v.part_run_s) : "noch offen"}`,
+            ].join(" · "),
+          }),
+        ),
+        el("div", { class: "setup-grid" }, v.setups.map((s) => setupCard(s, o))),
+      ),
+    ),
   );
 }
 
@@ -504,16 +543,22 @@ function renderDetail(d) {
         tile("Laufzeit", fmtHours(t.running_s), t.fixture_s > 0 ? `davon Vorrichtung ${fmtHours(t.fixture_s)}` : "reine Bearbeitungszeit"),
         tile("Gestoppt / Fehler", fmtHours(t.stopped_s), "innerhalb der Läufe"),
         tile("Fertige Läufe", String(t.finished), `${t.runs} Läufe gestartet`),
-        tile(
-          `Ø Bearbeitungszeit je ${partWord(o)}`,
-          t.part_complete ? fmtDuration(t.part_run_s) : "—",
-          t.part_complete
-            ? `Summe über alle ${isRim(o) ? "Spannungen und Programme" : "Aufspannungen"}${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
-            : "noch nicht jedes Programm vollständig gelaufen",
-        ),
+        d.versions.length > 1
+          ? tile(
+              `Ø Bearbeitungszeit je ${partWord(o)}`,
+              "je Version",
+              d.versions.map((v) => `${versionName(v.version)} ${v.part_complete ? fmtDuration(v.part_run_s) : "—"}`).join(" · "),
+            )
+          : tile(
+              `Ø Bearbeitungszeit je ${partWord(o)}`,
+              t.part_complete ? fmtDuration(t.part_run_s) : "—",
+              t.part_complete
+                ? `Summe über alle ${isRim(o) ? "Spannungen und Programme" : "Aufspannungen"}${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
+                : "noch nicht jedes Programm vollständig gelaufen",
+            ),
       ),
     ),
-    el("div", { class: "setup-grid" }, d.setups.map((s) => setupCard(s, o))),
+    versionBlocks(d, o),
     el(
       "div",
       { class: "card section" },

@@ -1035,6 +1035,12 @@ tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 v
 .active-list { display: grid; gap: 6px; }
 .active-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 550; }
 .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+/* Versionen eines Auftrags (andere Ausführungen des Teils): je Version ein Block mit Kopfzeile */
+.version-blocks { display: grid; gap: 8px; }
+.version-block { margin-top: 16px; padding-left: 14px; border-left: 3px solid var(--accent); }
+.version-block .setup-grid { margin-top: 10px; }
+.version-head { display: flex; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
+.version-head h2 { margin: 0; font-size: 18px; }
 .setup-fixture { border-style: dashed; } /* Vorrichtungsbau (Spannung 08/09): einmalig, nicht je Teil */
 input[type="search"] {
   font: inherit;

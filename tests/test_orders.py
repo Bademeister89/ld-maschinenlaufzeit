@@ -32,17 +32,28 @@ OTHER = "TNC:\\AUFTRAG\\26-4711-01-01.H"
         ("TNC:/nc_prog/25-10001-01-12.h", ("25-10001", 2025, "10001", 1, 12, "25-10001-01-12")),
         ("26_21055_1_1.H", ("26-21055", 2026, "21055", 1, 1, "26_21055_1_1")),
         ("26-21055-01-01_Schlichten.H", ("26-21055", 2026, "21055", 1, 1, "26-21055-01-01_Schlichten")),
-        # Versionen: eigener Auftrag je Version
-        ("TNC:\\AUFTRAG\\26-21053V1-01-01.H", ("26-21053V1", 2026, "21053V1", 1, 1, "26-21053V1-01-01")),
-        ("26-21053V2-02-03.H", ("26-21053V2", 2026, "21053V2", 2, 3, "26-21053V2-02-03")),
-        ("26-21053v2-01-01.h", ("26-21053V2", 2026, "21053V2", 1, 1, "26-21053v2-01-01")),  # klein = groß
-        ("26-4711V12-01-01_Schlichten.H", ("26-4711V12", 2026, "4711V12", 1, 1, "26-4711V12-01-01_Schlichten")),
-        ("26_21053V1_1_1.H", ("26-21053V1", 2026, "21053V1", 1, 1, "26_21053V1_1_1")),
     ],
 )
 def test_parse_program(path, expected):
     code = parse_program(path)
     assert (code.key, code.year, code.order, code.setup, code.program, code.name) == expected
+    assert code.version == ""
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        # Versionen gehören zum Grundauftrag
+        ("TNC:\\AUFTRAG\\26-21053V1-01-01.H", ("26-21053", "21053", "V1", 1, 1, "26-21053V1-01-01")),
+        ("26-21053V2-02-03.H", ("26-21053", "21053", "V2", 2, 3, "26-21053V2-02-03")),
+        ("26-21053v2-01-01.h", ("26-21053", "21053", "V2", 1, 1, "26-21053v2-01-01")),  # klein = groß
+        ("26-4711V12-01-01_Schlichten.H", ("26-4711", "4711", "V12", 1, 1, "26-4711V12-01-01_Schlichten")),
+        ("26_21053V1_1_1.H", ("26-21053", "21053", "V1", 1, 1, "26_21053V1_1_1")),
+    ],
+)
+def test_parse_program_version(path, expected):
+    code = parse_program(path)
+    assert (code.key, code.order, code.version, code.setup, code.program, code.name) == expected
 
 
 @pytest.mark.parametrize(
@@ -90,21 +101,72 @@ def test_collector_creates_order_and_tags_data(db, make_collector):
     assert c.live()["order"]["setup"] == 1
 
 
-def test_versions_are_separate_orders(db, make_collector):
+def test_versions_belong_to_the_base_order(db, make_collector):
+    """Versionen sind andere Ausführungen des Teils: ein Auftrag, Laufzeit über alle, Ø je Teil je Version."""
     c = make_collector()
     t = run_part(c, 0, P11, 300)
     t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055V1-01-01.H", 200)
     t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055V2-01-01.H", 100)
     run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055v2-02-01.H", 50)  # kleines v: gleiche Version
-    rows = {r["key"]: r for r in orders.list_orders(db)}
-    assert set(rows) == {"26-21055", "26-21055V1", "26-21055V2"}
-    assert {k: (r["number"], r["running_s"], r["finished"]) for k, r in rows.items()} == {
-        "26-21055": ("21055", 300, 1),
-        "26-21055V1": ("21055V1", 200, 1),
-        "26-21055V2": ("21055V2", 150, 2),
-    }
-    assert rows["26-21055V2"]["setups"] == [1, 2]
-    assert c.live()["order"]["key"] == "26-21055V2"
+    [row] = orders.list_orders(db)
+    assert (row["key"], row["number"], row["running_s"], row["finished"]) == ("26-21055", "21055", 650, 4)
+    assert (row["versions"], row["setups"]) == (["V1", "V2"], [1, 2])
+    live = c.live()["order"]
+    assert (live["key"], live["version"]) == ("26-21055", "V2")
+    detail = orders.order_detail(db, "26-21055", TZ)
+    blocks = [(v["version"], [s["setup"] for s in v["setups"]], v["part_run_s"], v["running_s"]) for v in detail["versions"]]
+    assert blocks == [("", [1], 300, 300), ("V1", [1], 200, 200), ("V2", [1, 2], 150, 150)]
+    # Mehrere Ausführungen: keine gemeinsame Ø-Zeit je Teil, dafür je Version
+    assert (detail["totals"]["running_s"], detail["totals"]["part_run_s"], detail["totals"]["part_complete"]) == (650, None, False)
+    assert [s["version"] for s in detail["setups"]] == ["", "V1", "V2", "V2"]
+
+
+def test_versions_are_sorted_by_number(db, make_collector):
+    c = make_collector()
+    t = 0
+    for version in ("V10", "V2", ""):
+        t = run_part(c, t + 10, f"TNC:\\AUFTRAG\\26-21055{version}-01-01.H", 100)
+    assert [v["version"] for v in orders.order_detail(db, "26-21055", TZ)["versions"]] == ["", "V2", "V10"]
+    assert orders.list_orders(db)[0]["versions"] == ["V2", "V10"]
+
+
+def test_update_merges_version_orders_into_the_base_order(tmp_path):
+    """Bis 1.16.0 waren Versionen eigene Aufträge (Schema 12)."""
+    import sqlite3
+
+    from app.db import Database
+
+    path = tmp_path / "v12.db"
+    db = Database(path)
+    db.ensure_machine("m1", "DMG 1", "10.0.0.1", 19000)
+    for key, number, t in (("26-21055", "21055", 100.0), ("26-21055V1", "21055V1", 50.0), ("26-21053V2", "21053V2", 70.0)):
+        db.ensure_order(key, 2026, number, t)
+        run_id = db.start_run("m1", f"TNC:\\{number}.H", t, True, key)
+        iv = db.open_interval("m1", "RUNNING", "STARTED", "AUTOMATIC", f"TNC:\\{number}.H", run_id, t, t + 10, order_key=key)
+        db.close_interval(iv, t + 10)
+        db.end_run(run_id, t + 10, "finished")
+    db.update_order("26-21055", "", "closed", 500.0)
+    db.update_order("26-21055V1", "Kunde X", "open", 0.0)
+    db.set_order_image("26-21055V1", "26-21055V1-abc.jpg")
+    db._execute("DELETE FROM meta WHERE key = 'order_versions_merged'")
+    db.close()
+    con = sqlite3.connect(path)
+    con.execute("UPDATE meta SET value = '12' WHERE key = 'schema_version'")
+    con.commit()
+    con.close()
+
+    db = Database(path)
+    assert db.get_meta("schema_version") == "13"
+    assert sorted(o["key"] for o in db.orders()) == ["26-21053", "26-21055"]
+    merged = db.order("26-21055")
+    assert (merged["title"], merged["image"], merged["status"], merged["created_at"]) == ("Kunde X", "26-21055V1-abc.jpg", "open", 50.0)
+    renamed = db.order("26-21053")  # Grundauftrag gab es nicht: die Version wird zu ihm
+    assert (renamed["number"], renamed["created_at"]) == ("21053", 70.0)
+    keys = {r["order_key"] for r in db._query("SELECT order_key FROM program_runs UNION SELECT order_key FROM state_intervals")}
+    assert keys == {"26-21055", "26-21053"}
+    rows = {r["key"]: (r["running_s"], r["runs"]) for r in orders.list_orders(db)}
+    assert rows == {"26-21055": (20, 2), "26-21053": (10, 1)}
+    db.close()
 
 
 def test_backfill_assigns_versions_recorded_before_update(db, make_collector):
@@ -118,7 +180,7 @@ def test_backfill_assigns_versions_recorded_before_update(db, make_collector):
     assert db.orders() == []
     assert orders.backfill(db) == 1
     [row] = orders.list_orders(db)
-    assert (row["key"], row["number"], row["running_s"], row["finished"]) == ("26-21053V1", "21053V1", 300, 1)
+    assert (row["key"], row["number"], row["running_s"], row["finished"], row["versions"]) == ("26-21053", "21053", 300, 1, ["V1"])
 
 
 def test_programs_without_code_have_no_order(db, make_collector):
@@ -272,9 +334,9 @@ def test_api_update(client):
 def test_api_export(client):
     r = client.get("/api/orders/26-21055/export.csv")
     lines = r.content.decode("utf-8").lstrip("﻿").strip().split("\r\n")
-    assert lines[0].split(";")[:4] == ["Auftrag", "Aufspannung", "Programm", "Lauf-Nr."]
+    assert lines[0].split(";")[:5] == ["Auftrag", "Version", "Aufspannung", "Programm", "Lauf-Nr."]
     first = lines[1].split(";")
-    assert (first[0], first[1], first[2], first[7], first[8]) == ("26-21055", "1", "26-21055-01-01", "fertig", "5,00")
+    assert (first[0], first[1], first[2], first[3], first[8], first[9]) == ("26-21055", "", "1", "26-21055-01-01", "fertig", "5,00")
 
 
 def test_delete_run_removes_it_from_order_but_keeps_machine_time(client):
@@ -388,7 +450,7 @@ def test_update_adds_auto_close_columns(tmp_path):
     con.close()
     db = Database(path)
     order = db.order("26-21055")
-    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, "12")
+    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, "13")
     assert orders.close_idle(db, 100 + 7 * DAY + 1) == ["26-21055"]  # ab dem Anlegen gerechnet
     db.close()
 
@@ -422,7 +484,7 @@ def test_simulation_uses_order_scheme():
     codes = [parse_program(p) for p in seen]
     # Innerhalb eines Auftrags werden die Aufspannungen der Reihe nach gefahren
     for prev, cur in zip(codes, codes[1:]):
-        if prev.key == cur.key and cur.setup != prev.setup:
+        if (prev.key, prev.version) == (cur.key, cur.version) and cur.setup != prev.setup:
             assert cur.setup == prev.setup + 1 or cur.setup == 1
     assert len({c.key for c in codes}) >= 2
     assert set(ORDER_SETUPS) >= {c.key for c in codes}

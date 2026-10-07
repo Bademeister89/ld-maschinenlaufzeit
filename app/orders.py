@@ -5,9 +5,10 @@
 - ``01``    Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); ``08`` und ``09`` sind Vorrichtungsbau
 - ``01``    Programmnummer, fortlaufend
 
-Ein Auftrag ist eindeutig über Jahr und Nummer (Schlüssel ``26-21055``). Jede Version ist ein eigener
-Auftrag (``26-21055V1``, ``26-21055V2``); ein kleines ``v`` zählt wie ``V``. Er wird automatisch
-angelegt, sobald ein passendes Programm an einer Maschine auftaucht. Gezählt wird die Zeit
+Ein Auftrag ist eindeutig über Jahr und Nummer (Schlüssel ``26-21055``). Versionen (``26-21055V1``,
+``26-21055V2``; ein kleines ``v`` zählt wie ``V``) sind andere Ausführungen des Teils und gehören zum
+selben Auftrag: Seine Laufzeit ist die Summe aller Versionen, die Ø-Zeit je Teil gilt je Version. Ein
+Auftrag wird automatisch angelegt, sobald ein passendes Programm an einer Maschine auftaucht. Gezählt wird die Zeit
 der Programmdurchläufe (Laufzeit sowie Stopps/Fehler innerhalb der Läufe) – nicht die Zeit,
 in der ein Programm nur angewählt ist, sonst würde ein übers Wochenende angewähltes Programm
 dem Auftrag Tage gutschreiben.
@@ -44,7 +45,7 @@ from .db import Database
 from .state import MachineState
 
 _CODE = re.compile(
-    r"^(?P<year>\d{2})[-_](?P<order>\d{4,5}(?:[Vv]\d{1,2})?)[-_](?P<setup>\d{1,2})[-_](?P<program>\d{1,3})(?:$|\D)"
+    r"^(?P<year>\d{2})[-_](?P<order>\d{4,5})(?P<version>[Vv]\d{1,2})?[-_](?P<setup>\d{1,2})[-_](?P<program>\d{1,3})(?:$|\D)"
 )
 _RIM = re.compile(
     r"^(?P<number>(?P<kind>1\d)(?P<design>\d{2})(?P<width>\d{2})(?P<diameter>\d{2}))[-_](?P<setup>\d{2})(?P<variant>\D.*)?$"
@@ -63,14 +64,15 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ProgramCode:
-    key: str  # "26-21055" bzw. "26-21055V1"; Felge: "10101018"
+    key: str  # "26-21055" (auch für die Versionen 21055V1 …); Felge: "10101018"
     year: int  # 2026; Felge: 0
-    order: str  # "21055" bzw. "21055V1"; Felge: "10101018"
+    order: str  # "21055"; Felge: "10101018"
     setup: int  # 1
     program: int  # 1; Felge: 0 (die Programme einer Spannung unterscheidet der Zusatz)
     name: str  # "26-21055-01-01" bzw. "10101018-01 tasche"
     kind: str = "order"  # "order" oder "rim"
     variant: str = ""  # Felge: Zusatz hinter der Spannung ("tasche", "einarm" …)
+    version: str = ""  # Auftrag: Version "V1", "V2" … ("" = Grundversion)
 
     def public(self) -> dict[str, Any]:
         return asdict(self)
@@ -88,7 +90,7 @@ def parse_program(path: str | None) -> ProgramCode | None:
     name = program_name(path)
     match = _CODE.match(name)
     if match:
-        yy, order = match["year"], match["order"].upper()  # 21055v1 und 21055V1 sind derselbe Auftrag
+        yy, order = match["year"], match["order"]
         return ProgramCode(
             key=f"{yy}-{order}",
             year=2000 + int(yy),
@@ -96,6 +98,7 @@ def parse_program(path: str | None) -> ProgramCode | None:
             setup=int(match["setup"]),
             program=int(match["program"]),
             name=name,
+            version=(match["version"] or "").upper(),  # v1 und V1 sind dieselbe Version
         )
     match = _RIM.match(name)
     if match:
@@ -188,6 +191,7 @@ def list_orders(db: Database, status: str = "all") -> list[dict[str, Any]]:
             "last_activity": None,
             "setups": set(),
             "programs": set(),
+            "versions": set(),
             "machines": set(),
         }
     for r in db.order_state_totals(RUN_TIME_STATES):
@@ -208,12 +212,14 @@ def list_orders(db: Database, status: str = "all") -> list[dict[str, Any]]:
             continue
         row["setups"].add(code.setup)
         row["programs"].add(code.name)
+        row["versions"].add(code.version)
         row["machines"].add(r["machine_id"])
     designs = db.rim_design_names()
     result = []
     for row in rows.values():
         row["rim"] = rim_info(row["key"], designs) if row["kind"] == "rim" else None
         row["setups"] = sorted(row["setups"])
+        row["versions"] = [v for v in sorted(row["versions"], key=version_order) if v]  # nur V1, V2 …
         row["programs"] = len(row["programs"])
         row["machines"] = sorted(row["machines"])
         result.append(row)
@@ -238,6 +244,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
                 "name": code.name if code else path,
                 "setup": code.setup if code else 0,
                 "number": code.program if code else 0,
+                "version": code.version if code else "",
                 **_empty_totals(),
                 "runs": 0,
                 "finished": 0,
@@ -267,13 +274,15 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         programs[path]["avg_run_s"] = sum(values) / len(values)
         programs[path]["median_run_s"] = median(values)
 
-    setups: dict[int, dict[str, Any]] = {}
+    # Aufspannungen je Version (andere Ausführung des Teils): (Version, Aufspannung) → Aufspannung
+    setups: dict[tuple[str, int], dict[str, Any]] = {}
     for row in sorted(programs.values(), key=lambda r: (r["setup"], r["number"], r["name"])):
         row["machines"] = sorted(row["machines"])
         setup = setups.setdefault(
-            row["setup"],
+            (row["version"], row["setup"]),
             # Vorrichtungsbau (Spannung 08/09) gibt es nur bei Aufträgen, nicht bei Felgen
-            {"setup": row["setup"], "fixture": order["kind"] == "order" and row["setup"] in FIXTURE_SETUPS,
+            {"setup": row["setup"], "version": row["version"],
+             "fixture": order["kind"] == "order" and row["setup"] in FIXTURE_SETUPS,
              **_empty_totals(), "runs": 0,
              "finished": 0, "part_run_s": 0.0, "part_complete": True, "programs": []},
         )
@@ -292,9 +301,9 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     for setup in setups.values():
         totals["running_s"] += setup["running_s"]
         totals["stopped_s"] += setup["stopped_s"]
-    # Ø Bearbeitungszeit je Teil: nur Aufspannungen des Teils, nicht der Vorrichtungsbau
-    parts = [s for s in setups.values() if not s["fixture"]]
-    part_complete = bool(parts) and all(s["part_complete"] for s in parts)
+    versions = _versions(setups.values())
+    # Ø Bearbeitungszeit je Teil: bei einer einzigen Ausführung wie bisher, bei mehreren je Version
+    single = versions[0] if len(versions) == 1 else None
 
     intervals = db.order_intervals(key, RUN_TIME_STATES)
     first = min((iv["start"] for iv in intervals), default=None)
@@ -307,17 +316,45 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             **totals,
             "runs": len(runs),
             "finished": sum(1 for r in runs if r["result"] == "finished"),
-            "part_run_s": sum(s["part_run_s"] for s in parts) if parts else None,
-            "part_complete": part_complete,
+            "part_run_s": single["part_run_s"] if single else None,
+            "part_complete": single["part_complete"] if single else False,
             "fixture_s": sum(s["running_s"] for s in setups.values() if s["fixture"]),
             "first_activity": first,
             "last_activity": last,
             "machines": sorted({iv["machine_id"] for iv in intervals} | {r["machine_id"] for r in runs}),
         },
-        "setups": sorted(setups.values(), key=lambda s: (s["fixture"], s["setup"])),  # Vorrichtung zuletzt
+        "versions": versions,
+        "setups": [s for v in versions for s in v["setups"]],
         "days": _days(intervals, tz),
         "runs": runs,
     }
+
+
+def version_order(version: str) -> tuple[int, int]:
+    """Grundversion zuerst, dann V1, V2 … V10 der Zahl nach."""
+    return (1, int(version[1:])) if version else (0, 0)
+
+
+def _versions(setups: Any) -> list[dict[str, Any]]:
+    """Je Version (andere Ausführung des Teils) ihre Aufspannungen mit Summen und Ø-Zeit je Teil.
+    Die Ø-Zeit je Teil rechnet nur Aufspannungen des Teils, nicht den Vorrichtungsbau."""
+    blocks: dict[str, dict[str, Any]] = {}
+    for setup in sorted(setups, key=lambda s: (s["fixture"], s["setup"])):  # Vorrichtung zuletzt
+        block = blocks.setdefault(
+            setup["version"], {"version": setup["version"], **_empty_totals(), "runs": 0, "finished": 0, "setups": []}
+        )
+        block["setups"].append(setup)
+        for field in ("running_s", "stopped_s", "runs", "finished"):
+            block[field] += setup[field]
+    result = []
+    for version in sorted(blocks, key=version_order):
+        block = blocks[version]
+        parts = [s for s in block["setups"] if not s["fixture"]]
+        block["part_complete"] = bool(parts) and all(s["part_complete"] for s in parts)
+        block["part_run_s"] = sum(s["part_run_s"] for s in parts) if parts else None
+        block["fixture_s"] = sum(s["running_s"] for s in block["setups"] if s["fixture"])
+        result.append(block)
+    return result
 
 
 def _days(intervals: list[dict[str, Any]], tz: ZoneInfo) -> list[dict[str, Any]]:

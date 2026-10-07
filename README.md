@@ -198,7 +198,7 @@ zugeordnet, z. B. `26-21055-01-01`:
 | Teil | Bedeutung |
 |---|---|
 | `26` | Jahr (2026) |
-| `21055` | Auftragsnummer, 4- oder 5-stellig, optional mit Version: `21055V1`, `21055V2` |
+| `21055` | Auftragsnummer, 4- oder 5-stellig, optional mit Version: `21055V1`, `21055V2` (gehören zu 21055) |
 | `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); `08` und `09` = Vorrichtungsbau |
 | `01` | Programmnummer, fortlaufend |
 
@@ -228,13 +228,18 @@ zugeordnet, z. B. `26-21055-01-01`:
   **automatisch angelegt**. Schlüssel ist Jahr + Nummer (`26-21055`), falls eine Nummer in einem
   späteren Jahr wieder vorkommt. Zusätze nach der Programmnummer (`26-21055-01-01_Schlichten.H`)
   und Unterstriche statt Bindestriche werden ebenfalls erkannt.
-- **Versionen:** `26-21053V1-01-01` und `26-21053V2-01-01` sind eigene Aufträge (`21053V1`,
-  `21053V2`), getrennt von `21053`.
+- **Versionen:** `26-21053V1-01-01` und `26-21053V2-01-01` gehören zum Auftrag `21053`. Eine
+  Version ist eine andere Ausführung des Teils.
   - Die Version steht direkt an der Nummer: `V` und eine ein- oder zweistellige Zahl. Ein kleines
     `v` zählt wie `V`.
-  - Die Suche nach `21053` findet den Auftrag mit allen Versionen.
-  - Läufe von Versionen, die vor Version 1.9.0 erfasst wurden (damals ohne Auftrag), werden beim
-    Update automatisch zugeordnet.
+  - In der Liste steht sie hinter der Nummer („21053 · 2026 · V1, V2“). Die Suche findet den
+    Auftrag auch über `21053V1`.
+  - Laufzeit, Stopps und Läufe des Auftrags sind die Summe aller Versionen.
+  - Im Detail hat jede Version einen eigenen Block („Grundversion“, „Version V1“ …) mit ihren
+    Aufspannungen und ihrer **Ø Bearbeitungszeit je Teil**. Die Kachel nennt sie je Version.
+  - Von Version 1.9.0 bis 1.16.0 waren Versionen eigene Aufträge. Beim Update auf 1.17.0 werden sie
+    einmalig in den Grundauftrag übernommen. Bezeichnung und Bild des Grundauftrags bleiben; hat er
+    keine, kommen sie von der Version.
 - **Oberprogramme** werden übersprungen, z. B. ein Palettenprogramm auf der Automation, das die
   Auftragsprogramme per `CALL PGM` aufruft, oder eine **Palettentabelle** (`.P`), die sie abarbeitet:
   - Hat das angewählte Hauptprogramm keine Auftragsnummer, ruft aber ein Auftragsprogramm auf, zählen
