@@ -10,6 +10,17 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.18.1] – 2026-10-07
+
+### Behoben
+- **Programm doppelt im Auftrag:** `26-21051-02-01.h` lief auch als Kopie aus dem Ordner von 21053
+  und stand deshalb zweimal unter Aufspannung 2. Grundlage ist die Diagnose vom 7.10.
+  - Ein Programm ist jetzt sein Name, nicht sein Ordner: Beide Speicherorte ergeben eine Zeile mit
+    allen Läufen und einer gemeinsamen Ø-Zeit je Teil, dazu „· 2 Ordner“ mit den Pfaden im Tooltip.
+  - Ebenso in der Auswertung je Programm.
+  - Die Restlaufzeit der Kopie nutzt jetzt die Läufe des Originals. Bisher gab es dort nur die grobe
+    Schätzung aus der Satznummer, obwohl schon vollständige Läufe da waren.
+
 ## [1.18.0] – 2026-10-07
 
 ### Geändert

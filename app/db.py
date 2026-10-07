@@ -519,13 +519,16 @@ class Database:
             params.append(machine_id)
         return self._query(sql + " GROUP BY r.id ORDER BY r.started_at", params)
 
-    def reference_runs(self, machine_id: str, program: str, limit: int) -> list[dict[str, Any]]:
-        """Die letzten vollständig beobachteten, fertigen Läufe eines Programms (neueste zuerst)."""
+    def reference_runs(self, machine_id: str, programs: list[str], limit: int) -> list[dict[str, Any]]:
+        """Die letzten vollständig beobachteten, fertigen Läufe dieser Programmpfade (neueste zuerst)."""
+        if not programs:
+            return []
+        marks = ", ".join("?" * len(programs))
         return self._query(
             self._RUN_SELECT
-            + "WHERE r.machine_id = ? AND r.program = ? AND r.result = 'finished' AND r.start_observed = 1 "
+            + f"WHERE r.machine_id = ? AND r.program IN ({marks}) AND r.result = 'finished' AND r.start_observed = 1 "
             "GROUP BY r.id ORDER BY r.started_at DESC LIMIT ?",
-            (machine_id, program, limit),
+            (machine_id, *programs, limit),
         )
 
     # --- Aufträge ------------------------------------------------------------------------

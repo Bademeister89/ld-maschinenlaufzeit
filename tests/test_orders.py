@@ -132,6 +132,25 @@ def test_year_in_the_program_name_does_not_split_the_order(db, make_collector):
     assert blocks == [("", [1]), ("V1", [2])]
 
 
+def test_copy_of_a_program_in_another_folder_is_one_program(db, make_collector):
+    """DMU 70, 7.10.: 26-21051-02-01.h lief auch aus dem Ordner von 21053 – bisher zwei Zeilen."""
+    from app import stats
+
+    original = "TNC:\\Programme\\21051 Kupplungsdeckel CVO\\26-21051-02-01.h"
+    copy = "TNC:\\Programme\\21053 abdeckung rechts 1 cvo\\26-21051-02-01.h"
+    c = make_collector()
+    t = run_part(c, 0, original, 300)
+    t = run_part(c, t + 10, original, 500)
+    run_part(c, t + 10, copy, 400)
+    [setup] = orders.order_detail(db, "21051", TZ)["setups"]
+    [program] = setup["programs"]
+    assert (program["name"], program["runs"], program["finished"], program["avg_run_s"]) == ("26-21051-02-01", 3, 3, 400)
+    assert program["paths"] == [original, copy]
+    assert orders.list_orders(db)[0]["programs"] == 1
+    [row] = stats.programs(db, db.intervals(0, 10_000), 0, 10_000)
+    assert (row["runs"], row["running_s"], row["avg_run_s"], len(row["paths"])) == (3, 1200, 400, 2)
+
+
 def test_update_merges_orders_of_different_years(tmp_path):
     """Bis 1.17.0 war das Jahr Teil des Schlüssels (21-21053 und 26-21053 getrennt)."""
     from app.db import Database
@@ -397,7 +416,7 @@ def test_delete_run_removes_it_from_order_but_keeps_machine_time(client):
     stats = client.get("/api/stats", params={"from": 0}).json()
     assert stats["machines"]["m1"]["totals"]["RUNNING"] == pytest.approx(machine_running)
     assert not [p for p in stats["programs"] if p["program"] == P11 and p["runs"]]
-    assert db.reference_runs("m1", P11, 5) == []
+    assert db.reference_runs("m1", [P11], 5) == []
 
     [event] = [e for e in db.events(0, 1e10) if e["type"] == "run_deleted"]
     assert event["payload"]["run"] == finished

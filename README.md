@@ -282,6 +282,10 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Bezeichnung (z. B. Kunde, Bauteil), Abschließen / Wieder öffnen.
   - Welche Maschine den Auftrag gerade fährt, mit Restlaufzeit.
   - Je Aufspannung die Programme mit Läufen, Laufzeit und **Ø Laufzeit je Teil**.
+  - **Ein Programm ist sein Name, nicht sein Ordner:** Liegt `26-21051-02-01.h` auch als Kopie im
+    Ordner eines anderen Auftrags, zählen beide Speicherorte zur selben Zeile. Dort steht dann
+    „· 2 Ordner“, der Tooltip nennt die Pfade. Das gilt genauso für die Auswertung je Programm und
+    für die Restlaufzeit-Prognose (die Kopie nutzt die Läufe des Originals und umgekehrt).
   - **Ø Bearbeitungszeit je Teil:** die Summe der Ø-Laufzeiten aller Programme über alle
     Aufspannungen, gerechnet nur aus vollständig erfassten, fertigen Läufen.
   - **Vorrichtung (Spannung 08 und 09):** Programme wie `26-21048-08-01` bauen eine Vorrichtung.

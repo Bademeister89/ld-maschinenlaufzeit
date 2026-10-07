@@ -18,6 +18,8 @@ import {
   loadMeta,
   machineName,
   machineThumb,
+  programCell,
+  programPaths,
   resultLabel,
   startOfDay,
   stateLabel,
@@ -253,7 +255,16 @@ function table(columns, rows, emptyText = "Keine Daten im Zeitraum.") {
     el(
       "tbody",
       {},
-      rows.map((row) => el("tr", {}, columns.map((c) => el("td", { class: c.cls, text: c.value(row) ?? "—", title: c.title?.(row) })))),
+      rows.map((row) =>
+        el(
+          "tr",
+          {},
+          columns.map((c) => {
+            const value = c.value(row);
+            return el("td", { class: c.cls, title: c.title?.(row) }, value instanceof Node ? value : value ?? "—");
+          }),
+        ),
+      ),
     ),
   );
 }
@@ -261,7 +272,7 @@ function table(columns, rows, emptyText = "Keine Daten im Zeitraum.") {
 function renderPrograms(programs) {
   const columns = [
     ...(state.machine ? [] : [{ label: "Maschine", value: (p) => machineName(p.machine_id) }]),
-    { label: "Programm", value: (p) => baseName(p.program), title: (p) => p.program, cls: "wrap" },
+    { label: "Programm", value: (p) => programCell(baseName(p.program), p.paths), title: programPaths, cls: "wrap" },
     { label: "Sätze", value: (p) => fmtInt(p.blocks), cls: "r" },
     { label: "Läufe", value: (p) => String(p.runs), cls: "r" },
     { label: "Fertig", value: (p) => String(p.finished), cls: "r" },

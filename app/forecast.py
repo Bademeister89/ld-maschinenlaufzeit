@@ -11,6 +11,9 @@ Verfahren in dieser Reihenfolge (das erste, das greift, wird verwendet):
    Satzanzahl (grob, weil Sätze unterschiedlich lange dauern).
 
 Alle Zeiten sind reine Laufzeit (Zustand LÄUFT); künftige Stopps kann niemand vorhersehen.
+
+Ein Programm ist sein Name, nicht sein Speicherort: Läufe einer Kopie in einem anderen Ordner
+(``…\21053 …\26-21051-02-01.h``) zählen wie Läufe des Originals.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from statistics import median
 from typing import Any
 
 from .db import Database
+from .nc_program import call_name
 
 REFERENCE_RUNS = 5  # so viele frühere Läufe gehen in die typische Laufzeit ein
 MIN_BLOCK_PROGRESS = 0.05  # darunter ist die Hochrechnung aus Satznummern zu unsicher
@@ -63,8 +67,10 @@ class Forecaster:
         self._block_anchor: tuple[float, float] | None = None
 
     def invalidate(self, program: str | None) -> None:
-        """Nach einem abgeschlossenen Lauf neu berechnen."""
-        self._refs.pop(program, None)
+        """Nach einem abgeschlossenen Lauf neu berechnen – auch für Kopien gleichen Namens."""
+        name = call_name(program) if program else None
+        for key in [k for k in self._refs if k == program or (name and k and call_name(k) == name)]:
+            self._refs.pop(key, None)
 
     def typical_run_s(self, program: str | None) -> float | None:
         """Übliche reine Laufzeit eines Programms (Median der letzten fertigen Läufe); None = unbekannt."""
@@ -79,7 +85,10 @@ class Forecaster:
     def _load_reference(self, program: str | None) -> _Reference | None:
         if program is None:
             return None
-        runs = [r for r in self._db.reference_runs(self._machine_id, program, REFERENCE_RUNS) if r["run_s"] > 0]
+        # Läufe dieses Programms in jedem Ordner (gleicher Name)
+        name = call_name(program)
+        paths = {program, *(p for p in self._db.run_programs(self._machine_id) if call_name(p) == name)}
+        runs = [r for r in self._db.reference_runs(self._machine_id, sorted(paths), REFERENCE_RUNS) if r["run_s"] > 0]
         if not runs:
             return None
         samples: list[Sample] = []
@@ -87,6 +96,9 @@ class Forecaster:
         for run in runs:  # neuester Lauf mit aufgezeichnetem Satzverlauf
             samples = self._db.run_progress(run["id"])
             if samples:
+                if run["program"] != program:
+                    # Satzverlauf einer Kopie: ihre Sätze gelten für dieses Programm
+                    samples = [(t, program if p == run["program"] else p, line) for t, p, line in samples]
                 profile_run_s = run["run_s"]
                 break
         return _Reference(median(r["run_s"] for r in runs), len(runs), samples, profile_run_s)

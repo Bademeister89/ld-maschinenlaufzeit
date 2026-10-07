@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .db import Database
+from .nc_program import call_name
 from .state import STORED_STATES, MachineState
 
 NO_DATA = "NO_DATA"
@@ -101,15 +102,17 @@ def summarize(
 
 
 def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float) -> list[dict[str, Any]]:
-    """Kennzahlen je (Maschine, Programm): Lauf-/Stoppzeit im Zeitraum, Anzahl Läufe, Ø-Zeiten."""
+    """Kennzahlen je (Maschine, Programm): Lauf-/Stoppzeit im Zeitraum, Anzahl Läufe, Ø-Zeiten.
+    Ein Programm ist sein Name: Kopien in anderen Ordnern zählen zur selben Zeile (``paths``)."""
     rows: dict[tuple[str, str], dict[str, Any]] = {}
 
     def row(mid: str, program: str) -> dict[str, Any]:
-        return rows.setdefault(
-            (mid, program),
+        r = rows.setdefault(
+            (mid, call_name(program)),
             {
                 "machine_id": mid,
                 "program": program,
+                "paths": set(),
                 "running_s": 0.0,
                 "stopped_s": 0.0,
                 "runs": 0,
@@ -119,6 +122,8 @@ def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float
                 "last_run": None,
             },
         )
+        r["paths"].add(program)
+        return r
 
     for iv in intervals:
         if not iv["program"] or iv["run_id"] is None:
@@ -131,8 +136,8 @@ def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float
     for run in db.runs(t0, t1):
         if not run["program"] or not (t0 <= run["started_at"] < t1):
             continue
-        k = (run["machine_id"], run["program"])
-        r = row(*k)
+        r = row(run["machine_id"], run["program"])
+        k = (run["machine_id"], call_name(run["program"]))
         r["runs"] += 1
         r["last_run"] = max(r["last_run"] or 0, run["started_at"])
         if run["result"] == "finished":
@@ -146,7 +151,10 @@ def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float
         rows[k]["avg_total_s"] = sum(v[1] for v in values) / len(values)
 
     blocks = db.program_blocks()
-    for k, r in rows.items():
-        r["blocks"] = blocks.get(k)
+    by_name = {(mid, call_name(path)): count for (mid, path), count in blocks.items()}
+    for r in rows.values():
+        r["paths"] = sorted(r["paths"])
+        # Satzanzahl der Datei; eine Kopie, die noch nie gelesen wurde, hat die des gleichnamigen Programms
+        r["blocks"] = blocks.get((r["machine_id"], r["program"])) or by_name.get((r["machine_id"], call_name(r["program"])))
 
     return sorted(rows.values(), key=lambda r: (-r["running_s"], r["machine_id"], r["program"]))

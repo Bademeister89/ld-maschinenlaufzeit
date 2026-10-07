@@ -44,6 +44,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .db import Database
+from .nc_program import call_name
 from .state import MachineState
 
 _CODE = re.compile(
@@ -235,14 +236,17 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         return None
 
     runs = db.order_runs(key)
+    # Ein Programm ist sein Name: Kopien in anderen Ordnern (z. B. im Ordner eines anderen Auftrags)
+    # zählen zur selben Zeile; ``paths`` nennt alle Speicherorte
     programs: dict[str, dict[str, Any]] = {}
 
     def program_row(path: str) -> dict[str, Any]:
         code = parse_program(path)
-        return programs.setdefault(
-            path,
+        row = programs.setdefault(
+            call_name(path),
             {
                 "program": path,
+                "paths": set(),
                 "name": code.name if code else path,
                 "setup": code.setup if code else 0,
                 "number": code.program if code else 0,
@@ -256,6 +260,8 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
                 "machines": set(),
             },
         )
+        row["paths"].add(path)
+        return row
 
     for r in db.order_program_totals(key, RUN_TIME_STATES):
         row = program_row(r["program"])
@@ -271,15 +277,16 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         if run["result"] == "finished":
             row["finished"] += 1
             if run["start_observed"] and run["run_s"] > 0:
-                cycles[run["program"]].append(run["run_s"])
-    for path, values in cycles.items():
-        programs[path]["avg_run_s"] = sum(values) / len(values)
-        programs[path]["median_run_s"] = median(values)
+                cycles[call_name(run["program"])].append(run["run_s"])
+    for name, values in cycles.items():
+        programs[name]["avg_run_s"] = sum(values) / len(values)
+        programs[name]["median_run_s"] = median(values)
 
     # Aufspannungen je Version (andere Ausführung des Teils): (Version, Aufspannung) → Aufspannung
     setups: dict[tuple[str, int], dict[str, Any]] = {}
     for row in sorted(programs.values(), key=lambda r: (r["setup"], r["number"], r["name"])):
         row["machines"] = sorted(row["machines"])
+        row["paths"] = sorted(row["paths"])
         setup = setups.setdefault(
             (row["version"], row["setup"]),
             # Vorrichtungsbau (Spannung 08/09) gibt es nur bei Aufträgen, nicht bei Felgen

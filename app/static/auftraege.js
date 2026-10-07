@@ -11,6 +11,8 @@ import {
   legend,
   loadMeta,
   machineName,
+  programCell,
+  programPaths,
   resultLabel,
   send,
   shrinkImage,
@@ -235,7 +237,7 @@ function versionBlocks(d, o) {
 
 function setupCard(setup, o) {
   const columns = [
-    { label: "Programm", value: (p) => p.name, title: (p) => p.program, cls: "wrap" },
+    { label: "Programm", value: (p) => programCell(p.name, p.paths), title: programPaths, cls: "wrap" },
     { label: "Maschinen", value: (p) => p.machines.map(machineName).join(", ") || "—" },
     { label: "Läufe", value: (p) => String(p.runs), cls: "r" },
     { label: "Fertig", value: (p) => String(p.finished), cls: "r" },

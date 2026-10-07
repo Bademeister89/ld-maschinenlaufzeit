@@ -264,6 +264,14 @@ export function fmtDay(isoDate) {
 
 export const baseName = (path) => (path ? path.split(/[\\/]/).pop() : null);
 
+/** Programmname, und liegt dasselbe Programm in mehreren Ordnern, der Hinweis „· 2 Ordner“
+ *  (die Pfade stehen im Tooltip der Zelle, siehe ``programPaths``). */
+export function programCell(name, paths) {
+  if (!paths || paths.length < 2) return name;
+  return el("span", {}, name, el("span", { class: "muted", text: ` · ${paths.length} Ordner` }));
+}
+export const programPaths = (p) => (p.paths?.length ? p.paths : [p.program]).join("\n");
+
 export function startOfDay(date = new Date()) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);

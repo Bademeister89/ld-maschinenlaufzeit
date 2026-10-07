@@ -75,6 +75,24 @@ def test_profile_forecast_uses_block_history(db, make_collector):
     assert f["eta"] == pytest.approx(2541 + f["remaining_s"])
 
 
+def test_copy_in_another_folder_uses_the_history_of_the_original(db, make_collector):
+    """DMU 70, 7.10.: 26-21051-02-01.h lief aus dem Ordner von 21053 – eine Kopie des Programms aus
+    dem Ordner von 21051. Gleicher Name = gleiches Programm, also auch dieselbe Prognose."""
+    original = "TNC:\\Programme\\21051 Kupplungsdeckel\\26-21051-02-01.h"
+    copy = "TNC:\\Programme\\21053 abdeckung\\26-21051-02-01.h"
+    c = make_collector()
+    reference_run(c, 0, PROFILE, original)
+    feed(c, (2000, snap("IDLE", copy)), (2001, snap("STARTED", copy, line_no=1, current_program=copy)))
+    c.process(snap("STARTED", copy, line_no=900, current_program=copy), 2541)
+    f = c.live()["forecast"]
+    assert (f["method"], f["basis_runs"]) == ("profile", 1)  # Satzverlauf des Originals
+    assert f["progress"] == pytest.approx(0.9, abs=0.02)
+    # Ein fertiger Lauf der Kopie zählt umgekehrt auch für das Original
+    c.process(snap("FINISHED", copy), 2602)
+    feed(c, (3000, snap("IDLE", original)), (3001, snap("STARTED", original, line_no=1, current_program=original)))
+    assert c.live()["forecast"]["basis_runs"] == 2
+
+
 def test_profile_forecast_adapts_to_slower_pace(db, make_collector):
     c = make_collector()
     reference_run(c, 0, PROFILE)
