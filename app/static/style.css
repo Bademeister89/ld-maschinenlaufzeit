@@ -1024,6 +1024,8 @@ tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 v
 .plan-form-label { font-size: 13px; color: var(--ink-2); }
 .plan-form .plan-program { flex: 1 1 180px; max-width: 240px; }
 .plan-form .plan-time { flex: 0 1 130px; }
+/* Löschen im Auftrag */
+.setup-delete { margin-left: auto; }
 @media (max-width: 760px) {
   .order-top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "info" "figure"; }
   .order-figure { max-width: 420px; }

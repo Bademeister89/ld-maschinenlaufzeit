@@ -150,6 +150,11 @@ class OrderImages:
             self.db.set_order_image(key, None)
             self._unlink(order["image"])
 
+    def remove_files(self, image: str | None) -> None:
+        """Dateien eines Bildes löschen, dessen Auftrag es nicht mehr gibt (Auftrag gelöscht)."""
+        with self._lock:
+            self._unlink(image)
+
     def _unlink(self, image: str | None) -> None:
         if not image or Path(image).name != image:
             return

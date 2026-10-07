@@ -447,6 +447,105 @@ def test_deleted_run_is_not_resumed(db, make_collector):
     assert not c._ended
 
 
+# --- Programm, Aufspannung, ganzen Auftrag löschen ---------------------------------------
+
+
+def finish_running(client):
+    """Den laufenden Lauf von 26-21055-01-02 aus der Fixture beenden."""
+    feed(client.app.state.ctx.collectors["m1"], (2000, snap("FINISHED", P12)))
+
+
+def detail_programs(client, key="21055"):
+    return sorted(p["call_name"] for s in client.get(f"/api/orders/{key}").json()["setups"] for p in s["programs"])
+
+
+def test_delete_program_removes_runs_and_plan(client):
+    db = client.app.state.ctx.db
+    assert client.put("/api/orders/21055/plans", json={"program": "26-21055-02-01", "time": "1:30"}).status_code == 200
+    detail = client.get("/api/orders/21055").json()
+    rows = {p["call_name"]: p for s in detail["setups"] for p in s["programs"]}
+    assert (rows["26-21055-01-01"]["open"], rows["26-21055-01-02"]["open"]) == (False, True)
+    assert [s["open"] for s in detail["setups"]] == [True, False]
+
+    r = client.delete("/api/orders/21055/programs/26-21055-01-01")
+    assert (r.status_code, r.json()) == (200, {"runs": 1, "plans": 0})
+    assert detail_programs(client) == ["26-21055-01-02", "26-21055-02-01"]
+    [event] = [e for e in db.events(0, 1e10) if e["type"] == "run_deleted"]
+    assert (event["payload"]["program"], event["payload"]["reason"]) == (P11, "Programm 26-21055-01-01 gelöscht")
+
+    # Nur Planzeit, noch nie gelaufen
+    assert client.delete("/api/orders/21055/programs/26-21055-02-01").json() == {"runs": 0, "plans": 1}
+    assert db.plans_of_order("21055") == []
+    assert detail_programs(client) == ["26-21055-01-02"]
+
+    r = client.delete("/api/orders/21055/programs/26-21055-01-02")  # läuft noch
+    assert r.status_code == 409 and "läuft noch" in r.json()["detail"]
+    assert client.delete("/api/orders/21055/programs/26-21055-09-09").status_code == 404
+    assert client.delete("/api/orders/4711/programs/26-21055-01-02").status_code == 404
+    assert len(db.order_runs("21055")) == 1
+
+
+def test_delete_rim_program_with_suffix(client):
+    """Felgenprogramm mit Zusatz: Leerzeichen in der Adresse, Groß-/Kleinschreibung egal."""
+    db = client.app.state.ctx.db
+    db.ensure_order("10101018", 0, "10101018", 0, kind="rim")
+    for program in ("10101018-01", "10101018-01 tasche"):
+        client.put("/api/orders/10101018/plans", json={"program": program, "time": "0:20"})
+    assert client.delete("/api/orders/10101018/programs/10101018-01%20tasche").json() == {"runs": 0, "plans": 1}
+    assert detail_programs(client, "10101018") == ["10101018-01"]
+
+
+def test_delete_setup_of_a_version(client):
+    db = client.app.state.ctx.db
+    for program in ("26-21055-02-01", "26-21055V1-01-01", "26-21055V1-02-01"):
+        client.put("/api/orders/21055/plans", json={"program": program, "time": "1"})
+    r = client.delete("/api/orders/21055/setups/1")  # 01-02 läuft noch: nichts löschen
+    assert r.status_code == 409
+    assert len(db.order_runs("21055")) == 2
+
+    assert client.delete("/api/orders/21055/setups/1", params={"version": "v1"}).json() == {"runs": 0, "plans": 1}
+    assert detail_programs(client) == ["26-21055-01-01", "26-21055-01-02", "26-21055-02-01", "26-21055V1-02-01"]
+
+    finish_running(client)
+    assert client.delete("/api/orders/21055/setups/1").json() == {"runs": 2, "plans": 0}
+    assert detail_programs(client) == ["26-21055-02-01", "26-21055V1-02-01"]
+    assert client.get("/api/orders/21055").json()["totals"]["running_s"] == 0
+    assert client.delete("/api/orders/21055/setups/1").status_code == 404
+    assert client.delete("/api/orders/21055/setups/1", params={"version": "X1"}).status_code == 422
+
+
+def test_delete_order_removes_everything_but_machine_time(client):
+    ctx = client.app.state.ctx
+    db = ctx.db
+    machine_running = client.get("/api/stats", params={"from": 0}).json()["machines"]["m1"]["totals"]["RUNNING"]
+    client.put("/api/orders/21055/plans", json={"program": "26-21055-02-01", "time": "1"})
+    ctx.order_images.save("21055", b"\xff\xd8\xffbild", b"\xff\xd8\xffvorschau")
+    image = db.order("21055")["image"]
+    assert client.delete("/api/orders/21055").status_code == 409  # 01-02 läuft noch
+    assert db.order("21055") is not None
+
+    finish_running(client)
+    r = client.delete("/api/orders/21055")
+    assert (r.status_code, r.json()) == (200, {"runs": 2, "plans": 1})
+    assert client.get("/api/orders/21055").status_code == 404
+    assert client.get("/api/orders").json()["orders"] == []
+    assert db.plans_of_order("21055") == [] and db.order_runs("21055") == []
+    assert ctx.order_images.path(image) is None and ctx.order_images.path(image, "thumb") is None
+    stats = client.get("/api/stats", params={"from": 0}).json()
+    assert stats["machines"]["m1"]["totals"]["RUNNING"] == pytest.approx(machine_running + 670)
+    assert len([e for e in db.events(0, 1e10) if e["type"] == "run_deleted"]) == 2
+
+    # Das Nachtragen beim Start legt ihn nicht wieder an …
+    orders.backfill(db)
+    assert db.order("21055") is None
+    # … aber ein angewähltes Programm: neu, ohne die gelöschten Läufe
+    feed(ctx.collectors["m1"], (3000, snap("IDLE", P11)))
+    assert db.order("21055") is not None
+    detail = client.get("/api/orders/21055").json()
+    assert (detail["runs"], detail["setups"], detail["order"]["title"]) == ([], [], "")
+    assert client.delete("/api/orders/4711").status_code == 404
+
+
 DAY = 86_400
 
 

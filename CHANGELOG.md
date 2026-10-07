@@ -10,6 +10,24 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.20.0] – 2026-10-07
+
+### Neu
+- **Programm, Aufspannung oder ganzen Auftrag löschen** (Tab „Aufträge“), z. B. nach dem Import
+  einer falsch benannten CAM-Doku oder für Testprogramme.
+  - **Programm:** „Löschen“ am Ende jeder Programmzeile. Gelöscht werden alle Läufe des Programms
+    in diesem Auftrag, gleich aus welchem Ordner, und seine Planzeit.
+  - **Aufspannung:** „Aufspannung löschen“ (bei Felgen „Spannung löschen“) im Kopf der Karte, mit
+    allen Programmen. Bei Versionen nur die Aufspannung dieser Version.
+  - **Auftrag:** „Auftrag löschen“ bzw. „Felge löschen“ neben „Abschließen“. Gelöscht werden
+    Läufe, Planzeiten, Bezeichnung und Bild.
+  - Vor dem Löschen fragt die App nach und nennt, was gelöscht wird. Rückgängig machen geht nicht.
+  - Wie beim einzelnen Lauf bleibt die Laufzeit der Maschine in der Auswertung erhalten. Jeder
+    gelöschte Lauf steht als Ereignis `run_deleted` in der Datenbank.
+  - Solange ein Lauf noch nicht beendet ist, steht statt des Knopfs „läuft“.
+  - Läuft ein Programm später wieder oder ist es noch angewählt, wird es neu erfasst. Ein
+    gelöschter Auftrag entsteht dann neu, ohne die gelöschten Daten.
+
 ## [1.19.0] – 2026-10-07
 
 ### Neu

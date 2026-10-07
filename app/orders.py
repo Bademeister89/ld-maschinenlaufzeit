@@ -230,6 +230,12 @@ def list_orders(db: Database, status: str = "all") -> list[dict[str, Any]]:
     return sorted(result, key=lambda r: -(r["last_activity"] or r["created_at"]))
 
 
+def setup_of(path: str) -> tuple[str, int]:
+    """(Version, Aufspannung) eines Programms, so wie das Auftragsdetail gruppiert."""
+    code = parse_program(path)
+    return (code.version, code.setup) if code else ("", 0)
+
+
 def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     order = db.order(key)
     if order is None:
@@ -247,6 +253,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             call_name(path),
             {
                 "program": path,
+                "call_name": call_name(path),  # Schlüssel der Zeile (zum Löschen)
                 "paths": set(),
                 "name": code.name if code else path,
                 "setup": code.setup if code else 0,
@@ -261,6 +268,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
                 "machines": set(),
                 "plan_s": None,  # CAM-Planzeit (Tebis-Doku oder von Hand)
                 "plan_source": None,
+                "open": False,  # ein Lauf ist noch nicht beendet
             },
         )
         if located:
@@ -278,6 +286,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         row["runs"] += 1
         row["last_run"] = max(row["last_run"] or 0, run["started_at"])
         row["machines"].add(run["machine_id"])
+        row["open"] = row["open"] or run["ended_at"] is None
         if run["result"] == "finished":
             row["finished"] += 1
             if run["start_observed"] and run["run_s"] > 0:
@@ -302,9 +311,10 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
              "fixture": order["kind"] == "order" and row["setup"] in FIXTURE_SETUPS,
              **_empty_totals(), "runs": 0,
              "finished": 0, "part_run_s": 0.0, "part_complete": True, "plan_s": 0.0, "plan_complete": True,
-             "programs": []},
+             "open": False, "programs": []},
         )
         setup["programs"].append(row)
+        setup["open"] = setup["open"] or row["open"]
         setup["running_s"] += row["running_s"]
         setup["stopped_s"] += row["stopped_s"]
         setup["runs"] += row["runs"]

@@ -313,6 +313,20 @@ zugeordnet, z. B. `26-21055-01-01`:
       nicht.
     - Was gelöscht wurde, steht als Ereignis `run_deleted` in der Datenbank und in der
       Diagnose-Datei.
+  - **Programm, Aufspannung oder ganzen Auftrag löschen**, z. B. nach dem Import einer falsch
+    benannten CAM-Doku oder für Testprogramme:
+    - **Programm:** „Löschen“ am Ende der Programmzeile. Gelöscht werden alle Läufe des Programms in
+      diesem Auftrag (gleich aus welchem Ordner) und seine Planzeit.
+    - **Aufspannung:** „Aufspannung löschen“ (Felgen: „Spannung löschen“) im Kopf der Karte, mit
+      allen ihren Programmen. Bei Versionen nur die Aufspannung dieser Version.
+    - **Auftrag:** „Auftrag löschen“ bzw. „Felge löschen“ oben neben „Abschließen“. Gelöscht werden
+      Läufe, Planzeiten, Bezeichnung und Bild.
+    - Es gilt dasselbe wie beim einzelnen Lauf: Die App fragt vorher nach, die Laufzeit der Maschine
+      bleibt in der Auswertung, jeder Lauf wird als `run_deleted` festgehalten, und rückgängig
+      machen geht nicht.
+    - Solange ein Lauf noch nicht beendet ist, steht statt des Knopfs „läuft“.
+    - Läuft ein Programm später wieder oder ist es an einer Maschine noch angewählt, wird es neu
+      erfasst. Ein gelöschter Auftrag entsteht dann neu, ohne die gelöschten Daten.
 - **Bild je Auftrag** (fertiges Bauteil):
   - Am PC im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“.
   - **Aus der Zwischenablage:** ein Bild kopieren (z. B. Screenshot mit Win+Umschalt+S oder
@@ -362,6 +376,8 @@ Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die 
   - Programme ohne Auftrags- oder Felgennummer werden übergangen und in der Meldung genannt.
   - Ein erneuter Import, z. B. nach einer Änderung im CAM, überschreibt die Planzeiten dieser
     Programme. Eine schon vorhandene Bezeichnung bleibt.
+  - War die Doku falsch benannt, lassen sich die angelegten Programme, Aufspannungen oder der ganze
+    Auftrag im Detail wieder löschen.
   - Die PDF selbst speichert die App nicht, nur den Dateinamen als Herkunft. Höchstens 10 MB je Datei.
   - Läuft ein vorab angelegter Auftrag 7 Tage nicht an, schließt die App ihn wie gewohnt. Beim ersten
     Lauf öffnet er sich wieder, die Planzeiten bleiben.
@@ -579,6 +595,9 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `POST /api/orders/import-cam` | Tebis-Doku importieren: PDF als Rumpf, Kopfzeile `X-File-Name` (URL-kodiert). Legt Aufträge an und übernimmt die Planzeiten |
 | `PUT /api/orders/{key}/plans` | Planzeit von Hand: `{"program": "26-21053-02-01", "time": "4,5"}`, leere Zeit entfernt sie |
 | `DELETE /api/orders/{key}/runs/{id}` | Beendeten Lauf aus dem Auftrag löschen (Zeit bleibt Maschinenzeit) |
+| `DELETE /api/orders/{key}/programs/{name}` | Programm löschen (alle Läufe und Planzeit); `name` wie `26-21053-02-01` |
+| `DELETE /api/orders/{key}/setups/{nr}?version=` | Aufspannung löschen (alle Programme); `version` z. B. `V2`, leer = Grundversion |
+| `DELETE /api/orders/{key}` | Auftrag bzw. Felge komplett löschen (Läufe, Planzeiten, Bezeichnung, Bild) |
 | `GET /api/orders/{key}/image?size=full\|thumb` | Bild des Auftrags (großes Bild bzw. Vorschaubild) |
 | `PUT/DELETE /api/orders/{key}/image` | Bild setzen/ersetzen bzw. entfernen. Upload: großes Bild und Vorschaubild (beide JPEG) hintereinander in einem Rumpf, Kopfzeile `X-Image-Length` = Länge des großen Bildes |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |

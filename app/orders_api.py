@@ -1,5 +1,5 @@
-"""API für den Tab „Aufträge“: Liste, Detail, Bezeichnung/Status ändern, Lauf löschen, Bild, CSV-Export,
-CAM-Planzeiten (Import der Tebis-Doku als PDF, Planzeit von Hand)."""
+"""API für den Tab „Aufträge“: Liste, Detail, Bezeichnung/Status ändern, Bild, CSV-Export, Löschen
+(Lauf, Programm, Aufspannung, ganzer Auftrag), CAM-Planzeiten (Import der Tebis-Doku als PDF, von Hand)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import csv
 import io
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
@@ -111,8 +112,17 @@ def delete_run(request: Request, key: str, run_id: int) -> Response:
         raise HTTPException(404, f"Lauf {run_id} gehört nicht zu Auftrag {key}.")
     if run["ended_at"] is None:
         raise HTTPException(409, "Der Lauf läuft noch. Löschen geht erst, wenn er beendet ist.")
+    with ctx.db.transaction():
+        _discard_run(ctx, run, key, time.time())
+    _forget_run(ctx, run)
+    log.info("Auftrag %s: Lauf %d (%s) gelöscht", key, run_id, run["program"])
+    return Response(status_code=204)
+
+
+def _discard_run(ctx: AppContext, run: dict[str, Any], key: str, now: float, reason: str | None = None) -> None:
+    """Lauf löschen und als Ereignis ``run_deleted`` festhalten (in einer Transaktion aufrufen)."""
     payload = {
-        "run": run_id,
+        "run": run["id"],
         "order": key,
         "program": run["program"],
         "started_at": run["started_at"],
@@ -121,14 +131,104 @@ def delete_run(request: Request, key: str, run_id: int) -> Response:
         "run_s": round(run["run_s"], 1),
         "stop_s": round(run["stop_s"], 1),
     }
-    with ctx.db.transaction():
-        ctx.db.discard_run(run_id)
-        ctx.db.add_event(run["machine_id"], time.time(), "run_deleted", payload)
+    if reason:
+        payload["reason"] = reason
+    ctx.db.discard_run(run["id"])
+    ctx.db.add_event(run["machine_id"], now, "run_deleted", payload)
+
+
+def _forget_run(ctx: AppContext, run: dict[str, Any]) -> None:
     collector = ctx.collectors.get(run["machine_id"])
     if collector is not None:
-        collector.forget_run(run_id, run["program"])
-    log.info("Auftrag %s: Lauf %d (%s) gelöscht", key, run_id, run["program"])
-    return Response(status_code=204)
+        collector.forget_run(run["id"], run["program"])
+
+
+# --- Programm, Aufspannung oder ganzen Auftrag löschen ----------------------------------------
+
+
+def _delete_programs(
+    ctx: AppContext, key: str, match: Callable[[str], bool], reason: str, finish: Callable[[], None] | None = None
+) -> dict[str, int]:
+    """Läufe und Planzeiten der Programme des Auftrags löschen, für die ``match(Programm)`` gilt.
+
+    Wie beim einzelnen Lauf bleibt die Zeit als Maschinenzeit erhalten. Ist ein Lauf noch nicht
+    beendet, wird nichts gelöscht (409). ``finish`` läuft in derselben Transaktion."""
+    runs = [r for r in ctx.db.order_runs(key) if match(r["program"])]
+    plans = [p for p in ctx.db.plans_of_order(key) if match(p["program"])]
+    running = sorted({call_name(r["program"]) for r in runs if r["ended_at"] is None})
+    if running:
+        raise HTTPException(
+            409, f"{', '.join(running)} läuft noch. Löschen geht erst, wenn der Lauf beendet ist."
+        )
+    now = time.time()
+    with ctx.db.transaction():
+        for run in runs:
+            _discard_run(ctx, run, key, now, reason)
+        for plan in plans:
+            ctx.db.delete_plan(plan["name"])
+        if finish is not None:
+            finish()
+    for run in runs:
+        _forget_run(ctx, run)
+    if plans:
+        _forget_plans(ctx)
+    return {"runs": len(runs), "plans": len(plans)}
+
+
+@router.delete("/{key}/programs/{name}")
+def delete_program(request: Request, key: str, name: str) -> dict[str, int]:
+    """Ein Programm aus dem Auftrag löschen: alle seine Läufe (gleich in welchem Ordner) und seine
+    Planzeit. ``name`` ist ``call_name`` der Programmzeile, z. B. ``26-21053-02-01``."""
+    ctx = _ctx(request)
+    if ctx.db.order(key) is None:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    name = name.strip().upper()
+    if not any(call_name(p) == name for p in _order_programs(ctx, key)):
+        raise HTTPException(404, f"Programm {name} gehört nicht zu Auftrag {key}.")
+    result = _delete_programs(ctx, key, lambda p: call_name(p) == name, f"Programm {name} gelöscht")
+    log.info("Auftrag %s: Programm %s gelöscht (%d Läufe, %d Planzeiten)", key, name, result["runs"], result["plans"])
+    return result
+
+
+@router.delete("/{key}/setups/{setup}")
+def delete_setup(
+    request: Request, key: str, setup: int, version: str = Query("", pattern=r"^([vV]\d{1,2})?$")
+) -> dict[str, int]:
+    """Eine Aufspannung (bei Felgen: Spannung) löschen: alle ihre Programme mit Läufen und
+    Planzeiten. ``version`` (z. B. ``V2``) wählt die Aufspannung einer Version, leer = Grundversion."""
+    ctx = _ctx(request)
+    if ctx.db.order(key) is None:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    wanted = (version.upper(), setup)
+    what = f"Aufspannung {setup}" + (f" {wanted[0]}" if wanted[0] else "")
+    if not any(orders.setup_of(p) == wanted for p in _order_programs(ctx, key)):
+        raise HTTPException(404, f"{what} gehört nicht zu Auftrag {key}.")
+    result = _delete_programs(ctx, key, lambda p: orders.setup_of(p) == wanted, f"{what} gelöscht")
+    log.info("Auftrag %s: %s gelöscht (%d Läufe, %d Planzeiten)", key, what, result["runs"], result["plans"])
+    return result
+
+
+@router.delete("/{key}")
+def delete_order(request: Request, key: str) -> dict[str, int]:
+    """Auftrag bzw. Felge komplett löschen: Läufe, Planzeiten, Bezeichnung und Bild.
+
+    Ist ein Programm noch angewählt oder läuft es wieder, legt der Collector den Auftrag neu an,
+    ohne die gelöschten Daten."""
+    ctx = _ctx(request)
+    order = ctx.db.order(key)
+    if order is None:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    result = _delete_programs(
+        ctx, key, lambda p: True, f"Auftrag {key} gelöscht", finish=lambda: ctx.db.delete_order(key)
+    )
+    ctx.order_images.remove_files(order["image"])
+    log.info("Auftrag %s gelöscht (%d Läufe, %d Planzeiten)", key, result["runs"], result["plans"])
+    return result
+
+
+def _order_programs(ctx: AppContext, key: str) -> set[str]:
+    """Programme des Auftrags: aus Läufen und Planzeiten."""
+    return {r["program"] for r in ctx.db.order_runs(key)} | {p["program"] for p in ctx.db.plans_of_order(key)}
 
 
 # --- CAM-Planzeiten (Tebis-Doku oder von Hand) ------------------------------------------------

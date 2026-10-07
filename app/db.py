@@ -605,6 +605,15 @@ class Database:
                     (t, key),
                 )
 
+    def delete_order(self, key: str) -> None:
+        """Auftrag samt Planzeiten entfernen; seine Läufe vorher mit ``discard_run`` löschen.
+
+        Die Zustandsabschnitte behalten den Auftragsschlüssel: Ohne Lauf zählen sie nirgends mit,
+        und das Nachtragen beim Start (``orders.backfill``) legt den Auftrag so nicht wieder an."""
+        with self.transaction():
+            self._execute("DELETE FROM program_plans WHERE order_key = ?", (key,))
+            self._execute("DELETE FROM orders WHERE key = ?", (key,))
+
     def set_order_image(self, key: str, image: str | None) -> None:
         self._execute("UPDATE orders SET image = ? WHERE key = ?", (image, key))
 

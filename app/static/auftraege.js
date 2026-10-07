@@ -356,6 +356,11 @@ function setupCard(setup, o) {
     { label: `Ø Laufzeit je ${partWord(o)}`, value: (p) => fmtDuration(p.avg_run_s), cls: "r" },
     { label: "Plan (CAM)", value: (p) => planCell(o, p), cls: "r" },
     { label: "Letzter Lauf", value: (p) => fmtDateTime(p.last_run), cls: "r" },
+    {
+      label: "",
+      value: (p) => deleteButton("Löschen", `Programm ${p.name} löschen`, p.open, () => deleteProgram(o, p)),
+      cls: "r",
+    },
   ];
   const spannung = String(setup.setup).padStart(2, "0");
   let partText;
@@ -373,9 +378,94 @@ function setupCard(setup, o) {
       { class: "section-head" },
       el("h2", { text: title }),
       el("span", { class: "muted", text: `${fmtHours(setup.running_s)} Laufzeit · ${setup.finished} fertige Läufe` }),
+      el(
+        "span",
+        { class: "setup-delete" },
+        deleteButton(
+          `${setup.fixture ? "Vorrichtung" : setupWord(o)} löschen`,
+          `${title}${setup.version ? ` (${versionName(setup.version)})` : ""} löschen`,
+          setup.open,
+          () => deleteSetup(o, setup, title),
+        ),
+      ),
     ),
     el("div", { class: "table-wrap" }, table(columns, setup.programs)),
     el("p", { class: "muted", style: { margin: "10px 0 0" }, text: partText }),
+  );
+}
+
+// --- Löschen: Programm, Aufspannung, ganzer Auftrag ------------------------------------------------
+
+const DELETE_NOTE =
+  "Die Laufzeit der Maschine in der Auswertung bleibt erhalten. Läuft ein Programm später wieder, wird es neu erfasst.\n\n" +
+  "Das lässt sich nicht rückgängig machen.";
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+/** Aufzählung wie „3 Programme, 5 Läufe, 2 Planzeiten“ (Programme nur, wenn angegeben; Nullen entfallen). */
+const countText = (programs, runs, plans) =>
+  [
+    programs != null ? plural(programs, "Programm", "Programme") : null,
+    runs ? plural(runs, "Lauf", "Läufe") : null,
+    plans ? plural(plans, "Planzeit", "Planzeiten") : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+const deleteName = (o) => `${isRim(o) ? `Felge ${o.key}` : `Auftrag ${o.number}`}${o.title ? ` (${o.title})` : ""}`;
+
+/** Löschen-Knopf; solange ein Lauf nicht beendet ist, nur der Hinweis „läuft“. */
+function deleteButton(label, ariaLabel, open, onclick) {
+  if (open) return el("span", { class: "muted", title: "Löschen geht erst, wenn der Lauf beendet ist", text: "läuft" });
+  return el("button", { type: "button", class: "btn small danger", "aria-label": ariaLabel, onclick, text: label });
+}
+
+async function deleteItems(path, question, done) {
+  if (!confirm(question)) return;
+  try {
+    await done(await send("DELETE", path));
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function deleteProgram(o, p) {
+  deleteItems(
+    `/api/orders/${encodeURIComponent(o.key)}/programs/${encodeURIComponent(p.call_name)}`,
+    `Programm ${p.name} aus ${deleteName(o)} löschen?\n\n` +
+      `Gelöscht werden: ${countText(null, p.runs, p.plan_s != null ? 1 : 0)}.\n\n${DELETE_NOTE}`,
+    refresh,
+  );
+}
+
+function deleteSetup(o, setup, title) {
+  const runs = setup.programs.reduce((n, p) => n + p.runs, 0);
+  const plans = setup.programs.filter((p) => p.plan_s != null).length;
+  const version = setup.version ? `?version=${encodeURIComponent(setup.version)}` : "";
+  deleteItems(
+    `/api/orders/${encodeURIComponent(o.key)}/setups/${setup.setup}${version}`,
+    `${title}${setup.version ? ` (${versionName(setup.version)})` : ""} aus ${deleteName(o)} löschen?\n\n` +
+      `Gelöscht werden: ${countText(setup.programs.length, runs, plans)}.\n\n${DELETE_NOTE}`,
+    refresh,
+  );
+}
+
+function deleteOrder(d) {
+  const o = d.order;
+  const programs = d.setups.flatMap((s) => s.programs);
+  const plans = programs.filter((p) => p.plan_s != null).length;
+  const it = isRim(o) ? "die Felge" : "den Auftrag";
+  deleteItems(
+    `/api/orders/${encodeURIComponent(o.key)}`,
+    `${deleteName(o)} komplett löschen?\n\n` +
+      `Gelöscht werden: ${countText(programs.length, d.runs.length, plans)}${o.title ? ", die Bezeichnung" : ""}` +
+      `${o.image_url ? ", das Bild" : ""}.\n\n` +
+      `Ist ein Programm noch an einer Maschine angewählt oder läuft es später wieder, legt die App ${it} neu an – ohne die gelöschten Daten. ` +
+      "Die Laufzeit der Maschine in der Auswertung bleibt erhalten.\n\nDas lässt sich nicht rückgängig machen.",
+    async (r) => {
+      state.selected = null;
+      syncUrl();
+      showNotice([`${deleteName(o)} gelöscht${r.runs || r.plans ? `: ${countText(null, r.runs, r.plans)}` : ""}.`], false);
+      await refresh();
+    },
   );
 }
 
@@ -634,6 +724,15 @@ function renderDetail(d) {
               o.status === "closed" ? "Wieder öffnen" : "Abschließen",
             ),
             el("a", { class: "btn", href: `/api/orders/${encodeURIComponent(o.key)}/export.csv`, download: true, text: "CSV Läufe" }),
+            el("button", {
+              type: "button",
+              class: "btn danger",
+              disabled: d.runs.some((r) => r.ended_at == null),
+              title: d.runs.some((r) => r.ended_at == null) ? "Löschen geht erst, wenn kein Lauf mehr läuft" : null,
+              "aria-label": `${deleteName(o)} löschen`,
+              onclick: () => deleteOrder(d),
+              text: `${isRim(o) ? "Felge" : "Auftrag"} löschen`,
+            }),
           ),
           el(
             "form",
