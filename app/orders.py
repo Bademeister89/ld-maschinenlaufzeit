@@ -11,10 +11,27 @@ angelegt, sobald ein passendes Programm an einer Maschine auftaucht. Gezählt wi
 der Programmdurchläufe (Laufzeit sowie Stopps/Fehler innerhalb der Läufe) – nicht die Zeit,
 in der ein Programm nur angewählt ist, sonst würde ein übers Wochenende angewähltes Programm
 dem Auftrag Tage gutschreiben.
+
+Läuft ``ORDER_IDLE_DAYS`` Tage lang kein Programm des Auftrags, wird er automatisch abgeschlossen
+(``close_idle``). Läuft er wieder an, öffnet er sich wieder.
+
+Felgen haben ein eigenes Schema ``BBDDBBZZ-SS[ Zusatz]``, z. B. ``10101018-01 tasche``:
+
+- ``10``  Bauart: 10 = einteilig, 11 = dreiteilig
+- ``10``  Design: 10 = 999, 20 = Z06 … (Namen pflegbar in der Konfiguration)
+- ``10``  Breite in Zoll: unter 20 ganze Zoll (10 = 10″), sonst Zehntel (85 = 8,5″)
+- ``18``  Durchmesser in Zoll (bis 30″)
+- ``01``  Spannung
+- Zusatz (``tasche``, ``einarm``, ``normal`` …): weiteres Programm derselben Spannung
+
+Jede Felge (die achtstellige Nummer) ist ein Eintrag wie ein Auftrag (Art ``rim``, Schlüssel
+``10101018``), ohne Jahr. Die Programme einer Spannung laufen nacheinander; die Ø-Zeit je Felge ist die
+Summe aller.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass
@@ -29,20 +46,31 @@ from .state import MachineState
 _CODE = re.compile(
     r"^(?P<year>\d{2})[-_](?P<order>\d{4,5}(?:[Vv]\d{1,2})?)[-_](?P<setup>\d{1,2})[-_](?P<program>\d{1,3})(?:$|\D)"
 )
+_RIM = re.compile(
+    r"^(?P<number>(?P<kind>1\d)(?P<design>\d{2})(?P<width>\d{2})(?P<diameter>\d{2}))[-_](?P<setup>\d{2})(?P<variant>\D.*)?$"
+)
+RIM_KINDS = {10: "einteilig", 11: "dreiteilig"}
+# Designs beim ersten Start (danach in der Konfiguration pflegbar)
+RIM_DESIGNS = {10: "999", 20: "Z06", 30: "EK 1", 40: "TrippleX", 50: "Hooligan", 60: "Stelth", 70: "458", 80: "Twister", 90: "Sonder"}
 RUN_TIME_STATES = (MachineState.RUNNING.value, MachineState.STOPPED.value, MachineState.ERROR.value)
 # Spannung 08 und 09 sind Vorrichtungsprogramme (Bau einer Vorrichtung): einmaliger Aufwand des
 # Auftrags, keine Bearbeitung je Teil – zählt zur Laufzeit, aber nicht zur Ø-Zeit je Teil
 FIXTURE_SETUPS = frozenset({8, 9})
+ORDER_IDLE_DAYS = 7  # so lange ohne Programmlauf, dann wird ein Auftrag automatisch abgeschlossen
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class ProgramCode:
-    key: str  # "26-21055" bzw. "26-21055V1"
-    year: int  # 2026
-    order: str  # "21055" bzw. "21055V1"
+    key: str  # "26-21055" bzw. "26-21055V1"; Felge: "10101018"
+    year: int  # 2026; Felge: 0
+    order: str  # "21055" bzw. "21055V1"; Felge: "10101018"
     setup: int  # 1
-    program: int  # 1
-    name: str  # "26-21055-01-01"
+    program: int  # 1; Felge: 0 (die Programme einer Spannung unterscheidet der Zusatz)
+    name: str  # "26-21055-01-01" bzw. "10101018-01 tasche"
+    kind: str = "order"  # "order" oder "rim"
+    variant: str = ""  # Felge: Zusatz hinter der Spannung ("tasche", "einarm" …)
 
     def public(self) -> dict[str, Any]:
         return asdict(self)
@@ -59,17 +87,57 @@ def parse_program(path: str | None) -> ProgramCode | None:
         return None
     name = program_name(path)
     match = _CODE.match(name)
-    if not match:
+    if match:
+        yy, order = match["year"], match["order"].upper()  # 21055v1 und 21055V1 sind derselbe Auftrag
+        return ProgramCode(
+            key=f"{yy}-{order}",
+            year=2000 + int(yy),
+            order=order,
+            setup=int(match["setup"]),
+            program=int(match["program"]),
+            name=name,
+        )
+    match = _RIM.match(name)
+    if match:
+        number = match["number"]
+        return ProgramCode(
+            key=number, year=0, order=number, setup=int(match["setup"]), program=0, name=name, kind="rim",
+            variant=(match["variant"] or "").strip(" -_"),
+        )
+    return None
+
+
+RIM_TENTHS_FROM = 20  # Breitenangabe darunter in ganzen Zoll (10 = 10″), ab hier in Zehntel (85 = 8,5″)
+
+
+def rim_width(code: int) -> float:
+    """Breite in Zoll aus zwei Ziffern: 10 → 10, 85 → 8,5."""
+    return float(code) if code < RIM_TENTHS_FROM else code / 10
+
+
+def _inch(value: float) -> str:
+    return f"{value:g}".replace(".", ",")
+
+
+def rim_info(key: str, designs: dict[int, str]) -> dict[str, Any] | None:
+    """Bauart, Design und Größe einer Felge aus ihrer Nummer, mit Klartext für die Anzeige
+    (``label`` z. B. "999 · einteilig · 10 × 18″")."""
+    if not re.fullmatch(r"1\d{7}", key):
         return None
-    yy, order = match["year"], match["order"].upper()  # 21055v1 und 21055V1 sind derselbe Auftrag
-    return ProgramCode(
-        key=f"{yy}-{order}",
-        year=2000 + int(yy),
-        order=order,
-        setup=int(match["setup"]),
-        program=int(match["program"]),
-        name=name,
-    )
+    kind, design, width, diameter = (int(key[i : i + 2]) for i in range(0, 8, 2))
+    design_name = designs.get(design) or f"Design {design:02d}"
+    kind_name = RIM_KINDS.get(kind, f"Bauart {kind}")
+    size = f"{_inch(rim_width(width))} × {diameter}″"
+    return {
+        "kind": kind,
+        "kind_name": kind_name,
+        "design": design,
+        "design_name": design_name,
+        "width": rim_width(width),
+        "diameter": diameter,
+        "size": size,
+        "label": f"{design_name} · {kind_name} · {size}",
+    }
 
 
 def backfill(db: Database) -> int:
@@ -80,9 +148,19 @@ def backfill(db: Database) -> int:
         if code is None:
             continue
         first_seen = db.assign_order(program, code.key)
-        db.ensure_order(code.key, code.year, code.order, first_seen)
+        db.ensure_order(code.key, code.year, code.order, first_seen, kind=code.kind)
         assigned += 1
     return assigned
+
+
+def close_idle(db: Database, now: float) -> list[str]:
+    """Aufträge abschließen, in denen seit ORDER_IDLE_DAYS kein Programm lief (und die auch nicht in
+    dieser Zeit von Hand wieder geöffnet wurden). Ein laufender oder gestoppter Lauf hält ihn offen."""
+    keys = db.idle_orders(now - ORDER_IDLE_DAYS * 86_400)
+    if keys:
+        db.close_orders_auto(keys, now)
+        log.info("Aufträge automatisch abgeschlossen (%d Tage ohne Programmlauf): %s", ORDER_IDLE_DAYS, ", ".join(keys))
+    return keys
 
 
 # --- Auswertung ------------------------------------------------------------------------
@@ -131,8 +209,10 @@ def list_orders(db: Database, status: str = "all") -> list[dict[str, Any]]:
         row["setups"].add(code.setup)
         row["programs"].add(code.name)
         row["machines"].add(r["machine_id"])
+    designs = db.rim_design_names()
     result = []
     for row in rows.values():
+        row["rim"] = rim_info(row["key"], designs) if row["kind"] == "rim" else None
         row["setups"] = sorted(row["setups"])
         row["programs"] = len(row["programs"])
         row["machines"] = sorted(row["machines"])
@@ -192,7 +272,9 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         row["machines"] = sorted(row["machines"])
         setup = setups.setdefault(
             row["setup"],
-            {"setup": row["setup"], "fixture": row["setup"] in FIXTURE_SETUPS, **_empty_totals(), "runs": 0,
+            # Vorrichtungsbau (Spannung 08/09) gibt es nur bei Aufträgen, nicht bei Felgen
+            {"setup": row["setup"], "fixture": order["kind"] == "order" and row["setup"] in FIXTURE_SETUPS,
+             **_empty_totals(), "runs": 0,
              "finished": 0, "part_run_s": 0.0, "part_complete": True, "programs": []},
         )
         setup["programs"].append(row)
@@ -218,6 +300,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     first = min((iv["start"] for iv in intervals), default=None)
     last = max((iv["end"] for iv in intervals), default=None)
 
+    order = {**order, "rim": rim_info(key, db.rim_design_names()) if order["kind"] == "rim" else None}
     return {
         "order": order,
         "totals": {

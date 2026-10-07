@@ -169,3 +169,36 @@ def delete_manufacturer(request: Request, manufacturer_id: int) -> Response:
         raise HTTPException(404, "Unbekannter Hersteller")
     db.delete_manufacturer(manufacturer_id)
     return Response(status_code=204)
+
+
+# --- Felgen-Designs ------------------------------------------------------------------------
+# Ziffern 3–4 der Felgennummer (z. B. 10 in 10101018) → Name des Designs (999, Z06 …)
+
+RIM_DESIGN_MAX = 40
+
+
+@router.get("/rim-designs")
+def list_rim_designs(request: Request) -> dict[str, Any]:
+    return {"designs": _ctx(request).db.rim_designs()}
+
+
+@router.put("/rim-designs/{code}")
+def set_rim_design(request: Request, code: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Design anlegen oder umbenennen."""
+    if not 0 <= code <= 99:
+        raise HTTPException(400, "Die Design-Nummer hat zwei Ziffern (00–99), z. B. 10 für 999.")
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Bitte einen Namen für das Design eintragen.")
+    if len(name) > RIM_DESIGN_MAX:
+        raise HTTPException(400, f"Der Name darf höchstens {RIM_DESIGN_MAX} Zeichen lang sein.")
+    db = _ctx(request).db
+    created = db.set_rim_design(code, name)
+    return {"code": code, "name": name, "created": created}
+
+
+@router.delete("/rim-designs/{code}", status_code=204)
+def delete_rim_design(request: Request, code: int) -> Response:
+    if not _ctx(request).db.delete_rim_design(code):
+        raise HTTPException(404, "Unbekanntes Design")
+    return Response(status_code=204)

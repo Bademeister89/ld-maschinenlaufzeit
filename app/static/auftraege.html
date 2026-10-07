@@ -37,8 +37,13 @@
         <button type="button" data-status="closed">Abgeschlossen</button>
         <button type="button" data-status="all">Alle</button>
       </div>
+      <div class="segmented" id="kind" role="group" aria-label="Art">
+        <button type="button" data-kind="all">Alle</button>
+        <button type="button" data-kind="order">Aufträge</button>
+        <button type="button" data-kind="rim">Felgen</button>
+      </div>
       <label class="field">Suche
-        <input type="search" id="search" placeholder="Auftragsnummer oder Bezeichnung" autocomplete="off">
+        <input type="search" id="search" placeholder="Auftrag, Felge, Design oder Bezeichnung" autocomplete="off">
       </label>
       <span class="spacer"></span>
       <span class="muted" id="count"></span>
@@ -49,7 +54,8 @@
         <h2>Aufträge</h2>
         <p class="muted">Werden automatisch angelegt, sobald ein Programm nach dem Schema
           <span class="num">JJ-Auftrag-Aufspannung-Programm</span> (z. B. 26-21055-01-01) an einer Maschine auftaucht.
-          Versionen wie 26-21055V1-01-01 sind eigene Aufträge.</p>
+          Versionen wie 26-21055V1-01-01 sind eigene Aufträge. Felgen (z. B. 10101018-01 = einteilig, Design 999,
+          10 × 18″, Spannung 1) stehen ebenfalls hier, je Felge ein Eintrag.</p>
       </div>
       <div class="table-wrap" id="orders"></div>
     </section>

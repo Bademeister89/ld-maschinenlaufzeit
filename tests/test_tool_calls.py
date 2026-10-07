@@ -192,11 +192,20 @@ def test_api_lists_calls(client):
     assert client.get("/api/tools/m1/109").json()["calls"] == 2
 
 
-def test_csv_has_calls_as_last_column(client):
+def test_csv_has_calls_and_total_runtime_as_last_columns(client):
     text = client.get("/api/tools/export.csv").content.decode("utf-8").lstrip("﻿")
     header, *rows = text.strip().split("\r\n")
-    assert header.split(";")[-1] == "Aufrufe"
-    assert {r.split(";")[1]: r.split(";")[-1] for r in rows} == {"T5": "2", "T7": "1", "T109": "2"}
+    assert header.split(";")[-2:] == ["Aufrufe", "Laufzeit gesamt (h)"]
+    # T109 dreimal je 60 s in der Spindel, T5 und T7 je 60 s (das letzte T5 läuft gerade erst)
+    assert {r.split(";")[1]: r.split(";")[-2:] for r in rows} == {
+        "T5": ["2", "0,02"], "T7": ["1", "0,02"], "T109": ["2", "0,05"],
+    }
+
+
+def test_total_runtime_is_not_reset(client):
+    client.post("/api/tools/m1/109/reset")
+    tool = client.get("/api/tools/m1/109").json()
+    assert (tool["used_s"], tool["total_s"]) == (0, 180)  # Zurücksetzen: nur die Standzeit beginnt neu
 
 
 # --- Werkzeugplätze: die meistgebrauchten Werkzeuge je Magazin ---------------------------------

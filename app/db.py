@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -83,7 +83,10 @@ CREATE TABLE IF NOT EXISTS orders (
     status     TEXT NOT NULL DEFAULT 'open',
     created_at REAL NOT NULL,
     closed_at  REAL,
-    image      TEXT
+    image      TEXT,
+    opened_at  REAL,
+    closed_auto INTEGER NOT NULL DEFAULT 0,
+    kind       TEXT NOT NULL DEFAULT 'order'
 );
 CREATE TABLE IF NOT EXISTS program_files (
     machine_id TEXT NOT NULL REFERENCES machines(id),
@@ -141,6 +144,10 @@ CREATE TABLE IF NOT EXISTS manufacturers (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
     created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rim_designs (
+    code       INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL
 );
 """
 
@@ -211,6 +218,21 @@ class Database:
         columns = {row["name"] for row in self._con.execute("PRAGMA table_info(orders)")}
         if "image" not in columns:
             self._con.execute("ALTER TABLE orders ADD COLUMN image TEXT")
+        # v11 → v12: Aufträge ohne Programmlauf schließen sich nach ORDER_IDLE_DAYS selbst. opened_at =
+        # zuletzt (wieder) geöffnet (sonst gilt created_at), closed_auto = automatisch abgeschlossen.
+        if "opened_at" not in columns:
+            self._con.execute("ALTER TABLE orders ADD COLUMN opened_at REAL")
+        if "closed_auto" not in columns:
+            self._con.execute("ALTER TABLE orders ADD COLUMN closed_auto INTEGER NOT NULL DEFAULT 0")
+        # Felgen (eigenes Nummernschema) sind Einträge der Art "rim"; ihre Design-Namen stehen in
+        # rim_designs, beim ersten Start mit der Liste aus orders.RIM_DESIGNS gefüllt
+        if "kind" not in columns:
+            self._con.execute("ALTER TABLE orders ADD COLUMN kind TEXT NOT NULL DEFAULT 'order'")
+        if self.get_meta("rim_designs_seeded") is None:
+            from .orders import RIM_DESIGNS
+
+            self._con.executemany("INSERT OR IGNORE INTO rim_designs(code, name) VALUES (?, ?)", RIM_DESIGNS.items())
+            self.set_meta("rim_designs_seeded", "1")
         # v8 → v9: Werkzeugaufrufe. Die Tabelle tool_calls kommt über SCHEMA. Nur bei einem Update
         # (Ereignisse vorhanden, tool_calls neu) trägt tools.backfill_calls die bisherigen Werkzeugwechsel
         # einmalig nach – eine Datenbank, die schon Aufrufe zählt, würde sonst doppelt zählen.
@@ -463,23 +485,28 @@ class Database:
 
     # --- Aufträge ------------------------------------------------------------------------
 
-    def ensure_order(self, key: str, year: int, number: str, t: float, reopen: bool = False) -> str | None:
-        """Auftrag anlegen, falls neu. Liefert "created", "reopened" oder None."""
+    def ensure_order(
+        self, key: str, year: int, number: str, t: float, reopen: bool = False, kind: str = "order"
+    ) -> str | None:
+        """Auftrag (bzw. Felge, ``kind="rim"``) anlegen, falls neu. Liefert "created", "reopened" oder None."""
         cur = self._execute(
-            "INSERT INTO orders(key, year, number, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO NOTHING",
-            (key, year, number, t),
+            "INSERT INTO orders(key, year, number, created_at, opened_at, kind) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(key) DO NOTHING",
+            (key, year, number, t, t, kind),
         )
         if cur.rowcount:
             return "created"
         if reopen:
             cur = self._execute(
-                "UPDATE orders SET status = 'open', closed_at = NULL WHERE key = ? AND status = 'closed'", (key,)
+                "UPDATE orders SET status = 'open', closed_at = NULL, closed_auto = 0, opened_at = ? "
+                "WHERE key = ? AND status = 'closed'",
+                (t, key),
             )
             if cur.rowcount:
                 return "reopened"
         return None
 
-    _ORDER_COLUMNS = "key, year, number, title, status, created_at, closed_at, image"
+    _ORDER_COLUMNS = "key, year, number, title, status, created_at, closed_at, image, opened_at, closed_auto, kind"
 
     def orders(self, status: str = "all") -> list[dict[str, Any]]:
         where, params = ("", ()) if status == "all" else ("WHERE status = ? ", (status,))
@@ -490,11 +517,34 @@ class Database:
         return rows[0] if rows else None
 
     def update_order(self, key: str, title: str, status: str, t: float) -> None:
+        """Bezeichnung und Status von Hand. Wieder geöffnet: Die 7 Tage bis zum automatischen
+        Abschließen beginnen neu."""
         self._execute(
             "UPDATE orders SET title = ?, status = ?, "
-            "closed_at = CASE WHEN ? = 'closed' THEN COALESCE(closed_at, ?) ELSE NULL END WHERE key = ?",
-            (title, status, status, t, key),
+            "closed_at = CASE WHEN ? = 'closed' THEN COALESCE(closed_at, ?) ELSE NULL END, "
+            "opened_at = CASE WHEN ? = 'open' AND status = 'closed' THEN ? ELSE opened_at END, "
+            "closed_auto = CASE WHEN ? = 'closed' THEN closed_auto ELSE 0 END WHERE key = ?",
+            (title, status, status, t, status, t, status, key),
         )
+
+    def idle_orders(self, before: float) -> list[str]:
+        """Offene Aufträge ohne laufenden und ohne seit ``before`` beendeten Programmlauf, die auch
+        nicht seit ``before`` (wieder) geöffnet wurden."""
+        rows = self._query(
+            "SELECT o.key FROM orders o WHERE o.status = 'open' AND COALESCE(o.opened_at, o.created_at) < ? "
+            "AND NOT EXISTS (SELECT 1 FROM program_runs r WHERE r.order_key = o.key "
+            "AND (r.ended_at IS NULL OR r.ended_at >= ?)) ORDER BY o.key",
+            (before, before),
+        )
+        return [r["key"] for r in rows]
+
+    def close_orders_auto(self, keys: list[str], t: float) -> None:
+        with self.transaction():
+            for key in keys:
+                self._execute(
+                    "UPDATE orders SET status = 'closed', closed_at = ?, closed_auto = 1 WHERE key = ? AND status = 'open'",
+                    (t, key),
+                )
 
     def set_order_image(self, key: str, image: str | None) -> None:
         self._execute("UPDATE orders SET image = ? WHERE key = ?", (image, key))
@@ -564,7 +614,8 @@ class Database:
     # Programm in der Spindel war (ended_at wird bei jeder Abfrage fortgeschrieben). Die Einsatzzeit
     # ist die Summe dieser Abschnitte seit reset_at (Anlage bzw. letztes Zurücksetzen).
     # tool_calls hält jeden Aufruf (Wechsel in die Spindel); gezählt wird über die ganze Erfassung,
-    # unabhängig vom Zurücksetzen – Grundlage der Statistik „meistverwendete Werkzeuge“.
+    # unabhängig vom Zurücksetzen – Grundlage der Statistik „meistverwendete Werkzeuge“. Ebenso
+    # total_s: Einsatzzeit über die ganze Erfassung (Sortierung „Meiste Laufzeit“).
 
     _TOOL_SELECT = (
         "SELECT t.machine_id, t.number, t.name, t.note, t.limit_s, t.warn_s, t.reset_at, t.created_at, "
@@ -572,6 +623,8 @@ class Database:
         "(SELECT COUNT(*) FROM tool_calls c WHERE c.machine_id = t.machine_id AND c.number = t.number) AS calls, "
         "COALESCE((SELECT SUM(u.ended_at - MAX(u.started_at, t.reset_at)) FROM tool_usage u "
         "WHERE u.machine_id = t.machine_id AND u.number = t.number AND u.ended_at > t.reset_at), 0) AS used_s, "
+        "COALESCE((SELECT SUM(u.ended_at - u.started_at) FROM tool_usage u "
+        "WHERE u.machine_id = t.machine_id AND u.number = t.number), 0) AS total_s, "
         "(SELECT MAX(u.ended_at) FROM tool_usage u WHERE u.machine_id = t.machine_id AND u.number = t.number) "
         "AS last_used_at FROM tools t "
     )
@@ -718,6 +771,30 @@ class Database:
 
     def delete_manufacturer(self, manufacturer_id: int) -> None:
         self._execute("DELETE FROM manufacturers WHERE id = ?", (manufacturer_id,))
+
+    # --- Felgen-Designs (Namen zu den Ziffern 3–4 der Felgennummer) ------------------------
+
+    def rim_designs(self) -> list[dict[str, Any]]:
+        """Designs mit der Zahl der erfassten Felgen je Design."""
+        return self._query(
+            "SELECT d.code, d.name, (SELECT COUNT(*) FROM orders o WHERE o.kind = 'rim' "
+            "AND substr(o.key, 3, 2) = printf('%02d', d.code)) AS rims FROM rim_designs d ORDER BY d.code"
+        )
+
+    def rim_design_names(self) -> dict[int, str]:
+        return {r["code"]: r["name"] for r in self._query("SELECT code, name FROM rim_designs")}
+
+    def set_rim_design(self, code: int, name: str) -> bool:
+        """Design anlegen oder umbenennen; True, wenn es neu ist."""
+        exists = self._query("SELECT 1 FROM rim_designs WHERE code = ?", (code,))
+        self._execute(
+            "INSERT INTO rim_designs(code, name) VALUES (?, ?) ON CONFLICT(code) DO UPDATE SET name = excluded.name",
+            (code, name),
+        )
+        return not exists
+
+    def delete_rim_design(self, code: int) -> bool:
+        return self._execute("DELETE FROM rim_designs WHERE code = ?", (code,)).rowcount > 0
 
     # --- Satzverlauf (Grundlage der Restlaufzeit-Prognose) ------------------------------
 

@@ -9,7 +9,7 @@ const query = new URLSearchParams(location.search);
 const state = {
   machine: query.get("machine") ?? "",
   status: query.get("status") ?? "all",
-  sort: query.get("sort") === "calls" ? "calls" : "number",
+  sort: ["calls", "runtime"].includes(query.get("sort")) ? query.get("sort") : "number",
   search: "",
 };
 let data = null;
@@ -35,7 +35,6 @@ function syncUrl() {
   if (state.sort !== "number") params.set("sort", state.sort);
   history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
   for (const b of $("status").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.status === state.status));
-  for (const b of $("sort").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.sort === state.sort));
   $("machine").value = state.machine;
 }
 
@@ -51,10 +50,42 @@ function matches(t) {
   return `t${t.number} ${t.name} ${t.note} ${t.manufacturer} ${t.article_no}`.toLowerCase().includes(q);
 }
 
-/** Nach T-Nummer oder – für die Frage „was brauche ich am häufigsten?“ – nach Aufrufen. */
+// Sortierung über die Spaltenköpfe jeder Maschine: T-Nummer aufsteigend, Aufrufe bzw. Laufzeit gesamt
+// absteigend (die meistgebrauchten oben); bei Gleichstand die kleinere T-Nummer zuerst
+const SORTS = {
+  number: { label: "Werkzeug", key: () => 0, title: "Nach T-Nummer sortieren" },
+  calls: { label: "Aufrufe", key: (t) => t.calls, title: "Meiste Aufrufe oben" },
+  runtime: { label: "Laufzeit gesamt", key: (t) => t.total_s, title: "Meiste Laufzeit oben (gesamt, seit Beginn der Erfassung)" },
+};
+
 function sorted(rows) {
-  if (state.sort !== "calls") return rows;
-  return rows.slice().sort((a, b) => b.calls - a.calls || a.number - b.number);
+  const key = SORTS[state.sort].key;
+  return rows.slice().sort((a, b) => key(b) - key(a) || a.number - b.number);
+}
+
+/** Spaltenköpfe über der Liste einer Maschine; ein Klick sortiert alle Maschinen. */
+function listHead() {
+  const sortButton = (sort, cls) =>
+    el(
+      "button",
+      {
+        type: "button",
+        class: `tool-sort ${cls}${state.sort === sort ? " active" : ""}`,
+        "data-sort": sort,
+        "aria-pressed": String(state.sort === sort),
+        title: SORTS[sort].title,
+      },
+      SORTS[sort].label,
+      el("span", { class: "tool-sort-arrow", "aria-hidden": "true", text: state.sort === sort ? (sort === "number" ? "▲" : "▼") : "↕" }),
+    );
+  return el(
+    "div",
+    { class: "tool-head", role: "group", "aria-label": "Sortierung" },
+    sortButton("number", "h-id"),
+    sortButton("calls", "h-calls"),
+    sortButton("runtime", "h-total"),
+    el("span", { class: "tool-head-label h-usage", text: "Standzeit seit Zurücksetzen" }),
+  );
 }
 
 // --- Darstellung -------------------------------------------------------------------
@@ -167,6 +198,19 @@ function callsCell(t) {
   );
 }
 
+/** Einsatzzeit über die ganze Erfassung – anders als die Standzeit unabhängig vom Zurücksetzen. */
+function totalCell(t) {
+  return el(
+    "div",
+    {
+      class: `tool-total${t.total_s ? "" : " none"}`,
+      title: `T${t.number} war insgesamt ${fmtToolTime(t.total_s)} im Einsatz (seit Beginn der Erfassung, Zurücksetzen zählt nicht)`,
+    },
+    el("span", { class: "tool-calls-value num", text: fmtToolTime(t.total_s) }),
+    el("span", { class: "tool-calls-label", text: "gesamt" }),
+  );
+}
+
 function toolRow(t) {
   return el(
     "div",
@@ -184,6 +228,7 @@ function toolRow(t) {
       ),
     ),
     callsCell(t),
+    totalCell(t),
     usage(t),
     el("div", { class: "tool-flags" }, statusBadge(t), spindleBadge(t), topBadge(t)),
     el(
@@ -250,6 +295,8 @@ function render() {
 
   // Meistgenutztes Werkzeug (bei "Alle" über beide Maschinen, dann mit Maschinenname)
   const top = all.reduce((best, t) => (t.calls > (best?.calls ?? 0) ? t : best), null);
+  const longest = all.reduce((best, t) => (t.total_s > (best?.total_s ?? 0) ? t : best), null);
+  const machineOf = (t) => (!state.machine && data.machines.length > 1 ? t.machine : null);
   $("kpis").replaceChildren(
     tile("Werkzeuge", String(all.length), `${all.filter((t) => t.limit_s).length} mit Maximallaufzeit`),
     tile("Über Limit", String(all.filter((t) => t.status === "over").length), "Werkzeug tauschen und zurücksetzen"),
@@ -259,8 +306,15 @@ function render() {
       "Meist aufgerufen",
       top ? `T${top.number}` : "—",
       top
-        ? [`${fmtInt(top.calls)}× aufgerufen`, top.name, !state.machine && data.machines.length > 1 ? top.machine : null].filter(Boolean).join(" · ")
+        ? [`${fmtInt(top.calls)}× aufgerufen`, top.name, machineOf(top)].filter(Boolean).join(" · ")
         : "noch keine Werkzeugwechsel erfasst",
+    ),
+    tile(
+      "Meiste Laufzeit",
+      longest ? `T${longest.number}` : "—",
+      longest
+        ? [`${fmtToolTime(longest.total_s)} gesamt`, longest.name, machineOf(longest)].filter(Boolean).join(" · ")
+        : "noch keine Einsatzzeit erfasst",
     ),
   );
 
@@ -294,7 +348,7 @@ function render() {
           slotsInfo,
         ),
         rows.length
-          ? el("div", { class: "tool-list" }, items)
+          ? el("div", { class: "tool-list" }, listHead(), items)
           : el("p", {
               class: "empty",
               text: total ? "Kein Werkzeug passt zum Filter." : "Noch keine Werkzeuge – sie erscheinen, sobald ein Werkzeug in der Spindel ist.",
@@ -476,9 +530,9 @@ async function main() {
     syncUrl();
     render();
   });
-  $("sort").addEventListener("click", (e) => {
-    const sort = e.target.closest("button")?.dataset.sort;
-    if (!sort) return;
+  $("lists").addEventListener("click", (e) => {
+    const sort = e.target.closest("button[data-sort]")?.dataset.sort;
+    if (!sort || sort === state.sort) return;
     state.sort = sort;
     syncUrl();
     render();

@@ -10,6 +10,34 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.16.0] – 2026-10-07
+
+### Neu
+- **Felgen** werden erkannt und wie Aufträge erfasst, ohne die Programme umzubenennen.
+  - Schema `BBDDBBZZ-SS[ Zusatz]`, z. B. `10101018-01 tasche` = einteilig, Design 999, 10 × 18″,
+    Spannung 1, Zusatz „tasche“. Breite unter 20 in ganzen Zoll, ab 20 in Zehntel (85 = 8,5″).
+  - Je Felge ein Eintrag im Tab „Aufträge“, mit Filter „Alle / Aufträge / Felgen“.
+  - Die Programme einer Spannung (`-01`, `-01 tasche`, `-01 einarm`) stehen einzeln und ergeben
+    zusammen die Ø Bearbeitungszeit je Felge.
+  - Die Live-Karte zeigt z. B. „Felge 999 · einteilig · 10 × 18″ · Spannung 1 · tasche“.
+  - Die Design-Namen sind unter Konfiguration → **Felgen-Designs** pflegbar, mit 10 = 999 bis
+    90 = Sonder als Start.
+- **Werkzeugauswertung sortieren** über die Spaltenköpfe direkt über der Liste jeder Maschine:
+  nach T-Nummer, meisten Aufrufen oder meister Laufzeit.
+  - Der Pfeil zeigt die aktive Sortierung. Die Umschalter oben in der Filterleiste entfallen dafür.
+- **Laufzeit gesamt** je Werkzeug: Einsatzzeit seit Beginn der Erfassung, als eigene Spalte neben den
+  Aufrufen, dazu die Kachel „Meiste Laufzeit“ und eine Spalte im CSV-Export.
+  - Anders als die Standzeit beginnt sie beim Zurücksetzen nicht neu.
+- **Aufträge schließen sich automatisch**, wenn 7 Tage lang kein Programm des Auftrags lief.
+  - Im Detail steht dann „(automatisch, 7 Tage ohne Programmlauf)“.
+  - Läuft der Auftrag wieder an oder wird er von Hand geöffnet, ist er wieder offen. Nach dem
+    Öffnen von Hand beginnen die 7 Tage neu.
+
+### Geändert
+- Im Auftrag entfällt die Kachel „Durchlaufzeit“.
+- Das voraussichtliche Ende im Auftrag („läuft gerade“) nennt wie auf der Live-Seite „morgen“ bzw.
+  den Wochentag, wenn es nicht mehr heute ist.
+
 ## [1.15.1] – 2026-10-07
 
 ### Behoben

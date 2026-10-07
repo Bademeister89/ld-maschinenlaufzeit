@@ -62,7 +62,7 @@ def test_diagnose_zip_contents(client):
     assert any(n.startswith("logs/") for n in names)  # Log-Datei aus dem Datenordner
 
     info = json.loads(z.read("info.json"))
-    assert info["version"] and info["zeitraum_tage"] == 7 and info["schema"] == "11"
+    assert info["version"] and info["zeitraum_tage"] == 7 and info["schema"] == "12"
     assert [m["id"] for m in info["maschinen"]] == ["m1", "m2"]
     assert set(json.loads(z.read("live.json"))) == {"m1", "m2"}
 

@@ -446,10 +446,13 @@ class MachineCollector:
         code = parse_program(snap.program) if snap else None
         if code is not None:
             # Neuer Auftrag? Anlegen. Läuft ein abgeschlossener Auftrag wieder, wird er neu geöffnet.
-            change = self._db.ensure_order(code.key, code.year, code.order, start, reopen=state is MachineState.RUNNING)
+            change = self._db.ensure_order(
+                code.key, code.year, code.order, start, reopen=state is MachineState.RUNNING, kind=code.kind
+            )
             if change:
                 self._db.add_event(self.machine.id, now, f"order_{change}", {"order": code.key, "program": snap.program})
-                log.info("Auftrag %s %s (%s)", code.key, "angelegt" if change == "created" else "wieder geöffnet", code.name)
+                what = "Felge" if code.kind == "rim" else "Auftrag"
+                log.info("%s %s %s (%s)", what, code.key, "angelegt" if change == "created" else "wieder geöffnet", code.name)
         interval_id = self._db.open_interval(
             self.machine.id, *key[:4], run_id, start, now, order_key=code.key if code else None
         )

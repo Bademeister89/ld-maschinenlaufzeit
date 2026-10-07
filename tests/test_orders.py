@@ -328,6 +328,77 @@ def test_deleted_run_is_not_resumed(db, make_collector):
     assert not c._ended
 
 
+DAY = 86_400
+
+
+def status(db, key):
+    order = db.order(key)
+    return order["status"], order["closed_auto"]
+
+
+def test_orders_close_after_7_days_without_run(db, make_collector):
+    c = make_collector()
+    end = run_part(c, 0, P11, 300)
+    feed(c, (end + 10, snap("IDLE", OTHER)), (end + 20, snap("STARTED", OTHER)))  # 4711 läuft noch (offen)
+    assert orders.close_idle(db, end + 7 * DAY - 60) == []  # noch keine 7 Tage
+    assert orders.close_idle(db, end + 7 * DAY + 60) == ["26-21055"]
+    assert status(db, "26-21055") == ("closed", 1)
+    assert db.order("26-21055")["closed_at"] == end + 7 * DAY + 60
+    assert status(db, "26-4711") == ("open", 0)  # laufender Lauf hält den Auftrag offen
+
+
+def test_manually_reopened_order_gets_7_new_days(db, make_collector):
+    c = make_collector()
+    end = run_part(c, 0, P11, 300)
+    orders.close_idle(db, end + 8 * DAY)
+    db.update_order("26-21055", "", "open", end + 9 * DAY)  # von Hand wieder geöffnet
+    assert status(db, "26-21055") == ("open", 0)
+    assert orders.close_idle(db, end + 10 * DAY) == []
+    assert orders.close_idle(db, end + 16 * DAY + 1) == ["26-21055"]
+    db.update_order("26-21055", "Kunde X", "closed", end + 17 * DAY)  # nur Bezeichnung geändert
+    assert status(db, "26-21055") == ("closed", 1)
+
+
+def test_auto_closed_order_reopens_when_it_runs_again(db, make_collector):
+    c = make_collector()
+    end = run_part(c, 0, P11, 300)
+    orders.close_idle(db, end + 8 * DAY)
+    feed(c, (end + 9 * DAY, snap("IDLE", P11)))  # nur angewählt: bleibt zu
+    assert status(db, "26-21055") == ("closed", 1)
+    run_part(c, end + 9 * DAY + 100, P11, 300)
+    order = db.order("26-21055")
+    assert (order["status"], order["closed_auto"], order["opened_at"]) == ("open", 0, end + 9 * DAY + 110)
+
+
+def test_update_adds_auto_close_columns(tmp_path):
+    """Datenbank wie in Version 1.15.1 (Schema 11): Aufträge ohne opened_at/closed_auto."""
+    import sqlite3
+
+    from app.db import Database
+
+    path = tmp_path / "v11.db"
+    db = Database(path)
+    db.ensure_order("26-21055", 2026, "21055", 100.0)
+    db.close()
+    con = sqlite3.connect(path)
+    con.executescript(
+        "ALTER TABLE orders DROP COLUMN opened_at; ALTER TABLE orders DROP COLUMN closed_auto; "
+        "UPDATE meta SET value = '11' WHERE key = 'schema_version';"
+    )
+    con.close()
+    db = Database(path)
+    order = db.order("26-21055")
+    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, "12")
+    assert orders.close_idle(db, 100 + 7 * DAY + 1) == ["26-21055"]  # ab dem Anlegen gerechnet
+    db.close()
+
+
+def test_order_without_runs_closes_7_days_after_creation(db, make_collector):
+    c = make_collector()
+    feed(c, (0, snap("IDLE", P11)))  # nur angewählt, nie gelaufen
+    assert orders.close_idle(db, 7 * DAY + 1) == ["26-21055"]
+
+
 def test_meta_has_version_and_page(client):
     assert client.get("/api/meta").json()["version"]
     assert client.get("/api/config").json()["settings"]["version"]
@@ -389,3 +460,113 @@ def test_update_from_schema_v4_database(tmp_path):
         [row] = c.get("/api/orders").json()["orders"]
         assert (row["key"], row["running_s"], row["finished"]) == ("26-21055", 300, 1)
         assert c.get("/api/machines").json()["machines"][0]["name"] == "DMG 1"
+
+
+# --- Felgen: BBDDBBZZ-SS[ Zusatz] -------------------------------------------------------------
+
+RIM_DIR = "TNC:/Felgen/10-999/"
+RIM_1 = RIM_DIR + "10101018-01.h"
+RIM_1_POCKET = RIM_DIR + "10101018-01 tasche.h"
+RIM_1_ARM = RIM_DIR + "10101018-01 einarm.h"
+RIM_2 = RIM_DIR + "10101018-02.h"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("10101018-01.h", ("10101018", 1, "", "10101018-01")),
+        ("10101018-01 tasche.h", ("10101018", 1, "tasche", "10101018-01 tasche")),
+        ("10101018-01 einarm.h", ("10101018", 1, "einarm", "10101018-01 einarm")),
+        ("10101018-01normal.h", ("10101018", 1, "normal", "10101018-01normal")),
+        ("10101018-02 tasche.h", ("10101018", 2, "tasche", "10101018-02 tasche")),
+        ("11208520-01.H", ("11208520", 1, "", "11208520-01")),  # dreiteilig, Z06, 8,5 × 20
+    ],
+)
+def test_parse_rim_program(name, expected):
+    code = parse_program(RIM_DIR + name)
+    assert (code.key, code.setup, code.variant, code.name) == expected
+    assert (code.kind, code.year, code.order, code.program) == ("rim", 0, expected[0], 0)
+
+
+@pytest.mark.parametrize("name", ["1301201.h", "1010101-01.h", "101010180-01.h", "10101018.h", "20101018-01.h", "10101018-1x2.h"])
+def test_other_names_are_no_rims(name):
+    assert parse_program(RIM_DIR + name) is None
+
+
+def test_order_scheme_wins_over_rim_scheme():
+    assert parse_program("26-21055-01-01.H").kind == "order"
+
+
+@pytest.mark.parametrize(
+    ("key", "label", "width"),
+    [
+        ("10101018", "999 · einteilig · 10 × 18″", 10.0),
+        ("11208520", "Z06 · dreiteilig · 8,5 × 20″", 8.5),
+        ("10901030", "Sonder · einteilig · 10 × 30″", 10.0),  # Durchmesser bis 30″
+        ("10907521", "Sonder · einteilig · 7,5 × 21″", 7.5),  # ab 20: Zehntel
+        ("10959519", "Design 95 · einteilig · 9,5 × 19″", 9.5),  # Design nicht in der Liste
+        ("12101018", "999 · Bauart 12 · 10 × 18″", 10.0),
+    ],
+)
+def test_rim_info(key, label, width):
+    info = orders.rim_info(key, orders.RIM_DESIGNS)
+    assert (info["label"], info["width"]) == (label, width)
+    assert orders.rim_info("26-21055", orders.RIM_DESIGNS) is None
+
+
+def test_rim_gets_its_own_entry_and_sums_its_programs(db, make_collector):
+    """Spannung 1: Hauptprogramm, Tasche und Einarm nacheinander; die Ø-Zeit je Felge ist die Summe."""
+    c = make_collector()
+    t = run_part(c, 0, RIM_1, 600)
+    t = run_part(c, t + 10, RIM_1_POCKET, 300)
+    t = run_part(c, t + 10, RIM_1_ARM, 120)
+    run_part(c, t + 10, RIM_2, 900)
+    [row] = orders.list_orders(db)
+    assert (row["key"], row["kind"], row["year"], row["setups"], row["programs"]) == ("10101018", "rim", 0, [1, 2], 4)
+    assert row["rim"]["label"] == "999 · einteilig · 10 × 18″"
+    detail = orders.order_detail(db, "10101018", TZ)
+    assert detail["order"]["rim"]["design_name"] == "999"
+    first, second = detail["setups"]
+    assert [p["name"] for p in first["programs"]] == ["10101018-01", "10101018-01 einarm", "10101018-01 tasche"]
+    assert (first["part_run_s"], second["part_run_s"]) == (1020, 900)
+    assert (detail["totals"]["part_run_s"], detail["totals"]["part_complete"]) == (1920, True)
+
+
+def test_rim_setups_08_and_09_are_no_fixtures(db, make_collector):
+    c = make_collector()
+    run_part(c, 0, RIM_DIR + "10101018-08.h", 300)
+    [setup] = orders.order_detail(db, "10101018", TZ)["setups"]
+    assert not setup["fixture"]
+
+
+def test_live_card_names_the_rim(client):
+    col = client.app.state.ctx.collectors["m1"]
+    feed(col, (5000, snap("IDLE", RIM_1_POCKET)), (5010, snap("STARTED", RIM_1_POCKET)))
+    order = client.get("/api/machines").json()["machines"][0]["order"]
+    assert (order["kind"], order["setup"], order["variant"]) == ("rim", 1, "tasche")
+    assert order["rim"]["label"] == "999 · einteilig · 10 × 18″"
+
+
+def test_rim_designs_can_be_edited(client):
+    designs = client.get("/api/config/rim-designs").json()["designs"]
+    assert [(d["code"], d["name"]) for d in designs][:2] == [(10, "999"), (20, "Z06")]
+    assert len(designs) == 9
+    r = client.put("/api/config/rim-designs/95", json={"name": "Neu 95"})
+    assert r.status_code == 200 and r.json()["created"] is True
+    assert client.put("/api/config/rim-designs/10", json={"name": "999 Evo"}).json()["created"] is False
+    assert client.put("/api/config/rim-designs/100", json={"name": "x"}).status_code == 400
+    assert client.put("/api/config/rim-designs/30", json={"name": " "}).status_code == 400
+    assert client.delete("/api/config/rim-designs/90").status_code == 204
+    assert client.delete("/api/config/rim-designs/90").status_code == 404
+    names = {d["code"]: d["name"] for d in client.get("/api/config/rim-designs").json()["designs"]}
+    assert (names[10], names[95], 90 in names) == ("999 Evo", "Neu 95", False)
+    col = client.app.state.ctx.collectors["m1"]
+    run_part(col, 6000, RIM_1, 100)
+    rim = next(o for o in client.get("/api/orders").json()["orders"] if o["kind"] == "rim")
+    assert rim["rim"]["label"] == "999 Evo · einteilig · 10 × 18″"  # neuer Name gilt sofort
+
+
+def test_rim_image_key_is_valid():
+    from app.order_images import valid_key
+
+    assert valid_key("10101018") and valid_key("26-21055") and not valid_key("2610101018")

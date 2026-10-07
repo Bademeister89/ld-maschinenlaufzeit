@@ -182,7 +182,7 @@ def export_tools(request: Request) -> Response:
     writer.writerow(
         ["Maschine", "Werkzeug", "Name", "Hersteller", "Artikelnummer", "Durchmesser (mm)", "Radius (mm)",
          "Notiz", "Einsatzzeit (h)", "Maximallaufzeit (h)", "Vorwarnung ab (h)", "Auslastung (%)", "Status",
-         "Zurückgesetzt am", "Zuletzt im Einsatz", "Aufrufe"]
+         "Zurückgesetzt am", "Zuletzt im Einsatz", "Aufrufe", "Laufzeit gesamt (h)"]
     )
     for row in rows:
         writer.writerow(
@@ -203,6 +203,7 @@ def export_tools(request: Request) -> Response:
                 local(row["reset_at"]),
                 local(row["last_used_at"]),
                 row["calls"],
+                hours(row["total_s"]),
             ]
         )
     return Response(

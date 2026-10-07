@@ -78,6 +78,14 @@ function thumbFor(c, m) {
   return c.thumb;
 }
 
+/** "Auftrag 21051 (2026) · Aufspannung 2 · Programm 01" bzw. "Felge 999 · einteilig · 10 × 18″ · Spannung 1 · tasche". */
+function orderText(o) {
+  if (o.kind === "rim") {
+    return [`Felge ${o.rim?.label ?? o.key}`, `Spannung ${o.setup}`, o.variant || null].filter(Boolean).join(" · ");
+  }
+  return `Auftrag ${o.order} (${o.year}) · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
+}
+
 /** Vorschaubild des Bauteils zum Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
 function orderThumbFor(c, m) {
   const url = m.order?.thumb_url;
@@ -86,7 +94,7 @@ function orderThumbFor(c, m) {
     // Der Link daneben führt schon zum Auftrag: Bild nur für die Maus, nicht doppelt für Tastatur/Screenreader
     c.orderThumb = el(
       "a",
-      { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}`, tabindex: "-1", "aria-hidden": "true", title: `Bauteil zu Auftrag ${m.order.order}` },
+      { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}`, tabindex: "-1", "aria-hidden": "true", title: `Bild zu ${orderText(m.order)}` },
       el("img", { src: url, alt: "", width: 64, height: 64, decoding: "async" }),
     );
     c.orderThumbUrl = url;
@@ -442,7 +450,7 @@ function renderLive(m, now) {
           ? el(
               "a",
               { class: "order-link", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}` },
-              `Auftrag ${m.order.order} (${m.order.year}) · Aufspannung ${m.order.setup} · Programm ${String(m.order.program).padStart(2, "0")}`,
+              orderText(m.order),
             )
           : null,
         palletMarker(m, now),

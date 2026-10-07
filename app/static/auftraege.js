@@ -6,8 +6,8 @@ import {
   fmtDateTime,
   fmtDay,
   fmtDuration,
+  fmtEta,
   fmtHours,
-  fmtTime,
   legend,
   loadMeta,
   machineName,
@@ -30,6 +30,7 @@ const $ = (id) => document.getElementById(id);
 const query = new URLSearchParams(location.search);
 const state = {
   status: query.get("status") ?? "open",
+  kind: ["order", "rim"].includes(query.get("kind")) ? query.get("kind") : "all",
   search: "",
   selected: query.get("order"),
 };
@@ -38,6 +39,7 @@ let orders = [];
 function syncUrl() {
   const q = new URLSearchParams();
   if (state.status !== "open") q.set("status", state.status);
+  if (state.kind !== "all") q.set("kind", state.kind);
   if (state.selected) q.set("order", state.selected);
   history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
 }
@@ -47,14 +49,13 @@ function showError(err) {
   $("banner").hidden = false;
 }
 
-const orderTitle = (o) => `Auftrag ${o.number}`;
-const dateOnly = (t) => fmtDateTime(t).split(",")[0];
-
-/** Kalenderzeit von der ersten bis zur letzten Aktivität, z. B. "21 Tage" oder "5 h 12 min". */
-function spanText(first, last) {
-  const days = (last - first) / 86400;
-  return days >= 1 ? `${Math.round(days)} ${Math.round(days) === 1 ? "Tag" : "Tage"}` : fmtDuration(last - first);
-}
+// Felgen (Art "rim") stehen wie Aufträge in der Liste: Titel aus Design, Zusatz Bauart und Größe
+const isRim = (o) => o?.kind === "rim";
+const orderTitle = (o) => (isRim(o) ? `Felge ${o.rim?.design_name ?? o.number}` : `Auftrag ${o.number}`);
+const orderSub = (o) => (isRim(o) ? `${o.rim?.kind_name ?? ""} · ${o.rim?.size ?? o.key}` : String(o.year));
+const partWord = (o) => (isRim(o) ? "Felge" : "Teil");
+const setupWord = (o) => (isRim(o) ? "Spannung" : "Aufspannung");
+const COUNT_WORDS = { all: ["Eintrag", "Einträge"], order: ["Auftrag", "Aufträge"], rim: ["Felge", "Felgen"] };
 
 function statusBadge(o, active) {
   if (active?.length) return stateBadge(active[0].state);
@@ -112,17 +113,21 @@ function table(columns, rows, { onRow, selected } = {}) {
 
 function renderList() {
   const needle = state.search.trim().toLowerCase();
-  const rows = orders.filter((o) => !needle || `${o.key} ${o.number} ${o.title}`.toLowerCase().includes(needle));
-  $("count").textContent = `${rows.length} ${rows.length === 1 ? "Auftrag" : "Aufträge"}`;
+  const rows = orders.filter(
+    (o) =>
+      (state.kind === "all" || (o.kind ?? "order") === state.kind) &&
+      (!needle || `${o.key} ${o.number} ${o.title} ${o.rim?.label ?? ""}`.toLowerCase().includes(needle)),
+  );
+  $("count").textContent = `${rows.length} ${COUNT_WORDS[state.kind][rows.length === 1 ? 0 : 1]}`;
   if (!rows.length) {
     $("orders").replaceChildren(
-      el("p", { class: "empty", text: orders.length ? "Kein Auftrag passt zur Suche." : "Keine Aufträge in dieser Ansicht." }),
+      el("p", { class: "empty", text: orders.length ? "Kein Eintrag passt zu Filter und Suche." : "Keine Einträge in dieser Ansicht." }),
     );
     return;
   }
   const columns = [
     {
-      label: "Auftrag",
+      label: "Auftrag / Felge",
       value: (o) =>
         el(
           "div",
@@ -131,8 +136,13 @@ function renderList() {
           el(
             "div",
             {},
-            el("a", { href: `?order=${encodeURIComponent(o.key)}`, class: "order-key", text: o.number, onclick: (e) => e.preventDefault() }),
-            el("span", { class: "muted", text: ` · ${o.year}` }),
+            el("a", {
+              href: `?order=${encodeURIComponent(o.key)}`,
+              class: "order-key",
+              text: isRim(o) ? `${o.rim?.design_name} · ${o.rim?.size}` : o.number,
+              onclick: (e) => e.preventDefault(),
+            }),
+            el("span", { class: "muted", text: isRim(o) ? ` · ${o.rim?.kind_name} · Felge ${o.key}` : ` · ${o.year}` }),
             o.title ? el("div", { class: "order-title", text: o.title }) : null,
           ),
         ),
@@ -154,6 +164,7 @@ async function loadList() {
   const data = await api("/api/orders", { status: state.status });
   orders = data.orders;
   for (const b of $("status").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.status === state.status));
+  for (const b of $("kind").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.kind === state.kind));
   renderList();
 }
 
@@ -176,13 +187,13 @@ function activeBanner(active) {
     { class: "active-list" },
     active.map((a) => {
       const f = a.forecast;
-      const rest = f && !f.overdue_s ? ` · Rest ca. ${fmtDuration(f.remaining_s)} (fertig ca. ${fmtTime(f.eta)} Uhr)` : "";
+      const rest = f && !f.overdue_s ? ` · Rest ca. ${fmtDuration(f.remaining_s)} (fertig ca. ${fmtEta(f.eta)})` : "";
       return el("div", { class: "active-row" }, stateBadge(a.state), el("span", { text: `${a.machine}: ${a.program}${rest}` }));
     }),
   );
 }
 
-function setupCard(setup) {
+function setupCard(setup, o) {
   const columns = [
     { label: "Programm", value: (p) => p.name, title: (p) => p.program, cls: "wrap" },
     { label: "Maschinen", value: (p) => p.machines.map(machineName).join(", ") || "—" },
@@ -190,15 +201,15 @@ function setupCard(setup) {
     { label: "Fertig", value: (p) => String(p.finished), cls: "r" },
     { label: "Laufzeit", value: (p) => fmtHours(p.running_s), cls: "r" },
     { label: "Gestoppt / Fehler", value: (p) => fmtHours(p.stopped_s), cls: "r" },
-    { label: "Ø Laufzeit je Teil", value: (p) => fmtDuration(p.avg_run_s), cls: "r" },
+    { label: `Ø Laufzeit je ${partWord(o)}`, value: (p) => fmtDuration(p.avg_run_s), cls: "r" },
     { label: "Letzter Lauf", value: (p) => fmtDateTime(p.last_run), cls: "r" },
   ];
   const spannung = String(setup.setup).padStart(2, "0");
   let partText;
   if (setup.fixture) partText = "Vorrichtungsbau: einmaliger Aufwand, zählt nicht in die Ø-Bearbeitungszeit je Teil";
-  else if (setup.part_complete) partText = `Ø Bearbeitungszeit je Teil in dieser Aufspannung: ${fmtDuration(setup.part_run_s)}`;
-  else partText = "Ø je Teil erst, wenn jedes Programm dieser Aufspannung einmal vollständig gelaufen ist";
-  let title = setup.setup ? `Aufspannung ${setup.setup}` : "Ohne Aufspannung";
+  else if (setup.part_complete) partText = `Ø Bearbeitungszeit je ${partWord(o)} in dieser ${setupWord(o)}: ${fmtDuration(setup.part_run_s)}`;
+  else partText = `Ø je ${partWord(o)} erst, wenn jedes Programm dieser ${setupWord(o)} einmal vollständig gelaufen ist`;
+  let title = setup.setup ? `${setupWord(o)} ${setup.setup}` : `Ohne ${setupWord(o)}`;
   if (setup.fixture) title = `Vorrichtung (Spannung ${spannung})`;
   return el(
     "div",
@@ -283,7 +294,7 @@ async function deleteRun(key, r) {
   ].join(" · ");
   const ok = confirm(
     `Lauf ${r.id} löschen?\n\n${what}\n\n` +
-      "Der Lauf zählt danach nicht mehr zum Auftrag, zur Ø-Bearbeitungszeit je Teil und zur Restlaufzeit-Prognose. " +
+      `Der Lauf zählt danach nicht mehr zu ${isRim(current) ? "dieser Felge" : "diesem Auftrag"}, zur Ø-Bearbeitungszeit je ${partWord(current)} und zur Restlaufzeit-Prognose. ` +
       "Die Laufzeit der Maschine in der Auswertung bleibt erhalten.\n\nDas lässt sich nicht rückgängig machen.",
   );
   if (!ok) return;
@@ -330,7 +341,7 @@ function imageBlock(o) {
     ? el(
         "a",
         { class: "order-image", href: o.image_url, target: "_blank", rel: "noopener", title: "Bild in voller Größe öffnen" },
-        cachedImg(o.image_url, { alt: `Bauteil zu Auftrag ${o.number}`, decoding: "async" }),
+        cachedImg(o.image_url, { alt: `Bild zu ${orderTitle(o)}`, decoding: "async" }),
       )
     : el("div", { class: "order-image empty", text: "Noch kein Bild vom Bauteil" });
   return el(
@@ -381,7 +392,7 @@ function pasteImage(e) {
   const file = item?.getAsFile();
   if (!file) return;
   e.preventDefault();
-  if (o.image_url && !confirm(`Bild von Auftrag ${o.number} durch das Bild aus der Zwischenablage ersetzen?`)) return;
+  if (o.image_url && !confirm(`Bild von ${orderTitle(o)} durch das Bild aus der Zwischenablage ersetzen?`)) return;
   uploadFile(o.key, file);
 }
 
@@ -404,7 +415,7 @@ async function imageFromClipboardApi(o) {
     setImageState(o.key, "In der Zwischenablage ist kein Bild. Bild kopieren (z. B. Screenshot) und erneut versuchen.", { error: true });
     return;
   }
-  if (o.image_url && !confirm(`Bild von Auftrag ${o.number} durch das Bild aus der Zwischenablage ersetzen?`)) return;
+  if (o.image_url && !confirm(`Bild von ${orderTitle(o)} durch das Bild aus der Zwischenablage ersetzen?`)) return;
   uploadFile(o.key, file);
 }
 
@@ -425,7 +436,7 @@ async function uploadFile(key, file) {
 }
 
 async function removeImage(o) {
-  if (!confirm(`Bild von Auftrag ${o.number} entfernen?`)) return;
+  if (!confirm(`Bild von ${orderTitle(o)} entfernen?`)) return;
   setImageState(o.key, "Bild wird entfernt …", { busy: true });
   try {
     await send("DELETE", `/api/orders/${encodeURIComponent(o.key)}/image`);
@@ -459,8 +470,8 @@ function renderDetail(d) {
             el(
               "div",
               { style: { flex: "1 1 260px", minWidth: "0" } },
-              el("h1", { style: { margin: 0 } }, orderTitle(o), " ", el("span", { class: "muted", text: `· ${o.year}` })),
-              el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}` : ""}` }),
+              el("h1", { style: { margin: 0 } }, orderTitle(o), " ", el("span", { class: "muted", text: `· ${orderSub(o)}` })),
+              el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}${o.closed_auto ? " (automatisch, 7 Tage ohne Programmlauf)" : ""}` : ""}` }),
             ),
             statusBadge(o, d.active),
             el(
@@ -494,23 +505,15 @@ function renderDetail(d) {
         tile("Gestoppt / Fehler", fmtHours(t.stopped_s), "innerhalb der Läufe"),
         tile("Fertige Läufe", String(t.finished), `${t.runs} Läufe gestartet`),
         tile(
-          "Ø Bearbeitungszeit je Teil",
+          `Ø Bearbeitungszeit je ${partWord(o)}`,
           t.part_complete ? fmtDuration(t.part_run_s) : "—",
           t.part_complete
-            ? `Summe über alle Aufspannungen${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
+            ? `Summe über alle ${isRim(o) ? "Spannungen und Programme" : "Aufspannungen"}${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
             : "noch nicht jedes Programm vollständig gelaufen",
-        ),
-        tile(
-          "Durchlaufzeit",
-          t.first_activity ? spanText(t.first_activity, t.last_activity) : "—",
-          [
-            t.first_activity ? `${dateOnly(t.first_activity)} – ${dateOnly(t.last_activity)}` : null,
-            t.machines.length ? t.machines.map(machineName).join(", ") : "noch keine Maschine",
-          ].filter(Boolean).join(" · "),
         ),
       ),
     ),
-    el("div", { class: "setup-grid" }, d.setups.map(setupCard)),
+    el("div", { class: "setup-grid" }, d.setups.map((s) => setupCard(s, o))),
     el(
       "div",
       { class: "card section" },
@@ -572,6 +575,14 @@ async function main() {
     state.status = status;
     syncUrl();
     loadList().catch(showError);
+  });
+  $("kind").addEventListener("click", (e) => {
+    const kind = e.target.closest("button")?.dataset.kind;
+    if (!kind) return;
+    state.kind = kind;
+    syncUrl();
+    for (const b of $("kind").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.kind === state.kind));
+    renderList();
   });
   $("search").addEventListener("input", (e) => {
     state.search = e.target.value;

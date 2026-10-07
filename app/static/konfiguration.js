@@ -104,6 +104,104 @@ function renderSettings(s) {
   $("settings-note").textContent = `Diese Werte stehen in ${s.config_path}. Nach einer Änderung die App neu starten.`;
 }
 
+// --- Felgen-Designs (Ziffern 3–4 der Felgennummer) ----------------------------------------
+
+let designs = [];
+let renamingDesign = null; // Nummer des Designs, das gerade umbenannt wird
+const designCode = (code) => String(code).padStart(2, "0");
+
+function setDesignError(message) {
+  $("rd-error").textContent = message ?? "";
+  $("rd-error").hidden = !message;
+}
+
+async function loadDesigns() {
+  designs = (await api("/api/config/rim-designs")).designs;
+  renderDesigns();
+}
+
+function designRow(d) {
+  const usage = d.rims === 1 ? "1 Felge" : d.rims ? `${d.rims} Felgen` : "noch keine Felge";
+  const code = el("span", { class: "rd-code-label num", text: designCode(d.code) });
+  if (renamingDesign === d.code) {
+    const input = el("input", { type: "text", maxlength: "40", value: d.name, "aria-label": `Design ${designCode(d.code)} umbenennen` });
+    queueMicrotask(() => input.focus());
+    return el(
+      "li",
+      {},
+      code,
+      el(
+        "form",
+        { class: "mf-rename", onsubmit: (e) => (e.preventDefault(), saveDesign(d.code, input.value)) },
+        input,
+        el("button", { type: "submit", class: "btn primary", text: "Speichern" }),
+        el("button", { type: "button", class: "btn", onclick: () => ((renamingDesign = null), renderDesigns()), text: "Abbrechen" }),
+      ),
+    );
+  }
+  return el(
+    "li",
+    {},
+    code,
+    el("span", { class: "mf-name", text: d.name }),
+    el("span", { class: "muted mf-usage", text: usage }),
+    el(
+      "span",
+      { class: "mf-actions" },
+      el("button", { type: "button", class: "btn", onclick: () => ((renamingDesign = d.code), setDesignError(null), renderDesigns()), text: "Umbenennen" }),
+      el("button", { type: "button", class: "btn danger", onclick: () => removeDesign(d), text: "Entfernen" }),
+    ),
+  );
+}
+
+function renderDesigns() {
+  $("rd-list").replaceChildren(
+    ...(designs.length ? designs.map(designRow) : [el("li", { class: "empty", text: "Noch keine Designs – oben Nummer und Name eintragen." })]),
+  );
+}
+
+async function addDesign(e) {
+  e.preventDefault();
+  const raw = $("rd-code").value.trim();
+  if (!/^\d{1,2}$/.test(raw)) {
+    setDesignError("Die Nummer hat ein oder zwei Ziffern, z. B. 15.");
+    return;
+  }
+  const taken = designs.find((d) => d.code === Number(raw));
+  if (taken) {
+    setDesignError(`Die Nummer ${designCode(taken.code)} ist schon vergeben (${taken.name}). Zum Ändern „Umbenennen“ wählen.`);
+    return;
+  }
+  if (await saveDesign(Number(raw), $("rd-name").value)) {
+    $("rd-code").value = "";
+    $("rd-name").value = "";
+  }
+}
+
+async function saveDesign(code, name) {
+  try {
+    await send("PUT", `/api/config/rim-designs/${code}`, { name });
+    renamingDesign = null;
+    setDesignError(null);
+    await loadDesigns();
+    return true;
+  } catch (err) {
+    setDesignError(err.message);
+    return false;
+  }
+}
+
+async function removeDesign(d) {
+  const note = d.rims ? `\n\n${d.rims === 1 ? "Die Felge zeigt" : `Die ${d.rims} Felgen zeigen`} dann „Design ${designCode(d.code)}“ statt des Namens.` : "";
+  if (!confirm(`Design ${designCode(d.code)} „${d.name}“ entfernen?${note}`)) return;
+  try {
+    await send("DELETE", `/api/config/rim-designs/${d.code}`);
+    await loadDesigns();
+  } catch (err) {
+    setDesignError(err.message);
+  }
+}
+
 // --- Werkzeughersteller ------------------------------------------------------------------
 
 let manufacturers = [];
@@ -427,9 +525,10 @@ async function main() {
   });
 
   $("mf-form").addEventListener("submit", addManufacturer);
-  await Promise.all([reload(), loadChangelog(), loadManufacturers()]);
+  $("rd-form").addEventListener("submit", addDesign);
+  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns()]);
   // Link „v1.2.0“ aus der Kopfzeile: erst nach dem Laden springen, die Liste darüber wächst noch
-  if (["#versionen", "#hersteller"].includes(location.hash)) $(location.hash.slice(1)).scrollIntoView();
+  if (["#versionen", "#hersteller", "#felgen"].includes(location.hash)) $(location.hash.slice(1)).scrollIntoView();
   setInterval(refreshStatus, STATUS_MS);
 }
 

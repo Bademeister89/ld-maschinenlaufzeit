@@ -202,6 +202,28 @@ zugeordnet, z. B. `26-21055-01-01`:
 | `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); `08` und `09` = Vorrichtungsbau |
 | `01` | Programmnummer, fortlaufend |
 
+**Felgen** haben ein eigenes Schema **`BBDDBBZZ-SS`** mit optionalem Zusatz, z. B.
+`10101018-01 tasche`:
+
+| Teil | Bedeutung |
+|---|---|
+| `10` | Bauart: 10 = einteilig, 11 = dreiteilig |
+| `10` | Design: 10 = 999, 20 = Z06, 30 = EK 1 … (Namen unter Konfiguration → Felgen-Designs) |
+| `10` | Breite in Zoll: unter 20 ganze Zoll (10 = 10″), ab 20 Zehntel (85 = 8,5″) |
+| `18` | Durchmesser in Zoll (bis 30″) |
+| `01` | Spannung |
+| ` tasche` | Zusatz (optional): weiteres Programm derselben Spannung, z. B. `einarm`, `normal` |
+
+- Jede Felge (die achtstellige Nummer) ist ein eigener Eintrag im Tab „Aufträge“, z. B.
+  „Felge 999 · einteilig · 10 × 18″“. Der Filter **Alle / Aufträge / Felgen** zeigt nur eine Art.
+- Programme mit Zusatz (`-01`, `-01 tasche`, `-01 einarm`) stehen als eigene Zeilen unter
+  „Spannung 1“. Sie laufen nacheinander für dieselbe Felge, deshalb ist die **Ø Bearbeitungszeit je
+  Felge** die Summe aller Programme aller Spannungen.
+- Felgen haben kein Jahr. Wie Aufträge schließen sie sich nach 7 Tagen ohne Lauf und öffnen sich
+  beim nächsten Lauf wieder.
+- Spannung 08/09 ist bei Felgen kein Vorrichtungsbau.
+- Programmnamen ohne eines der beiden Schemata (z. B. `1301201.h`) zählen zu keinem Auftrag.
+
 - Taucht ein Programm mit einer neuen Auftragsnummer an einer Maschine auf, wird der Auftrag
   **automatisch angelegt**. Schlüssel ist Jahr + Nummer (`26-21055`), falls eine Nummer in einem
   späteren Jahr wieder vorkommt. Zusätze nach der Programmnummer (`26-21055-01-01_Schlichten.H`)
@@ -291,6 +313,13 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Das Vorschaubild steht in der Auftragsliste und auf der Live-Karte, solange der Auftrag an
     einer Maschine angewählt ist. Das große Bild erscheint nur im Detail; ein Klick öffnet es in
     voller Größe.
+- **Automatisch abgeschlossen:** Läuft 7 Tage lang kein Programm eines Auftrags, schließt die App
+  ihn selbst ab. Im Detail steht dann „abgeschlossen … (automatisch, 7 Tage ohne Programmlauf)“.
+  - Gezählt wird ab dem Ende des letzten Laufs. Hat ein Auftrag noch nie ein Programm laufen
+    lassen, zählt das Anlegen.
+  - Ein laufender oder gestoppter Lauf hält den Auftrag offen, ein nur angewähltes Programm nicht.
+  - Von Hand wieder geöffnet: Die 7 Tage beginnen neu.
+  - Die App prüft das beim Start und dann stündlich.
 - Läuft ein abgeschlossener Auftrag wieder an, wird er automatisch wieder geöffnet.
 - Daten, die vor der Auftragsauswertung erfasst wurden, werden beim Start einmalig nachgetragen.
 
@@ -330,6 +359,15 @@ zugeordnet, z. B. `26-21055-01-01`:
     entstünde bei jedem Neustart ein Schein-Aufruf. Wechsel, während die App nicht läuft, fehlen.
   - **Meiste Aufrufe** sortiert jede Maschine absteigend nach Aufrufen. So siehst du, welche
     Werkzeuge du am häufigsten brauchst. Die Kachel „Meist aufgerufen“ zeigt das Spitzenwerkzeug.
+- **Laufzeit gesamt:** Spalte neben den Aufrufen, die Einsatzzeit seit Beginn der Erfassung.
+  - Anders als die Standzeit dahinter (seit dem letzten Zurücksetzen, mit Balken und Limit) beginnt
+    sie beim Zurücksetzen nicht neu.
+  - Die Kachel „Meiste Laufzeit“ zeigt das Werkzeug mit der längsten Laufzeit gesamt.
+- **Sortieren** über die Spaltenköpfe direkt über der Liste jeder Maschine: „Werkzeug“ (T-Nummer
+  aufsteigend), „Aufrufe“ oder „Laufzeit gesamt“ (jeweils die meisten oben).
+  - Der Pfeil zeigt die aktive Sortierung. Sie gilt für alle Maschinen und steht in der Adresse
+    (`?sort=calls` bzw. `?sort=runtime`).
+  - Bei Gleichstand kommt die kleinere T-Nummer zuerst.
   - **Top-Werkzeuge fürs Magazin:** Sind in der Konfiguration die Werkzeugplätze der Maschine
     eingetragen (z. B. 30), tragen die 30 meistgebrauchten Werkzeuge die Marke „Top 30 · Platz 3“.
     Bei „Meiste Aufrufe“ zeigt eine gestrichelte Linie, wo das Magazin endet. Bei gleich vielen
@@ -348,9 +386,8 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Taucht ein Werkzeug ohne bekannten Namen auf, prüft sie schon nach einer Minute wieder.
   - Indizierte Werkzeuge (T5.1 …) zählen zur Nummer des Hauptwerkzeugs.
 - **Notiz:** eigene Bezeichnung, z. B. „VHM D10, Hersteller X“, unter Bearbeiten.
-- Filter nach Maschine und Status, Sortierung nach T-Nummer oder Aufrufen, Suche nach T-Nummer,
-  Name, Hersteller, Artikelnummer oder Notiz, CSV-Export mit allen Werkzeugdaten (Aufrufe in der
-  letzten Spalte).
+- Filter nach Maschine und Status, Suche nach T-Nummer, Name, Hersteller, Artikelnummer oder Notiz,
+  CSV-Export mit allen Werkzeugdaten (Aufrufe und Laufzeit gesamt in den letzten Spalten).
 
 Ob beides an der iTNC 530 funktioniert, zeigt der Verbindungstest:
 

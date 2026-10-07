@@ -54,6 +54,21 @@
       <ul id="mf-list" class="mf-list"></ul>
     </section>
 
+    <section class="card section" id="felgen">
+      <div class="section-head">
+        <h2>Felgen-Designs</h2>
+        <p class="muted">Ziffern 3–4 der Felgennummer, z. B. <span class="num">10</span> in
+          <span class="num">10101018-01</span> = Design 999. Der Name erscheint im Tab Aufträge und auf der Live-Karte.</p>
+      </div>
+      <form id="rd-form" class="mf-add" novalidate>
+        <input type="text" id="rd-code" class="rd-code" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="Nr." aria-label="Design-Nummer (zwei Ziffern)">
+        <input type="text" id="rd-name" maxlength="40" autocomplete="off" placeholder="Name, z. B. Hooligan" aria-label="Name des Designs">
+        <button type="submit" class="btn primary">Hinzufügen</button>
+      </form>
+      <div id="rd-error" class="form-error" role="alert" hidden></div>
+      <ul id="rd-list" class="mf-list"></ul>
+    </section>
+
     <section class="card section">
       <h2 style="margin-bottom: 12px">Allgemein</h2>
       <dl class="settings-list" id="settings"></dl>

@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import BUILD, __version__, changelog, diagnostics, stats, tools
+from . import BUILD, __version__, changelog, diagnostics, orders, stats, tools
 from .state import EXEC_MODE_LABELS, PGM_STATE_LABELS, RUN_RESULT_LABELS, STATE_LABELS
 
 if TYPE_CHECKING:
@@ -119,6 +119,8 @@ def machines(request: Request) -> dict[str, Any]:
         if live["order"] and (order := ctx.db.order(live["order"]["key"])):
             # Vorschaubild des Bauteils für die Live-Karte (das große Bild lädt die Live-Ansicht nie)
             live["order"]["thumb_url"] = ctx.order_images.public(order)["thumb_url"]
+        if live["order"] and live["order"]["kind"] == "rim":
+            live["order"]["rim"] = orders.rim_info(live["order"]["key"], ctx.db.rim_design_names())
         machines.append(live)
     return {"now": time.time(), "machines": machines}
 

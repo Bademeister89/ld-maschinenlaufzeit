@@ -6,6 +6,7 @@ liegt unter ``/``, die API unter ``/api``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 import time
@@ -21,7 +22,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import BUILD, __version__, api, config_api, orders_api, tools_api
+from . import BUILD, __version__, api, config_api, orders, orders_api, tools_api
 from .adapters.base import MachineAdapter
 from .adapters.lsv2_adapter import Lsv2Adapter
 from .adapters.sim_adapter import SimAdapter, SimulatedMachine
@@ -35,6 +36,7 @@ log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+HOUSEKEEPING_S = 3600  # Aufträge ohne Programmlauf abschließen: einmal je Stunde prüfen
 
 # Windows liest MIME-Typen aus der Registry; dort steht für .js teils "text/plain",
 # womit Browser ES-Module verweigern.
@@ -116,6 +118,16 @@ def setup_file_logging(settings: Settings) -> None:
         logger.addHandler(handler)
 
 
+async def _housekeeping(db: Database) -> None:
+    """Stündlich: Aufträge ohne Programmlauf seit 7 Tagen abschließen."""
+    while True:
+        try:
+            await asyncio.to_thread(orders.close_idle, db, time.time())
+        except Exception:
+            log.exception("Aufträge automatisch abschließen fehlgeschlagen")
+        await asyncio.sleep(HOUSEKEEPING_S)
+
+
 def create_app(settings: Settings | None = None, run_collectors: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -133,9 +145,12 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
             "SIMULATION" if s.simulate else "LSV2",
             s.data_dir,
         )
+        housekeeping = asyncio.create_task(_housekeeping(db)) if run_collectors else None
         try:
             yield
         finally:
+            if housekeeping is not None:
+                housekeeping.cancel()
             await manager.stop()
             db.close()
 
