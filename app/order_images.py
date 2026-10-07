@@ -30,10 +30,10 @@ from .db import Database
 
 log = logging.getLogger(__name__)
 
-# Auftragsschlüssel, z. B. 26-21055 oder mit Version 26-21055V1. Mit fullmatch geprüft (``$`` ließe ein
+# Schlüssel: Auftragsnummer (21055) bzw. Felgennummer (10101018). Mit fullmatch geprüft (``$`` ließe ein
 # "\n" am Ende durch) und nur ASCII-Ziffern (``\d`` erlaubt auch andere Schriften) – der Schlüssel landet
 # im Dateinamen.
-KEY_RE = re.compile(r"[0-9]{2}-[0-9]{4,5}(?:V[0-9]{1,2})?|1[0-9]{7}")  # Auftrag bzw. Felge
+KEY_RE = re.compile(r"[0-9]{4,5}|1[0-9]{7}")
 MAX_IMAGE_BYTES = 1024 * 1024  # großes Bild; die Verkleinerung im Browser liefert ca. 150–250 KB
 MAX_THUMB_BYTES = 100 * 1024  # Vorschaubild; die Verkleinerung liefert ca. 10–20 KB
 MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES + MAX_THUMB_BYTES

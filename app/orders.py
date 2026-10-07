@@ -1,11 +1,13 @@
 """Aufträge aus Programmnamen: ``JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM``, z. B. ``26-21055-01-01``.
 
-- ``26``    Jahr (2026)
-- ``21055`` Auftragsnummer, 4- oder 5-stellig, optional mit Version: ``21055V1``, ``21055V2``
+- ``26``    Jahr (2026) – zählt für den Auftrag nicht
+- ``21055`` Auftragsnummer, 4- oder 5-stellig (die ersten Ziffern: Teilegruppe, z. B. 21 Motor),
+            optional mit Version: ``21055V1``, ``21055V2``
 - ``01``    Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); ``08`` und ``09`` sind Vorrichtungsbau
 - ``01``    Programmnummer, fortlaufend
 
-Ein Auftrag ist eindeutig über Jahr und Nummer (Schlüssel ``26-21055``). Versionen (``26-21055V1``,
+Ein Auftrag ist eindeutig über seine Nummer (Schlüssel ``21055``), gleich mit welchem Jahr das Programm
+beginnt: ``21-21055-01-01`` und ``26-21055-01-01`` gehören zum selben Auftrag. Versionen (``26-21055V1``,
 ``26-21055V2``; ein kleines ``v`` zählt wie ``V``) sind andere Ausführungen des Teils und gehören zum
 selben Auftrag: Seine Laufzeit ist die Summe aller Versionen, die Ø-Zeit je Teil gilt je Version. Ein
 Auftrag wird automatisch angelegt, sobald ein passendes Programm an einer Maschine auftaucht. Gezählt wird die Zeit
@@ -64,8 +66,8 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ProgramCode:
-    key: str  # "26-21055" (auch für die Versionen 21055V1 …); Felge: "10101018"
-    year: int  # 2026; Felge: 0
+    key: str  # "21055" (jedes Jahr, auch die Versionen 21055V1 …); Felge: "10101018"
+    year: int  # Jahr aus dem Programmnamen, 2026 (zählt für den Auftrag nicht); Felge: 0
     order: str  # "21055"; Felge: "10101018"
     setup: int  # 1
     program: int  # 1; Felge: 0 (die Programme einer Spannung unterscheidet der Zusatz)
@@ -92,7 +94,7 @@ def parse_program(path: str | None) -> ProgramCode | None:
     if match:
         yy, order = match["year"], match["order"]
         return ProgramCode(
-            key=f"{yy}-{order}",
+            key=order,
             year=2000 + int(yy),
             order=order,
             setup=int(match["setup"]),

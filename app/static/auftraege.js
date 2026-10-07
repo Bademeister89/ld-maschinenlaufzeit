@@ -52,7 +52,8 @@ function showError(err) {
 // Felgen (Art "rim") stehen wie Aufträge in der Liste: Titel aus Design, Zusatz Bauart und Größe
 const isRim = (o) => o?.kind === "rim";
 const orderTitle = (o) => (isRim(o) ? `Felge ${o.rim?.design_name ?? o.number}` : `Auftrag ${o.number}`);
-const orderSub = (o) => (isRim(o) ? `${o.rim?.kind_name ?? ""} · ${o.rim?.size ?? o.key}` : String(o.year));
+// Zusatz hinter dem Titel: bei Felgen Bauart und Größe, bei Aufträgen die Versionen (das Jahr zählt nicht)
+const orderSub = (o) => (isRim(o) ? `${o.rim?.kind_name ?? ""} · ${o.rim?.size ?? o.key}` : (o.versions ?? []).join(", "));
 const partWord = (o) => (isRim(o) ? "Felge" : "Teil");
 const setupWord = (o) => (isRim(o) ? "Spannung" : "Aufspannung");
 const COUNT_WORDS = { all: ["Eintrag", "Einträge"], order: ["Auftrag", "Aufträge"], rim: ["Felge", "Felgen"] };
@@ -147,7 +148,7 @@ function renderList() {
             }),
             el("span", {
               class: "muted",
-              text: isRim(o) ? ` · ${o.rim?.kind_name} · Felge ${o.key}` : ` · ${o.year}${o.versions?.length ? ` · ${o.versions.join(", ")}` : ""}`,
+              text: isRim(o) ? ` · ${o.rim?.kind_name} · Felge ${o.key}` : o.versions?.length ? ` · ${o.versions.join(", ")}` : "",
             }),
             o.title ? el("div", { class: "order-title", text: o.title }) : null,
           ),
@@ -509,7 +510,7 @@ function renderDetail(d) {
             el(
               "div",
               { style: { flex: "1 1 260px", minWidth: "0" } },
-              el("h1", { style: { margin: 0 } }, orderTitle(o), " ", el("span", { class: "muted", text: `· ${orderSub(o)}` })),
+              el("h1", { style: { margin: 0 } }, orderTitle(o), orderSub(o) ? el("span", { class: "muted", text: ` · ${orderSub(o)}` }) : null),
               el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}${o.closed_auto ? " (automatisch, 7 Tage ohne Programmlauf)" : ""}` : ""}` }),
             ),
             statusBadge(o, d.active),

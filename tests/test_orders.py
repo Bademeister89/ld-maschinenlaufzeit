@@ -27,11 +27,11 @@ OTHER = "TNC:\\AUFTRAG\\26-4711-01-01.H"
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
-        (P11, ("26-21055", 2026, "21055", 1, 1, "26-21055-01-01")),
-        ("26-4711-02-03.H", ("26-4711", 2026, "4711", 2, 3, "26-4711-02-03")),
-        ("TNC:/nc_prog/25-10001-01-12.h", ("25-10001", 2025, "10001", 1, 12, "25-10001-01-12")),
-        ("26_21055_1_1.H", ("26-21055", 2026, "21055", 1, 1, "26_21055_1_1")),
-        ("26-21055-01-01_Schlichten.H", ("26-21055", 2026, "21055", 1, 1, "26-21055-01-01_Schlichten")),
+        (P11, ("21055", 2026, "21055", 1, 1, "26-21055-01-01")),
+        ("26-4711-02-03.H", ("4711", 2026, "4711", 2, 3, "26-4711-02-03")),
+        ("TNC:/nc_prog/25-10001-01-12.h", ("10001", 2025, "10001", 1, 12, "25-10001-01-12")),
+        ("26_21055_1_1.H", ("21055", 2026, "21055", 1, 1, "26_21055_1_1")),
+        ("26-21055-01-01_Schlichten.H", ("21055", 2026, "21055", 1, 1, "26-21055-01-01_Schlichten")),
     ],
 )
 def test_parse_program(path, expected):
@@ -44,11 +44,11 @@ def test_parse_program(path, expected):
     ("path", "expected"),
     [
         # Versionen gehören zum Grundauftrag
-        ("TNC:\\AUFTRAG\\26-21053V1-01-01.H", ("26-21053", "21053", "V1", 1, 1, "26-21053V1-01-01")),
-        ("26-21053V2-02-03.H", ("26-21053", "21053", "V2", 2, 3, "26-21053V2-02-03")),
-        ("26-21053v2-01-01.h", ("26-21053", "21053", "V2", 1, 1, "26-21053v2-01-01")),  # klein = groß
-        ("26-4711V12-01-01_Schlichten.H", ("26-4711", "4711", "V12", 1, 1, "26-4711V12-01-01_Schlichten")),
-        ("26_21053V1_1_1.H", ("26-21053", "21053", "V1", 1, 1, "26_21053V1_1_1")),
+        ("TNC:\\AUFTRAG\\26-21053V1-01-01.H", ("21053", "21053", "V1", 1, 1, "26-21053V1-01-01")),
+        ("26-21053V2-02-03.H", ("21053", "21053", "V2", 2, 3, "26-21053V2-02-03")),
+        ("26-21053v2-01-01.h", ("21053", "21053", "V2", 1, 1, "26-21053v2-01-01")),  # klein = groß
+        ("26-4711V12-01-01_Schlichten.H", ("4711", "4711", "V12", 1, 1, "26-4711V12-01-01_Schlichten")),
+        ("26_21053V1_1_1.H", ("21053", "21053", "V1", 1, 1, "26_21053V1_1_1")),
     ],
 )
 def test_parse_program_version(path, expected):
@@ -90,12 +90,12 @@ def test_collector_creates_order_and_tags_data(db, make_collector):
     c = make_collector()
     run_part(c, 0, P11, 300)
     [order] = db.orders()
-    assert (order["key"], order["year"], order["number"], order["status"]) == ("26-21055", 2026, "21055", "open")
+    assert (order["key"], order["year"], order["number"], order["status"]) == ("21055", 2026, "21055", "open")
     assert order["created_at"] == 0
     [run] = db.runs(0, 1000)
-    assert db._query("SELECT order_key FROM program_runs")[0]["order_key"] == "26-21055"
+    assert db._query("SELECT order_key FROM program_runs")[0]["order_key"] == "21055"
     keys = {r["order_key"] for r in db._query("SELECT order_key FROM state_intervals")}
-    assert keys == {"26-21055"}
+    assert keys == {"21055"}
     types = [e["type"] for e in db.events(0, 1000)]
     assert types.count("order_created") == 1
     assert c.live()["order"]["setup"] == 1
@@ -109,11 +109,11 @@ def test_versions_belong_to_the_base_order(db, make_collector):
     t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055V2-01-01.H", 100)
     run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055v2-02-01.H", 50)  # kleines v: gleiche Version
     [row] = orders.list_orders(db)
-    assert (row["key"], row["number"], row["running_s"], row["finished"]) == ("26-21055", "21055", 650, 4)
+    assert (row["key"], row["number"], row["running_s"], row["finished"]) == ("21055", "21055", 650, 4)
     assert (row["versions"], row["setups"]) == (["V1", "V2"], [1, 2])
     live = c.live()["order"]
-    assert (live["key"], live["version"]) == ("26-21055", "V2")
-    detail = orders.order_detail(db, "26-21055", TZ)
+    assert (live["key"], live["version"]) == ("21055", "V2")
+    detail = orders.order_detail(db, "21055", TZ)
     blocks = [(v["version"], [s["setup"] for s in v["setups"]], v["part_run_s"], v["running_s"]) for v in detail["versions"]]
     assert blocks == [("", [1], 300, 300), ("V1", [1], 200, 200), ("V2", [1, 2], 150, 150)]
     # Mehrere Ausführungen: keine gemeinsame Ø-Zeit je Teil, dafür je Version
@@ -121,12 +121,49 @@ def test_versions_belong_to_the_base_order(db, make_collector):
     assert [s["version"] for s in detail["setups"]] == ["", "V1", "V2", "V2"]
 
 
+def test_year_in_the_program_name_does_not_split_the_order(db, make_collector):
+    """DMU 70, 7.10.: 21-21053v1-02-01 (Jahr 21) gehört wie 26-21053-01-01 zum Auftrag 21053."""
+    c = make_collector()
+    t = run_part(c, 0, "TNC:\\AUFTRAG\\26-21053-01-01.H", 300)
+    run_part(c, t + 10, "TNC:\\AUFTRAG\\21-21053v1-02-01.h", 200)
+    [row] = orders.list_orders(db)
+    assert (row["key"], row["running_s"], row["versions"]) == ("21053", 500, ["V1"])
+    blocks = [(v["version"], [s["setup"] for s in v["setups"]]) for v in orders.order_detail(db, "21053", TZ)["versions"]]
+    assert blocks == [("", [1]), ("V1", [2])]
+
+
+def test_update_merges_orders_of_different_years(tmp_path):
+    """Bis 1.17.0 war das Jahr Teil des Schlüssels (21-21053 und 26-21053 getrennt)."""
+    from app.db import Database
+
+    path = tmp_path / "v13.db"
+    db = Database(path)
+    db.ensure_machine("m1", "DMG 1", "10.0.0.1", 19000)
+    for key, t in (("21-21053", 300.0), ("26-21053", 100.0), ("26-4711", 50.0)):
+        db.ensure_order(key, 2000 + int(key[:2]), key[3:], t)
+        run_id = db.start_run("m1", f"TNC:\\{key}-01-01.H", t, True, key)
+        iv = db.open_interval("m1", "RUNNING", "STARTED", "AUTOMATIC", f"TNC:\\{key}-01-01.H", run_id, t, t + 10, order_key=key)
+        db.close_interval(iv, t + 10)
+        db.end_run(run_id, t + 10, "finished")
+    db.update_order("26-21053", "Abdeckung rechts", "open", 0.0)
+    db._execute("DELETE FROM meta WHERE key = 'order_years_merged'")
+    db.close()
+
+    db = Database(path)
+    assert sorted(o["key"] for o in db.orders()) == ["21053", "4711"]
+    merged = db.order("21053")
+    assert (merged["title"], merged["number"], merged["created_at"]) == ("Abdeckung rechts", "21053", 100.0)
+    rows = {r["key"]: (r["running_s"], r["runs"]) for r in orders.list_orders(db)}
+    assert rows == {"21053": (20, 2), "4711": (10, 1)}
+    db.close()
+
+
 def test_versions_are_sorted_by_number(db, make_collector):
     c = make_collector()
     t = 0
     for version in ("V10", "V2", ""):
         t = run_part(c, t + 10, f"TNC:\\AUFTRAG\\26-21055{version}-01-01.H", 100)
-    assert [v["version"] for v in orders.order_detail(db, "26-21055", TZ)["versions"]] == ["", "V2", "V10"]
+    assert [v["version"] for v in orders.order_detail(db, "21055", TZ)["versions"]] == ["", "V2", "V10"]
     assert orders.list_orders(db)[0]["versions"] == ["V2", "V10"]
 
 
@@ -148,7 +185,7 @@ def test_update_merges_version_orders_into_the_base_order(tmp_path):
     db.update_order("26-21055", "", "closed", 500.0)
     db.update_order("26-21055V1", "Kunde X", "open", 0.0)
     db.set_order_image("26-21055V1", "26-21055V1-abc.jpg")
-    db._execute("DELETE FROM meta WHERE key = 'order_versions_merged'")
+    db._execute("DELETE FROM meta WHERE key IN ('order_versions_merged', 'order_years_merged')")
     db.close()
     con = sqlite3.connect(path)
     con.execute("UPDATE meta SET value = '12' WHERE key = 'schema_version'")
@@ -156,16 +193,16 @@ def test_update_merges_version_orders_into_the_base_order(tmp_path):
     con.close()
 
     db = Database(path)
-    assert db.get_meta("schema_version") == "13"
-    assert sorted(o["key"] for o in db.orders()) == ["26-21053", "26-21055"]
-    merged = db.order("26-21055")
+    assert db.get_meta("schema_version") == "14"
+    assert sorted(o["key"] for o in db.orders()) == ["21053", "21055"]  # ohne Jahr und Version
+    merged = db.order("21055")
     assert (merged["title"], merged["image"], merged["status"], merged["created_at"]) == ("Kunde X", "26-21055V1-abc.jpg", "open", 50.0)
-    renamed = db.order("26-21053")  # Grundauftrag gab es nicht: die Version wird zu ihm
+    renamed = db.order("21053")  # Grundauftrag gab es nicht: die Version wird zu ihm
     assert (renamed["number"], renamed["created_at"]) == ("21053", 70.0)
     keys = {r["order_key"] for r in db._query("SELECT order_key FROM program_runs UNION SELECT order_key FROM state_intervals")}
-    assert keys == {"26-21055", "26-21053"}
+    assert keys == {"21055", "21053"}
     rows = {r["key"]: (r["running_s"], r["runs"]) for r in orders.list_orders(db)}
-    assert rows == {"26-21055": (20, 2), "26-21053": (10, 1)}
+    assert rows == {"21055": (20, 2), "21053": (10, 1)}
     db.close()
 
 
@@ -180,7 +217,7 @@ def test_backfill_assigns_versions_recorded_before_update(db, make_collector):
     assert db.orders() == []
     assert orders.backfill(db) == 1
     [row] = orders.list_orders(db)
-    assert (row["key"], row["number"], row["running_s"], row["finished"], row["versions"]) == ("26-21053", "21053", 300, 1, ["V1"])
+    assert (row["key"], row["number"], row["running_s"], row["finished"], row["versions"]) == ("21053", "21053", 300, 1, ["V1"])
 
 
 def test_programs_without_code_have_no_order(db, make_collector):
@@ -193,12 +230,12 @@ def test_programs_without_code_have_no_order(db, make_collector):
 def test_closed_order_reopens_when_it_runs_again(db, make_collector):
     c = make_collector()
     run_part(c, 0, P11, 100)
-    db.update_order("26-21055", "Flansch", "closed", 500)
-    assert db.order("26-21055")["closed_at"] == 500
+    db.update_order("21055", "Flansch", "closed", 500)
+    assert db.order("21055")["closed_at"] == 500
     feed(c, (600, snap("IDLE", P11)))  # nur angewählt: bleibt abgeschlossen
-    assert db.order("26-21055")["status"] == "closed"
+    assert db.order("21055")["status"] == "closed"
     feed(c, (700, snap("STARTED", P11)))
-    order = db.order("26-21055")
+    order = db.order("21055")
     assert (order["status"], order["closed_at"], order["title"]) == ("open", None, "Flansch")
 
 
@@ -211,16 +248,16 @@ def test_order_totals_count_only_run_time(db, make_collector):
     feed(c, (t + 50_000, snap("FINISHED", P21)))
     run_part(c, t + 60_000, OTHER, 50)
 
-    [row] = [r for r in orders.list_orders(db) if r["key"] == "26-21055"]
+    [row] = [r for r in orders.list_orders(db) if r["key"] == "21055"]
     assert row["running_s"] == pytest.approx(900)
     assert row["stopped_s"] == pytest.approx(60)
     assert (row["runs"], row["finished"], row["programs"], row["setups"], row["machines"]) == (3, 3, 3, [1, 2], ["m1"])
     assert row["first_activity"] == 10
     assert row["last_activity"] < t + 1
-    assert [r["key"] for r in orders.list_orders(db)] == ["26-4711", "26-21055"]  # zuletzt aktiv zuerst
-    db.update_order("26-4711", "", "closed", 1)
-    assert [r["key"] for r in orders.list_orders(db, "open")] == ["26-21055"]
-    assert [r["key"] for r in orders.list_orders(db, "closed")] == ["26-4711"]
+    assert [r["key"] for r in orders.list_orders(db)] == ["4711", "21055"]  # zuletzt aktiv zuerst
+    db.update_order("4711", "", "closed", 1)
+    assert [r["key"] for r in orders.list_orders(db, "open")] == ["21055"]
+    assert [r["key"] for r in orders.list_orders(db, "closed")] == ["4711"]
 
 
 def test_order_detail_by_setup_and_program(db, make_collector):
@@ -230,8 +267,8 @@ def test_order_detail_by_setup_and_program(db, make_collector):
         t = run_part(c, t + 10, P11, 300)
         t = run_part(c, t + 10, P12, 100)
     t = run_part(c, t + 10, P21, 250)
-    detail = orders.order_detail(db, "26-21055", TZ)
-    assert detail["order"]["key"] == "26-21055"
+    detail = orders.order_detail(db, "21055", TZ)
+    assert detail["order"]["key"] == "21055"
     s1, s2 = detail["setups"]
     assert (s1["setup"], [p["name"] for p in s1["programs"]]) == (1, ["26-21055-01-01", "26-21055-01-02"])
     assert s1["running_s"] == pytest.approx(800)
@@ -242,7 +279,7 @@ def test_order_detail_by_setup_and_program(db, make_collector):
     assert (detail["totals"]["runs"], detail["totals"]["finished"]) == (5, 5)
     assert len(detail["runs"]) == 5
     assert sum(d["running_s"] for d in detail["days"]) == pytest.approx(1050)
-    assert orders.order_detail(db, "99-99999", TZ) is None
+    assert orders.order_detail(db, "99999", TZ) is None
 
 
 def test_fixture_setups_08_09_do_not_count_per_part(db, make_collector):
@@ -252,7 +289,7 @@ def test_fixture_setups_08_09_do_not_count_per_part(db, make_collector):
     t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21055-09-01.H", 50)
     t = run_part(c, t + 10, P11, 300)
     run_part(c, t + 10, P21, 200)
-    detail = orders.order_detail(db, "26-21055", TZ)
+    detail = orders.order_detail(db, "21055", TZ)
     assert [(s["setup"], s["fixture"]) for s in detail["setups"]] == [(1, False), (2, False), (8, True), (9, True)]
     totals = detail["totals"]
     assert totals["part_run_s"] == pytest.approx(500)  # nur Spannung 1 + 2
@@ -262,7 +299,7 @@ def test_fixture_setups_08_09_do_not_count_per_part(db, make_collector):
 
     # Auftrag, von dem bisher nur die Vorrichtung gebaut wurde: noch keine Ø-Zeit je Teil
     run_part(c, 10_000, "TNC:\\AUFTRAG\\26-4711-08-01.H", 120)
-    only_fixture = orders.order_detail(db, "26-4711", TZ)["totals"]
+    only_fixture = orders.order_detail(db, "4711", TZ)["totals"]
     assert (only_fixture["part_run_s"], only_fixture["part_complete"]) == (None, False)
     assert only_fixture["fixture_s"] == pytest.approx(120)
 
@@ -271,7 +308,7 @@ def test_order_days_split_at_midnight(db, make_collector):
     c = make_collector()
     start = datetime(2026, 9, 21, 23, 0, tzinfo=TZ).timestamp()
     feed(c, (start, snap("IDLE", P11)), (start + 1800, snap("STARTED", P11)), (start + 5400, snap("FINISHED", P11)))
-    days = orders.order_detail(db, "26-21055", TZ)["days"]
+    days = orders.order_detail(db, "21055", TZ)["days"]
     assert [(d["date"], d["running_s"]) for d in days] == [("2026-09-21", 1800), ("2026-09-22", 1800)]
 
 
@@ -287,7 +324,7 @@ def test_backfill_assigns_existing_data(db, make_collector):
 
     assert orders.backfill(db) == 1
     [order] = db.orders()
-    assert (order["key"], order["created_at"]) == ("26-21055", 100)
+    assert (order["key"], order["created_at"]) == ("21055", 100)
     [row] = orders.list_orders(db)
     assert (row["running_s"], row["finished"]) == (300, 1)
     assert orders.backfill(db) == 0  # idempotent
@@ -309,52 +346,52 @@ def client(tmp_path):
 
 def test_api_list_and_detail(client):
     [row] = client.get("/api/orders").json()["orders"]
-    assert row["key"] == "26-21055"
+    assert row["key"] == "21055"
     assert row["active"][0]["machine"] == "DMG 1"
     assert row["active"][0]["program"] == "26-21055-01-02"
-    detail = client.get("/api/orders/26-21055").json()
+    detail = client.get("/api/orders/21055").json()
     assert detail["totals"]["finished"] == 1
     assert detail["active"][0]["state"] == "RUNNING"
     assert client.get("/api/orders/99-1").status_code == 404
     assert client.get("/api/orders?status=bogus").status_code == 422
     live = client.get("/api/machines").json()["machines"][0]
-    assert live["order"]["key"] == "26-21055"
+    assert live["order"]["key"] == "21055"
 
 
 def test_api_update(client):
-    r = client.put("/api/orders/26-21055", json={"title": "  Gehäuse Kunde Müller ", "status": "closed"})
+    r = client.put("/api/orders/21055", json={"title": "  Gehäuse Kunde Müller ", "status": "closed"})
     assert r.status_code == 200
     assert (r.json()["title"], r.json()["status"]) == ("Gehäuse Kunde Müller", "closed")
-    assert client.get("/api/orders?status=closed").json()["orders"][0]["key"] == "26-21055"
-    assert client.put("/api/orders/26-21055", json={"status": "weg"}).status_code == 400
-    assert client.put("/api/orders/26-21055", json={"title": "x" * 121}).status_code == 400
+    assert client.get("/api/orders?status=closed").json()["orders"][0]["key"] == "21055"
+    assert client.put("/api/orders/21055", json={"status": "weg"}).status_code == 400
+    assert client.put("/api/orders/21055", json={"title": "x" * 121}).status_code == 400
     assert client.put("/api/orders/99-1", json={}).status_code == 404
 
 
 def test_api_export(client):
-    r = client.get("/api/orders/26-21055/export.csv")
+    r = client.get("/api/orders/21055/export.csv")
     lines = r.content.decode("utf-8").lstrip("﻿").strip().split("\r\n")
     assert lines[0].split(";")[:5] == ["Auftrag", "Version", "Aufspannung", "Programm", "Lauf-Nr."]
     first = lines[1].split(";")
-    assert (first[0], first[1], first[2], first[3], first[8], first[9]) == ("26-21055", "", "1", "26-21055-01-01", "fertig", "5,00")
+    assert (first[0], first[1], first[2], first[3], first[8], first[9]) == ("21055", "", "1", "26-21055-01-01", "fertig", "5,00")
 
 
 def test_delete_run_removes_it_from_order_but_keeps_machine_time(client):
     db = client.app.state.ctx.db
-    finished, running = sorted(r["id"] for r in db.order_runs("26-21055"))
+    finished, running = sorted(r["id"] for r in db.order_runs("21055"))
     stats_before = client.get("/api/stats", params={"from": 0}).json()
     machine_running = stats_before["machines"]["m1"]["totals"]["RUNNING"]
-    assert client.get("/api/orders/26-21055").json()["totals"]["running_s"] == pytest.approx(300 + 0)
+    assert client.get("/api/orders/21055").json()["totals"]["running_s"] == pytest.approx(300 + 0)
 
-    r = client.delete(f"/api/orders/26-21055/runs/{finished}")
+    r = client.delete(f"/api/orders/21055/runs/{finished}")
     assert r.status_code == 204
-    detail = client.get("/api/orders/26-21055").json()
+    detail = client.get("/api/orders/21055").json()
     assert [run["id"] for run in detail["runs"]] == [running]
     assert (detail["totals"]["finished"], detail["totals"]["running_s"]) == (0, 0)
     assert detail["totals"]["part_complete"] is False  # kein fertiger Lauf mehr für die Ø-Zeit
     [row] = client.get("/api/orders").json()["orders"]
     assert (row["runs"], row["finished"], row["running_s"]) == (1, 0, 0)
-    assert len(client.get("/api/orders/26-21055/export.csv").content.decode("utf-8").strip().split("\r\n")) == 2
+    assert len(client.get("/api/orders/21055/export.csv").content.decode("utf-8").strip().split("\r\n")) == 2
 
     # Die Maschine ist trotzdem gelaufen: Maschinenzeit bleibt, der Lauf fehlt in den Stückzeiten
     stats = client.get("/api/stats", params={"from": 0}).json()
@@ -369,14 +406,14 @@ def test_delete_run_removes_it_from_order_but_keeps_machine_time(client):
 
 def test_delete_run_checks(client):
     db = client.app.state.ctx.db
-    finished, running = sorted(r["id"] for r in db.order_runs("26-21055"))
-    assert client.delete(f"/api/orders/26-21055/runs/{running}").status_code == 409  # läuft noch
-    assert client.delete("/api/orders/26-21055/runs/99999").status_code == 404
+    finished, running = sorted(r["id"] for r in db.order_runs("21055"))
+    assert client.delete(f"/api/orders/21055/runs/{running}").status_code == 409  # läuft noch
+    assert client.delete("/api/orders/21055/runs/99999").status_code == 404
     assert client.delete(f"/api/orders/99-1/runs/{finished}").status_code == 404
-    db.ensure_order("26-4711", 2026, "4711", 0)
-    r = client.delete(f"/api/orders/26-4711/runs/{finished}")  # gehört zu einem anderen Auftrag
+    db.ensure_order("4711", 2026, "4711", 0)
+    r = client.delete(f"/api/orders/4711/runs/{finished}")  # gehört zu einem anderen Auftrag
     assert r.status_code == 404 and "gehört nicht" in r.json()["detail"]
-    assert len(db.order_runs("26-21055")) == 2  # nichts gelöscht
+    assert len(db.order_runs("21055")) == 2  # nichts gelöscht
 
 
 def test_deleted_run_is_not_resumed(db, make_collector):
@@ -403,22 +440,22 @@ def test_orders_close_after_7_days_without_run(db, make_collector):
     end = run_part(c, 0, P11, 300)
     feed(c, (end + 10, snap("IDLE", OTHER)), (end + 20, snap("STARTED", OTHER)))  # 4711 läuft noch (offen)
     assert orders.close_idle(db, end + 7 * DAY - 60) == []  # noch keine 7 Tage
-    assert orders.close_idle(db, end + 7 * DAY + 60) == ["26-21055"]
-    assert status(db, "26-21055") == ("closed", 1)
-    assert db.order("26-21055")["closed_at"] == end + 7 * DAY + 60
-    assert status(db, "26-4711") == ("open", 0)  # laufender Lauf hält den Auftrag offen
+    assert orders.close_idle(db, end + 7 * DAY + 60) == ["21055"]
+    assert status(db, "21055") == ("closed", 1)
+    assert db.order("21055")["closed_at"] == end + 7 * DAY + 60
+    assert status(db, "4711") == ("open", 0)  # laufender Lauf hält den Auftrag offen
 
 
 def test_manually_reopened_order_gets_7_new_days(db, make_collector):
     c = make_collector()
     end = run_part(c, 0, P11, 300)
     orders.close_idle(db, end + 8 * DAY)
-    db.update_order("26-21055", "", "open", end + 9 * DAY)  # von Hand wieder geöffnet
-    assert status(db, "26-21055") == ("open", 0)
+    db.update_order("21055", "", "open", end + 9 * DAY)  # von Hand wieder geöffnet
+    assert status(db, "21055") == ("open", 0)
     assert orders.close_idle(db, end + 10 * DAY) == []
-    assert orders.close_idle(db, end + 16 * DAY + 1) == ["26-21055"]
-    db.update_order("26-21055", "Kunde X", "closed", end + 17 * DAY)  # nur Bezeichnung geändert
-    assert status(db, "26-21055") == ("closed", 1)
+    assert orders.close_idle(db, end + 16 * DAY + 1) == ["21055"]
+    db.update_order("21055", "Kunde X", "closed", end + 17 * DAY)  # nur Bezeichnung geändert
+    assert status(db, "21055") == ("closed", 1)
 
 
 def test_auto_closed_order_reopens_when_it_runs_again(db, make_collector):
@@ -426,9 +463,9 @@ def test_auto_closed_order_reopens_when_it_runs_again(db, make_collector):
     end = run_part(c, 0, P11, 300)
     orders.close_idle(db, end + 8 * DAY)
     feed(c, (end + 9 * DAY, snap("IDLE", P11)))  # nur angewählt: bleibt zu
-    assert status(db, "26-21055") == ("closed", 1)
+    assert status(db, "21055") == ("closed", 1)
     run_part(c, end + 9 * DAY + 100, P11, 300)
-    order = db.order("26-21055")
+    order = db.order("21055")
     assert (order["status"], order["closed_auto"], order["opened_at"]) == ("open", 0, end + 9 * DAY + 110)
 
 
@@ -440,7 +477,7 @@ def test_update_adds_auto_close_columns(tmp_path):
 
     path = tmp_path / "v11.db"
     db = Database(path)
-    db.ensure_order("26-21055", 2026, "21055", 100.0)
+    db.ensure_order("21055", 2026, "21055", 100.0)
     db.close()
     con = sqlite3.connect(path)
     con.executescript(
@@ -449,16 +486,16 @@ def test_update_adds_auto_close_columns(tmp_path):
     )
     con.close()
     db = Database(path)
-    order = db.order("26-21055")
-    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, "13")
-    assert orders.close_idle(db, 100 + 7 * DAY + 1) == ["26-21055"]  # ab dem Anlegen gerechnet
+    order = db.order("21055")
+    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, "14")
+    assert orders.close_idle(db, 100 + 7 * DAY + 1) == ["21055"]  # ab dem Anlegen gerechnet
     db.close()
 
 
 def test_order_without_runs_closes_7_days_after_creation(db, make_collector):
     c = make_collector()
     feed(c, (0, snap("IDLE", P11)))  # nur angewählt, nie gelaufen
-    assert orders.close_idle(db, 7 * DAY + 1) == ["26-21055"]
+    assert orders.close_idle(db, 7 * DAY + 1) == ["21055"]
 
 
 def test_meta_has_version_and_page(client):
@@ -487,7 +524,7 @@ def test_simulation_uses_order_scheme():
         if (prev.key, prev.version) == (cur.key, cur.version) and cur.setup != prev.setup:
             assert cur.setup == prev.setup + 1 or cur.setup == 1
     assert len({c.key for c in codes}) >= 2
-    assert set(ORDER_SETUPS) >= {c.key for c in codes}
+    assert {k.split("-")[1].removesuffix("V1") for k in ORDER_SETUPS} >= {c.key for c in codes}
 
 
 def test_update_from_schema_v4_database(tmp_path):
@@ -520,7 +557,7 @@ def test_update_from_schema_v4_database(tmp_path):
     settings = Settings(machines=(), db_path=path, simulate=True)
     with TestClient(create_app(settings, run_collectors=False)) as c:
         [row] = c.get("/api/orders").json()["orders"]
-        assert (row["key"], row["running_s"], row["finished"]) == ("26-21055", 300, 1)
+        assert (row["key"], row["running_s"], row["finished"]) == ("21055", 300, 1)
         assert c.get("/api/machines").json()["machines"][0]["name"] == "DMG 1"
 
 
@@ -573,7 +610,7 @@ def test_order_scheme_wins_over_rim_scheme():
 def test_rim_info(key, label, width):
     info = orders.rim_info(key, orders.RIM_DESIGNS)
     assert (info["label"], info["width"]) == (label, width)
-    assert orders.rim_info("26-21055", orders.RIM_DESIGNS) is None
+    assert orders.rim_info("21055", orders.RIM_DESIGNS) is None
 
 
 def test_rim_gets_its_own_entry_and_sums_its_programs(db, make_collector):
@@ -631,4 +668,4 @@ def test_rim_designs_can_be_edited(client):
 def test_rim_image_key_is_valid():
     from app.order_images import valid_key
 
-    assert valid_key("10101018") and valid_key("26-21055") and not valid_key("2610101018")
+    assert valid_key("10101018") and valid_key("21055") and not valid_key("2610101018")

@@ -13,7 +13,7 @@ from app.order_images import MAX_IMAGE_BYTES, MAX_THUMB_BYTES, ImageError, split
 
 from .conftest import feed, snap
 
-KEY = "26-21055"
+KEY = "21055"
 PROGRAM = "TNC:\\AUFTRAG\\26-21055-01-01.H"
 FULL = b"\xff\xd8\xff\xe0" + b"G" * 2000  # großes Bild (nur Kopf echt, Inhalt egal)
 THUMB = b"\xff\xd8\xff\xe0" + b"k" * 200
@@ -33,7 +33,7 @@ def app_client(tmp_path):
     app = create_app(settings, run_collectors=False)
     with TestClient(app) as client:
         app.state.ctx.db.ensure_order(KEY, 2026, "21055", 1000)
-        app.state.ctx.db.ensure_order("26-4711", 2026, "4711", 900)
+        app.state.ctx.db.ensure_order("4711", 2026, "4711", 900)
         yield app, client
 
 
@@ -67,7 +67,7 @@ def test_upload_stores_both_files_and_serves_them(client, folder):
     order = r.json()
     assert "image" not in order
     full_name, thumb = pair(folder)
-    assert re.fullmatch(r"26-21055-[0-9a-f]{8}\.jpg", full_name)
+    assert re.fullmatch(r"21055-[0-9a-f]{8}\.jpg", full_name)
     assert thumb == thumb_name(full_name) == full_name.replace(".jpg", "-thumb.jpg")
     assert folder.parent.name == "images" and folder.name == "orders"
     assert (folder / full_name).read_bytes() == FULL and (folder / thumb).read_bytes() == THUMB
@@ -84,13 +84,13 @@ def test_upload_stores_both_files_and_serves_them(client, folder):
     assert client.get(f"/api/orders/{KEY}/image?size=huge").status_code == 422
 
 
-def test_upload_for_order_version(app_client, folder):
+def test_upload_for_rim(app_client, folder):
     app, client = app_client
-    app.state.ctx.db.ensure_order("26-21055V1", 2026, "21055V1", 1100)
-    r = upload(client, key="26-21055V1")
+    app.state.ctx.db.ensure_order("10101018", 0, "10101018", 1100, kind="rim")
+    r = upload(client, key="10101018")
     assert r.status_code == 200
     full_name, thumb = pair(folder)
-    assert re.fullmatch(r"26-21055V1-[0-9a-f]{8}\.jpg", full_name)
+    assert re.fullmatch(r"10101018-[0-9a-f]{8}\.jpg", full_name)
     assert client.get(r.json()["thumb_url"]).content == THUMB
 
 
@@ -99,7 +99,7 @@ def test_list_detail_and_update_carry_urls(client):
     rows = {r["key"]: r for r in client.get("/api/orders").json()["orders"]}
     assert rows[KEY]["thumb_url"].startswith(f"/api/orders/{KEY}/image?size=thumb&v=")
     assert rows[KEY]["image_url"].startswith(f"/api/orders/{KEY}/image?size=full&v=")
-    assert rows["26-4711"]["image_url"] is None and rows["26-4711"]["thumb_url"] is None
+    assert rows["4711"]["image_url"] is None and rows["4711"]["thumb_url"] is None
     assert all("image" not in r for r in rows.values())
     detail = client.get(f"/api/orders/{KEY}").json()["order"]
     assert detail["image_url"] == rows[KEY]["image_url"]
@@ -133,11 +133,11 @@ def test_replace_removes_old_files(client, folder):
 
 def test_delete_removes_both_files(client, folder):
     upload(client)
-    upload(client, key="26-4711")
+    upload(client, key="4711")
     r = client.delete(f"/api/orders/{KEY}/image")
     assert r.status_code == 200
     assert (r.json()["image_url"], r.json()["thumb_url"]) == (None, None)
-    assert all(name.startswith("26-4711-") for name in files(folder))  # anderer Auftrag bleibt
+    assert all(name.startswith("4711-") for name in files(folder))  # anderer Auftrag bleibt
     assert len(files(folder)) == 2
     assert client.get(f"/api/orders/{KEY}/image").status_code == 404
     assert client.get(f"/api/orders/{KEY}/image?size=thumb").status_code == 404
@@ -148,9 +148,9 @@ def test_delete_removes_both_files(client, folder):
 
 
 def test_unknown_order(client, folder):
-    assert upload(client, key="26-99999").status_code == 404
-    assert client.get("/api/orders/26-99999/image").status_code == 404
-    assert client.delete("/api/orders/26-99999/image").status_code == 404
+    assert upload(client, key="99999").status_code == 404
+    assert client.get("/api/orders/99999/image").status_code == 404
+    assert client.delete("/api/orders/99999/image").status_code == 404
     assert files(folder) == []
 
 
@@ -234,11 +234,10 @@ def test_missing_folder_means_no_image(app_client, client):
 
 
 def test_helpers():
-    assert valid_key("26-21055") and valid_key("26-4711")
-    assert valid_key("26-21053V1") and valid_key("26-4711V12")  # Versionen
-    assert not valid_key("26-21053v1") and not valid_key("26-21053V") and not valid_key("26-21053V123")
-    assert not valid_key("26-21055\n") and not valid_key("../26-21055")
-    assert not valid_key("٢٦-٢١٠٥٥")  # arabisch-indische Ziffern
+    assert valid_key("21055") and valid_key("4711") and valid_key("10101018")  # Auftrag, Felge
+    assert not valid_key("26-21055") and not valid_key("21053V1")  # Jahr und Version gehören nicht zum Schlüssel
+    assert not valid_key("21055\n") and not valid_key("../21055") and not valid_key("123")
+    assert not valid_key("٢١٠٥٥")  # arabisch-indische Ziffern
     assert thumb_name("26-21055-1a2b3c4d.jpg") == "26-21055-1a2b3c4d-thumb.jpg"
     assert split_upload(FULL + THUMB, len(FULL)) == (FULL, THUMB)
     with pytest.raises(ImageError) as exc:
@@ -266,17 +265,17 @@ def test_update_from_schema_v7_database(tmp_path):
 
     db = Database(path)
     assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
-    order = db.order("26-21055")
+    order = db.order("21055")
     assert (order["title"], order["status"], order["closed_at"], order["image"]) == ("Flansch", "closed", 200, None)
-    db.set_order_image("26-21055", "26-21055-1a2b3c4d.jpg")
+    db.set_order_image("21055", "26-21055-1a2b3c4d.jpg")
     db.close()
 
     db = Database(path)  # erneuter Start: Migration läuft nicht doppelt
-    assert db.order("26-21055")["image"] == "26-21055-1a2b3c4d.jpg"
+    assert db.order("21055")["image"] == "26-21055-1a2b3c4d.jpg"
     db.close()
 
     settings = Settings(machines=(), db_path=path, simulate=True)
     with TestClient(create_app(settings, run_collectors=False)) as c:
         [row] = c.get("/api/orders?status=all").json()["orders"]
         # Eintrag vorhanden, Datei nicht: gilt als ohne Bild
-        assert (row["key"], row["title"], row["image_url"]) == ("26-21055", "Flansch", None)
+        assert (row["key"], row["title"], row["image_url"]) == ("21055", "Flansch", None)

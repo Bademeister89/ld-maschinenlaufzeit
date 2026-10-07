@@ -197,7 +197,7 @@ zugeordnet, z. B. `26-21055-01-01`:
 
 | Teil | Bedeutung |
 |---|---|
-| `26` | Jahr (2026) |
+| `26` | Jahr (2026) – zählt für den Auftrag nicht |
 | `21055` | Auftragsnummer, 4- oder 5-stellig, optional mit Version: `21055V1`, `21055V2` (gehören zu 21055) |
 | `01` | Aufspannung (1 = Spannung 1, 2 = Spannung 2 …); `08` und `09` = Vorrichtungsbau |
 | `01` | Programmnummer, fortlaufend |
@@ -225,14 +225,18 @@ zugeordnet, z. B. `26-21055-01-01`:
 - Programmnamen ohne eines der beiden Schemata (z. B. `1301201.h`) zählen zu keinem Auftrag.
 
 - Taucht ein Programm mit einer neuen Auftragsnummer an einer Maschine auf, wird der Auftrag
-  **automatisch angelegt**. Schlüssel ist Jahr + Nummer (`26-21055`), falls eine Nummer in einem
-  späteren Jahr wieder vorkommt. Zusätze nach der Programmnummer (`26-21055-01-01_Schlichten.H`)
-  und Unterstriche statt Bindestriche werden ebenfalls erkannt.
+  **automatisch angelegt**. Schlüssel ist nur die Nummer (`21055`), das Jahr vorne im Programmnamen
+  zählt nicht: `21-21055-01-01`, `25-21055-…` und `26-21055-…` gehören alle zum Auftrag 21055.
+  Zusätze nach der Programmnummer (`26-21055-01-01_Schlichten.H`) und Unterstriche statt
+  Bindestriche werden ebenfalls erkannt.
+  - Bis Version 1.17.0 war das Jahr Teil des Schlüssels. Beim Update auf 1.18.0 werden Aufträge mit
+    derselben Nummer aus verschiedenen Jahren einmalig zusammengeführt. Bezeichnung und Bild bleiben
+    wie bei den Versionen erhalten.
 - **Versionen:** `26-21053V1-01-01` und `26-21053V2-01-01` gehören zum Auftrag `21053`. Eine
   Version ist eine andere Ausführung des Teils.
   - Die Version steht direkt an der Nummer: `V` und eine ein- oder zweistellige Zahl. Ein kleines
     `v` zählt wie `V`.
-  - In der Liste steht sie hinter der Nummer („21053 · 2026 · V1, V2“). Die Suche findet den
+  - In der Liste steht sie hinter der Nummer („21053 · V1, V2“). Die Suche findet den
     Auftrag auch über `21053V1`.
   - Laufzeit, Stopps und Läufe des Auftrags sind die Summe aller Versionen.
   - Im Detail hat jede Version einen eigenen Block („Grundversion“, „Version V1“ …) mit ihren

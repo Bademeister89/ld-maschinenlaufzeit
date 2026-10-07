@@ -55,7 +55,7 @@ def test_called_programs_get_runs_and_orders(db, make_collector):
     assert runs(db) == [(A, 20, 50, "finished"), (B, 60, 90, "finished")]
     assert all(r["start_observed"] for r in db.runs(0, 10_000))
     totals = {r["key"]: (r["running_s"], r["runs"], r["finished"]) for r in orders.list_orders(db)}
-    assert totals == {"26-21055": (30, 1, 1), "26-21102": (30, 1, 1)}
+    assert totals == {"21055": (30, 1, 1), "21102": (30, 1, 1)}
     # Die Zeit im Palettenprogramm bleibt Laufzeit der Maschine, gehört aber zu keinem Lauf
     rows = db._query("SELECT state, program, run_id, started_at FROM state_intervals ORDER BY id")
     pal_rows = [(r["state"], r["run_id"], r["started_at"]) for r in rows if r["program"] == PAL]
@@ -124,7 +124,7 @@ def test_live_shows_called_program_and_caller(db, make_collector):
     c = make_collector()
     feed(c, (0, pal("IDLE")), (10, pal("STARTED", A, tool="T5")), (12, pal("STARTED", A, tool="T7")))
     live = c.live()
-    assert (live["program"], live["caller"], live["order"]["key"], live["run"]["program"]) == (A, PAL, "26-21055", A)
+    assert (live["program"], live["caller"], live["order"]["key"], live["run"]["program"]) == (A, PAL, "21055", A)
     calls = db._query("SELECT number, program FROM tool_calls")
     assert [(r["number"], r["program"]) for r in calls] == [(7, A)]
     feed(c, (20, pal("STARTED")))
@@ -243,7 +243,7 @@ def test_update_rereads_program_files_once(tmp_path):
     con.executescript("ALTER TABLE program_files DROP COLUMN calls; UPDATE meta SET value = '9' WHERE key = 'schema_version';")
     con.close()
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "13"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "14"
     row = db.program_file("m1", PAL)
     assert (row["size"], row["mtime"], row["blocks"], row["calls"]) == (None, None, 9, None)
     db.close()

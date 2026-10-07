@@ -10,6 +10,19 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.18.0] – 2026-10-07
+
+### Geändert
+- **Das Jahr im Programmnamen zählt nicht mehr:** `21-21053v1-02-01`, `25-21053-…` und
+  `26-21053-01-01` gehören alle zum Auftrag 21053.
+  - Beispiel: Ein Programm `21-21053v1-02-01` landete bisher als eigener Auftrag „21053 (2021)“.
+    Jetzt steht es im Auftrag 21053 im Block „Version V1“.
+  - Der Schlüssel eines Auftrags ist nur noch die Nummer (`21053` statt `26-21053`), Links und
+    CSV-Dateien heißen entsprechend.
+  - Das Jahr steht nicht mehr in Liste, Auftrag und Live-Karte („Auftrag 21053 V1 · Aufspannung 2 …“).
+  - Beim Update werden Aufträge mit gleicher Nummer aus verschiedenen Jahren einmalig
+    zusammengeführt. Bezeichnung und Bild bleiben erhalten, vorhandene Bilder funktionieren weiter.
+
 ## [1.17.0] – 2026-10-07
 
 ### Geändert

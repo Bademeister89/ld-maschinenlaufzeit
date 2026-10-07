@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -237,8 +237,13 @@ class Database:
         # v12 → v13: Versionen (26-21053V1 …) gehören seit 1.17.0 zum Grundauftrag 26-21053; bis dahin
         # waren sie eigene Aufträge. Einmalig zusammenführen.
         if self.get_meta("order_versions_merged") is None:
-            self._merge_order_versions()
+            self._merge_orders(r"(\d{2}-(\d{4,5}))V\d{1,2}")
             self.set_meta("order_versions_merged", "1")
+        # v13 → v14: Das Jahr im Programmnamen zählt nicht mehr – 21-21053, 26-21053 … sind der Auftrag
+        # 21053 (Schlüssel nur noch die Nummer).
+        if self.get_meta("order_years_merged") is None:
+            self._merge_orders(r"\d{2}-((\d{4,5}))(?:V\d{1,2})?")
+            self.set_meta("order_years_merged", "1")
         # v8 → v9: Werkzeugaufrufe. Die Tabelle tool_calls kommt über SCHEMA. Nur bei einem Update
         # (Ereignisse vorhanden, tool_calls neu) trägt tools.backfill_calls die bisherigen Werkzeugwechsel
         # einmalig nach – eine Datenbank, die schon Aufrufe zählt, würde sonst doppelt zählen.
@@ -261,13 +266,14 @@ class Database:
             self.set_meta("pallet_tables_reread", "1")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
-    def _merge_order_versions(self) -> None:
-        """Aufträge der Versionen in den Grundauftrag übernehmen: Abschnitte und Läufe umhängen. Gibt es
-        den Grundauftrag noch nicht, wird der Versionsauftrag zu ihm. Sonst bleiben Bezeichnung und Bild
-        des Grundauftrags (fehlen sie, die der Version), und er ist offen, wenn einer der beiden offen war."""
+    def _merge_orders(self, pattern: str) -> None:
+        """Aufträge zusammenführen, deren Schlüssel auf ``pattern`` passt (Gruppe 1: neuer Schlüssel,
+        Gruppe 2: Nummer): Abschnitte und Läufe umhängen. Gibt es den neuen Auftrag noch nicht, wird der
+        alte zu ihm. Sonst bleiben Bezeichnung und Bild des Ziels (fehlen sie, die des alten), und er ist
+        offen, wenn einer der beiden offen war."""
         with self.transaction():
-            for row in self._con.execute("SELECT * FROM orders ORDER BY key").fetchall():
-                match = re.fullmatch(r"(\d{2}-(\d{4,5}))V\d{1,2}", row["key"], re.IGNORECASE)
+            for row in self._con.execute("SELECT * FROM orders WHERE kind = 'order' ORDER BY key").fetchall():
+                match = re.fullmatch(pattern, row["key"], re.IGNORECASE)
                 if match is None:
                     continue
                 base, number = match.groups()

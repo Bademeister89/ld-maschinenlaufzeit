@@ -78,13 +78,13 @@ function thumbFor(c, m) {
   return c.thumb;
 }
 
-/** "Auftrag 21051 (2026) · Aufspannung 2 · Programm 01" bzw. "Felge 999 · einteilig · 10 × 18″ · Spannung 1 · tasche". */
+/** "Auftrag 21051 · Aufspannung 2 · Programm 01" bzw. "Felge 999 · einteilig · 10 × 18″ · Spannung 1 · tasche". */
 function orderText(o) {
   if (o.kind === "rim") {
     return [`Felge ${o.rim?.label ?? o.key}`, `Spannung ${o.setup}`, o.variant || null].filter(Boolean).join(" · ");
   }
   const version = o.version ? ` ${o.version}` : "";
-  return `Auftrag ${o.order}${version} (${o.year}) · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
+  return `Auftrag ${o.order}${version} · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
 }
 
 /** Vorschaubild des Bauteils zum Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
