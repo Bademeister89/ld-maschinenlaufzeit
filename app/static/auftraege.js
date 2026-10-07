@@ -226,13 +226,123 @@ function versionBlocks(d, o) {
               `${fmtHours(v.running_s)} Laufzeit`,
               `${v.finished} fertige Läufe`,
               `Ø je ${partWord(o)} ${v.part_complete ? fmtDuration(v.part_run_s) : "noch offen"}`,
-            ].join(" · "),
+              v.plan_part_s ? `Plan ${fmtDuration(v.plan_part_s)}` : null,
+            ].filter(Boolean).join(" · "),
           }),
         ),
         el("div", { class: "setup-grid" }, v.setups.map((s) => setupCard(s, o))),
       ),
     ),
   );
+}
+
+// --- CAM-Planzeiten (Tebis-Doku oder von Hand) --------------------------------------------------
+
+const hoursMinutes = (sec) => `${Math.floor(sec / 3600)}:${String(Math.round((sec % 3600) / 60)).padStart(2, "0")}`;
+const PLAN_SOURCE = { pdf: "aus der Tebis-Doku", manual: "von Hand eingetragen" };
+
+/** Planzeit eines Programms mit Knopf zum Ändern. */
+function planCell(o, p) {
+  return el(
+    "span",
+    { class: "plan-cell" },
+    el("span", { text: p.plan_s != null ? fmtDuration(p.plan_s) : "—", title: PLAN_SOURCE[p.plan_source] ?? null }),
+    el("button", {
+      type: "button",
+      class: "link-button plan-edit",
+      title: "Planzeit ändern",
+      "aria-label": `Planzeit für ${p.name} ändern`,
+      onclick: () => editPlan(o, p.name, p.plan_s),
+      text: "ändern",
+    }),
+  );
+}
+
+async function savePlan(o, program, time) {
+  try {
+    await send("PUT", `/api/orders/${encodeURIComponent(o.key)}/plans`, { program, time });
+    await refresh();
+    return true;
+  } catch (err) {
+    showError(err);
+    return false;
+  }
+}
+
+function editPlan(o, program, current) {
+  const value = prompt(
+    `Planzeit (CAM) für ${program}\nStunden (z. B. 4,5) oder h:mm (z. B. 4:30). Leer lassen = Planzeit entfernen.`,
+    current != null ? hoursMinutes(current) : "",
+  );
+  if (value !== null) savePlan(o, program, value);
+}
+
+/** Planzeit für ein Programm, das hier noch keine Zeile hat (z. B. eine Version ohne Tebis-Doku). */
+function planForm(o) {
+  const program = el("input", {
+    type: "text",
+    class: "plan-program",
+    placeholder: isRim(o) ? `${o.key}-01` : `26-${o.number}-01-01`,
+    "aria-label": "Programmname",
+  });
+  const time = el("input", { type: "text", class: "plan-time", placeholder: "4,5 oder 4:30", "aria-label": "Planzeit" });
+  return el(
+    "form",
+    {
+      class: "card plan-form",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        if (await savePlan(o, program.value, time.value)) program.value = time.value = "";
+      },
+    },
+    el("span", { class: "plan-form-label", text: "Planzeit (CAM) für ein weiteres Programm eintragen:" }),
+    program,
+    time,
+    el("button", { type: "submit", class: "btn", text: "Eintragen" }),
+  );
+}
+
+function showNotice(lines, failed) {
+  const notice = $("notice");
+  notice.classList.toggle("warn", failed);
+  notice.replaceChildren(
+    ...lines.map((line) => el("div", { text: line })),
+    el("button", { type: "button", class: "link-button", onclick: () => (notice.hidden = true), text: "Schließen" }),
+  );
+  notice.hidden = false;
+}
+
+/** Tebis-Doku (PDF) importieren: legt Aufträge an und übernimmt die Planzeiten der Programme. */
+async function importCam(e) {
+  const files = [...e.target.files];
+  e.target.value = "";
+  if (!files.length) return;
+  const lines = [];
+  let failed = false;
+  let open = null;
+  for (const file of files) {
+    try {
+      const r = await send("POST", "/api/orders/import-cam", new Blob([file], { type: "application/pdf" }), {
+        "X-File-Name": encodeURIComponent(file.name),
+      });
+      const where = [r.setup != null ? `Spannung ${String(r.setup).padStart(2, "0")}` : null, r.machine].filter(Boolean).join(", ");
+      for (const o of r.orders) {
+        const programs = o.programs.map((p) => `${p.program} ${fmtDuration(p.planned_s)}`).join(", ");
+        lines.push(
+          `${file.name}: ${o.kind === "rim" ? "Felge" : "Auftrag"} ${o.key}${o.created ? " angelegt" : ""}` +
+            `${where ? ` (${where})` : ""} – Planzeit: ${programs}`,
+        );
+        open ??= o.key;
+      }
+      if (r.ignored.length) lines.push(`${file.name}: ohne Auftragsnummer übergangen: ${r.ignored.join(", ")}`);
+    } catch (err) {
+      failed = true;
+      lines.push(err.message);
+    }
+  }
+  showNotice(lines, failed);
+  await loadList();
+  if (open) await select(open);
 }
 
 function setupCard(setup, o) {
@@ -244,6 +354,7 @@ function setupCard(setup, o) {
     { label: "Laufzeit", value: (p) => fmtHours(p.running_s), cls: "r" },
     { label: "Gestoppt / Fehler", value: (p) => fmtHours(p.stopped_s), cls: "r" },
     { label: `Ø Laufzeit je ${partWord(o)}`, value: (p) => fmtDuration(p.avg_run_s), cls: "r" },
+    { label: "Plan (CAM)", value: (p) => planCell(o, p), cls: "r" },
     { label: "Letzter Lauf", value: (p) => fmtDateTime(p.last_run), cls: "r" },
   ];
   const spannung = String(setup.setup).padStart(2, "0");
@@ -251,6 +362,7 @@ function setupCard(setup, o) {
   if (setup.fixture) partText = "Vorrichtungsbau: einmaliger Aufwand, zählt nicht in die Ø-Bearbeitungszeit je Teil";
   else if (setup.part_complete) partText = `Ø Bearbeitungszeit je ${partWord(o)} in dieser ${setupWord(o)}: ${fmtDuration(setup.part_run_s)}`;
   else partText = `Ø je ${partWord(o)} erst, wenn jedes Programm dieser ${setupWord(o)} einmal vollständig gelaufen ist`;
+  if (!setup.fixture && setup.plan_complete && setup.plan_s) partText += ` · Plan (CAM) ${fmtDuration(setup.plan_s)}`;
   let title = setup.setup ? `${setupWord(o)} ${setup.setup}` : `Ohne ${setupWord(o)}`;
   if (setup.fixture) title = `Vorrichtung (Spannung ${spannung})`;
   return el(
@@ -550,18 +662,24 @@ function renderDetail(d) {
           ? tile(
               `Ø Bearbeitungszeit je ${partWord(o)}`,
               "je Version",
-              d.versions.map((v) => `${versionName(v.version)} ${v.part_complete ? fmtDuration(v.part_run_s) : "—"}`).join(" · "),
+              d.versions
+                .map((v) => `${versionName(v.version)} ${v.part_complete ? fmtDuration(v.part_run_s) : "—"}${v.plan_part_s ? ` (Plan ${fmtDuration(v.plan_part_s)})` : ""}`)
+                .join(" · "),
             )
           : tile(
               `Ø Bearbeitungszeit je ${partWord(o)}`,
               t.part_complete ? fmtDuration(t.part_run_s) : "—",
-              t.part_complete
-                ? `Summe über alle ${isRim(o) ? "Spannungen und Programme" : "Aufspannungen"}${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
-                : "noch nicht jedes Programm vollständig gelaufen",
+              [
+                t.part_complete
+                  ? `Summe über alle ${isRim(o) ? "Spannungen und Programme" : "Aufspannungen"}${d.setups.some((s) => s.fixture) ? ", ohne Vorrichtung" : ""}`
+                  : "noch nicht jedes Programm vollständig gelaufen",
+                t.plan_part_s ? `Plan (CAM) ${fmtDuration(t.plan_part_s)}` : null,
+              ].filter(Boolean).join(" · "),
             ),
       ),
     ),
     versionBlocks(d, o),
+    planForm(o),
     el(
       "div",
       { class: "card section" },
@@ -608,7 +726,8 @@ async function refresh() {
   try {
     await loadList();
     // Eingaben im Bezeichnungsfeld und den Hinweis beim Hochladen nicht beim Aktualisieren überschreiben
-    if (document.activeElement?.id !== "order-title" && !imageState.busy) await loadDetail();
+    const typing = document.activeElement?.matches?.("#detail input");
+    if (!typing && !imageState.busy) await loadDetail();
     $("banner").hidden = true;
   } catch (err) {
     showError(err);
@@ -638,6 +757,8 @@ async function main() {
   });
   $("image-input").addEventListener("change", uploadImage);
   $("camera-input").addEventListener("change", uploadImage);
+  $("cam-import").addEventListener("click", () => $("cam-input").click());
+  $("cam-input").addEventListener("change", importCam);
   document.addEventListener("paste", pasteImage);
   await refresh();
   if (state.selected) $("detail").scrollIntoView({ block: "start" });

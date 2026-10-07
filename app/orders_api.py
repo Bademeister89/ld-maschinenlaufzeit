@@ -1,18 +1,22 @@
-"""API für den Tab „Aufträge“: Liste, Detail, Bezeichnung/Status ändern, Lauf löschen, Bild, CSV-Export."""
+"""API für den Tab „Aufträge“: Liste, Detail, Bezeichnung/Status ändern, Lauf löschen, Bild, CSV-Export,
+CAM-Planzeiten (Import der Tebis-Doku als PDF, Planzeit von Hand)."""
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import orders
+from . import cam_import, orders
+from .nc_program import call_name
 from .order_images import MAX_UPLOAD_BYTES, ImageError, split_upload, valid_key
 from .state import RUN_RESULT_LABELS
 
@@ -125,6 +129,67 @@ def delete_run(request: Request, key: str, run_id: int) -> Response:
         collector.forget_run(run_id, run["program"])
     log.info("Auftrag %s: Lauf %d (%s) gelöscht", key, run_id, run["program"])
     return Response(status_code=204)
+
+
+# --- CAM-Planzeiten (Tebis-Doku oder von Hand) ------------------------------------------------
+
+
+def _forget_plans(ctx: AppContext) -> None:
+    """Prognosen und Palettenlisten mit den neuen Planzeiten rechnen."""
+    for collector in ctx.collectors.values():
+        collector.forget_plans()
+
+
+@router.post("/import-cam")
+async def import_cam(request: Request, x_file_name: str | None = Header(None)) -> dict[str, Any]:
+    """Tebis-Doku einer Aufspannung (PDF als Rohdaten): Aufträge bzw. Felgen der Programme anlegen,
+    Planzeiten speichern, eine leere Bezeichnung aus dem CAD-Namen füllen. Kopfzeile ``X-File-Name``
+    (URL-kodiert) nur für die Meldung und als Herkunft der Planzeit."""
+    ctx = _ctx(request)
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > cam_import.MAX_PDF_BYTES:
+            raise HTTPException(413, "Die PDF ist größer als 10 MB.")
+    file = unquote(x_file_name or "").strip()[:200] or None
+    try:
+        doc = await asyncio.to_thread(cam_import.read_cam_pdf, bytes(data))
+    except cam_import.CamImportError as exc:
+        raise HTTPException(400, f"{file or 'PDF'}: {exc}") from exc
+    result = cam_import.apply_cam_doc(ctx.db, doc, file, time.time())
+    _forget_plans(ctx)
+    for order in result["orders"]:
+        log.info(
+            "CAM-Doku %s: %s %s, %d Planzeit(en)", file or "?", "angelegt" if order["created"] else "Auftrag",
+            order["key"], len(order["programs"]),
+        )
+    return {"file": file, **result}
+
+
+@router.put("/{key}/plans")
+def set_plan(request: Request, key: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Planzeit eines Programms von Hand: ``{"program": "26-21053-02-01", "time": "4,5" | "4:30"}``.
+    Leere Zeit entfernt die Planzeit."""
+    ctx = _ctx(request)
+    if ctx.db.order(key) is None:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    program = str(payload.get("program") or "").strip()
+    code = orders.parse_program(program)
+    if code is None or code.key != key:
+        raise HTTPException(400, f"„{program}“ ist kein Programm dieses Auftrags (z. B. 26-{key}-01-01).")
+    name = call_name(program)
+    text = str(payload.get("time") or "").strip()
+    if not text:
+        ctx.db.delete_plan(name)
+        _forget_plans(ctx)
+        return {"name": name, "planned_s": None}
+    try:
+        planned_s = cam_import.parse_plan_time(text)
+    except ValueError:
+        raise HTTPException(400, "Planzeit bitte in Stunden (z. B. 4,5) oder als h:mm (z. B. 4:30) eintragen.") from None
+    ctx.db.set_plan(name, program, key, planned_s, "manual", time.time())
+    _forget_plans(ctx)
+    return {"name": name, "planned_s": planned_s}
 
 
 # --- Bild (fertiges Bauteil) ----------------------------------------------------------------

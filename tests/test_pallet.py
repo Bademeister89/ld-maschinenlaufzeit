@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 from app.collector import MachineCollector
-from app.db import Database
+from app.db import SCHEMA_VERSION, Database
 from app.nc_program import PalletEntry, ProgramFile, pallet_entries, program_calls
 
 from .conftest import MACHINE, NullAdapter, feed, snap
@@ -291,7 +291,7 @@ def test_update_rereads_pallet_tables_for_their_text(tmp_path):
     con.executescript("ALTER TABLE program_files DROP COLUMN content; UPDATE meta SET value = '10' WHERE key = 'schema_version';")
     con.close()
     db = Database(path)
-    assert db.get_meta("schema_version") == "14"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     assert db.program_file("m1", TABLE)["size"] is None  # wird neu gelesen
     assert db.program_file("m1", ORDER)["size"] == 900  # Programme bleiben
     db.close()

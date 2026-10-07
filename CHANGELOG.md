@@ -10,6 +10,39 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.19.0] – 2026-10-07
+
+### Neu
+- **CAM-Planzeiten aus der Tebis-Doku:** Im Tab „Aufträge“ liest „CAM-Doku importieren“ die
+  PDF-Doku einer Aufspannung, auch mehrere Dateien auf einmal.
+  - Auftrag bzw. Felge wird angelegt, falls es sie noch nicht gibt, und je Programm wird die
+    Planzeit aus dem Programmablauf gespeichert.
+  - Ist die Bezeichnung leer, kommt sie aus dem Namen der CAD-Datei, z. B. „Abdeckung rechts 1 cvo“.
+  - Eine Meldung nennt die übernommenen Programme mit Zeit, Spannung und Maschine, danach öffnet
+    sich der Auftrag.
+- **Planzeit von Hand:**
+  - Neue Spalte „Plan (CAM)“ mit „ändern“ (`4,5` oder `4:30`, leer = entfernen).
+  - Für Programme ohne Zeile gibt es ein eigenes Feld, z. B. für eine Version ohne Doku.
+- **Plan neben Ist im Auftrag:**
+  - Programme mit Planzeit stehen schon vor dem ersten Lauf in ihrer Aufspannung.
+  - Aufspannung, Version und die Kachel „Ø Bearbeitungszeit je Teil“ zeigen die Summe der
+    Planzeiten.
+- **Restlaufzeit beim ersten Lauf:** Die Live-Karte rechnet mit der Planzeit („Prognose aus der
+  CAM-Planzeit“) statt der groben Schätzung aus der Satznummer.
+- **Palettenliste:** Programme ohne frühere Läufe bekommen ihre Planzeit statt „ohne Zeit“. Der Fuß
+  nennt sie („Zeit aus der CAM-Planung“), aus „fertig frühestens“ wird eine feste Uhrzeit.
+- **Diagnose-Datei:** enthält jetzt `planzeiten.csv`.
+
+### Geändert
+- **Testanläufe zählen nicht mehr als übliche Laufzeit, wenn eine Planzeit bekannt ist.** Läufe unter
+  25 % der Planzeit fließen nicht in Restlaufzeit und Palettenliste ein.
+  - Beispiel: Bei `21-21053v2-02-01` stand ein Lauf mit 27 s als fertig, die Planzeit ist 2 h 21 min.
+  - Die Ø-Zeiten im Auftrag zählen weiter alle fertigen Läufe. Einen Fehlstart entfernt man dort
+    mit „Löschen“.
+- **Neue Bibliothek `pypdf`:** Docker-Image und portable Version bringen sie mit.
+- **Datenbank-Schema 15** mit der neuen Tabelle `program_plans`. Sie wird beim Start automatisch
+  angelegt.
+
 ## [1.18.1] – 2026-10-07
 
 ### Behoben

@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import MachineConfig, Settings
+from app.db import SCHEMA_VERSION
 from app.main import create_app
 
 from .conftest import snap
@@ -62,7 +63,7 @@ def test_diagnose_zip_contents(client):
     assert any(n.startswith("logs/") for n in names)  # Log-Datei aus dem Datenordner
 
     info = json.loads(z.read("info.json"))
-    assert info["version"] and info["zeitraum_tage"] == 7 and info["schema"] == "14"
+    assert info["version"] and info["zeitraum_tage"] == 7 and info["schema"] == str(SCHEMA_VERSION)
     assert [m["id"] for m in info["maschinen"]] == ["m1", "m2"]
     assert set(json.loads(z.read("live.json"))) == {"m1", "m2"}
 
@@ -107,6 +108,16 @@ def test_diagnose_zip_contains_pallet_tables(client):
     assert [n for n in z.namelist() if n.startswith("paletten/")] == ["paletten/m1/TNC_PROD_pal1sp.p"]
     assert z.read("paletten/m1/TNC_PROD_pal1sp.p") == text.encode("latin-1")
     assert "paletten/" in z.read("LIESMICH.txt").decode()
+
+
+def test_diagnose_zip_contains_plans(client):
+    db = client.app.state.ctx.db
+    db.ensure_order("21053", 26, "21053", time.time())
+    db.set_plan("26-21053-02-01", "26-21053-02-01", "21053", 10815.0, "pdf", time.time(), "doku_sp_2.pdf", "DMU 70 Erowa")
+    rows = _rows(_zip(client.get("/api/diagnose.zip")), "planzeiten.csv")
+    assert [(r["order_key"], r["name"], r["planned_s"], r["source"], r["file"]) for r in rows] == [
+        ("21053", "26-21053-02-01", "10815.0", "pdf", "doku_sp_2.pdf"),
+    ]
 
 
 def test_diagnose_days_are_limited(client):

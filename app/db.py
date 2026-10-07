@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -150,6 +150,17 @@ CREATE TABLE IF NOT EXISTS rim_designs (
     code       INTEGER PRIMARY KEY,
     name       TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS program_plans (
+    name       TEXT PRIMARY KEY,
+    program    TEXT NOT NULL,
+    order_key  TEXT NOT NULL,
+    planned_s  REAL NOT NULL,
+    source     TEXT NOT NULL,
+    file       TEXT,
+    machine    TEXT,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_plans_order ON program_plans(order_key);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -819,6 +830,45 @@ class Database:
 
     def delete_manufacturer(self, manufacturer_id: int) -> None:
         self._execute("DELETE FROM manufacturers WHERE id = ?", (manufacturer_id,))
+
+    # --- CAM-Planzeiten (Tebis-Doku oder von Hand) ---------------------------------------
+    # Je Programmname (``nc_program.call_name``, gleich in welchem Ordner): geplante Laufzeit in s.
+
+    def set_plan(
+        self, name: str, program: str, order_key: str, planned_s: float, source: str, t: float,
+        file: str | None = None, machine: str | None = None,
+    ) -> None:
+        self._execute(
+            "INSERT INTO program_plans(name, program, order_key, planned_s, source, file, machine, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET program = excluded.program, "
+            "order_key = excluded.order_key, planned_s = excluded.planned_s, source = excluded.source, "
+            "file = excluded.file, machine = excluded.machine, updated_at = excluded.updated_at",
+            (name, program, order_key, planned_s, source, file, machine, t),
+        )
+
+    def delete_plan(self, name: str) -> bool:
+        return self._execute("DELETE FROM program_plans WHERE name = ?", (name,)).rowcount > 0
+
+    def plans_of_order(self, order_key: str) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT name, program, planned_s, source, file, machine, updated_at FROM program_plans "
+            "WHERE order_key = ? ORDER BY name",
+            (order_key,),
+        )
+
+    def plans(self) -> list[dict[str, Any]]:
+        """Alle Planzeiten (für die Diagnose-Datei)."""
+        return self._query(
+            "SELECT name, program, order_key, planned_s, source, file, machine, updated_at FROM program_plans "
+            "ORDER BY order_key, name"
+        )
+
+    def plan_s(self, name: str) -> float | None:
+        rows = self._query("SELECT planned_s FROM program_plans WHERE name = ?", (name,))
+        return rows[0]["planned_s"] if rows else None
+
+    def set_order_title_if_empty(self, key: str, title: str) -> bool:
+        return self._execute("UPDATE orders SET title = ? WHERE key = ? AND title = ''", (title, key)).rowcount > 0
 
     # --- Felgen-Designs (Namen zu den Ziffern 3–4 der Felgennummer) ------------------------
 

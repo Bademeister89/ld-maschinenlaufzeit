@@ -138,7 +138,12 @@ Voraussetzungen an jeder Steuerung:
      langsamer oder schneller als sonst (z. B. Override), wird die Prognose nachgeführt.
   2. **Laufzeit früherer Läufe:** typische Laufzeit (Median der letzten 5 Läufe) minus bisherige
      Laufzeit.
-  3. **Erster Lauf eines Programms:** grobe Hochrechnung aus Satznummer und Satzanzahl.
+  3. **CAM-Planzeit** (siehe [CAM-Planzeiten](#cam-planzeiten-tebis-pdf)): Das Programm ist noch nie
+     vollständig gelaufen, hat aber eine Planzeit. Dann gilt Planzeit minus bisherige Laufzeit, auf
+     der Karte steht „Prognose aus der CAM-Planzeit (3 h 00 min)“.
+  4. **Erster Lauf ohne Planzeit:** grobe Hochrechnung aus Satznummer und Satzanzahl.
+- **Testanläufe:** Mit Planzeit zählen frühere Läufe unter 25 % der Planzeit nicht. Ein Beispiel ist
+  ein Testanlauf, der nach 30 s abgebrochen und trotzdem als „fertig“ gewertet wurde.
 - Alle Prognosen rechnen mit reiner Laufzeit. Künftige NC-Stopps oder Störungen kann niemand
   vorhersehen; während eines Stopps zeigt die Karte „pausiert“ und das Ende verschiebt sich.
 - **An der echten Maschine prüfen:** Der Verbindungstest liest im Schritt „Programm lesen“ das
@@ -167,8 +172,11 @@ abarbeitet:
   - Läuft ein Programm gerade zum ersten Mal, gilt für alle seine Zeilen die Prognose des laufenden
     Laufs (bisherige Laufzeit plus Restlaufzeit). Ist das nur die grobe Schätzung aus der
     Satznummer, ist auch die Liste entsprechend grob.
-  - Ein Programm, das noch nie gelaufen ist und gerade nicht läuft, hat keine Zeit. Der Fuß nennt
-    es („ohne Zeit: P-Ende“).
+  - Hat ein Programm noch keine früheren Läufe, aber eine
+    [CAM-Planzeit](#cam-planzeiten-tebis-pdf), gilt die Planzeit. Der Fuß nennt diese Programme
+    („…: Zeit aus der CAM-Planung“).
+  - Ein Programm, das noch nie gelaufen ist, keine Planzeit hat und gerade nicht läuft, hat keine
+    Zeit. Der Fuß nennt es („ohne Zeit: P-Ende“).
     - Ist es ein Auftragsprogramm, heißt es „mind.“ und „fertig frühestens“, denn dann fehlen
       womöglich Stunden.
     - Hilfsprogramme ohne Auftragsnummer wie Drehen oder P-Ende dauern Sekunden bis wenige Minuten.
@@ -336,6 +344,43 @@ zugeordnet, z. B. `26-21055-01-01`:
 - Läuft ein abgeschlossener Auftrag wieder an, wird er automatisch wieder geöffnet.
 - Daten, die vor der Auftragsauswertung erfasst wurden, werden beim Start einmalig nachgetragen.
 
+### CAM-Planzeiten (Tebis-PDF)
+
+Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die Planzeit aus dem CAM
+(Tebis) schließt diese Lücke: für die Restlaufzeit, die Palettenliste und als Vergleich im Auftrag.
+
+- **Auftrag vorab anlegen:** Im Tab „Aufträge“ auf **CAM-Doku importieren** klicken und die
+  Tebis-Doku einer Aufspannung als PDF wählen. Mehrere Dateien auf einmal gehen auch, z. B.
+  `doku_sp_1.pdf` und `doku_sp_2.pdf`.
+  - Die App liest aus der Doku:
+    - die Programme mit ihrer Zeit aus dem Programmablauf („26-21053-02-01 … Abgearbeitet … 03:00:15“)
+    - Spannung und Maschine aus dem Kopf, für die Meldung
+    - den Namen der CAD-Datei. Er wird zur Bezeichnung des Auftrags, solange diese leer ist:
+      „21053 abdeckung rechts 1 cvo.cad“ ergibt „Abdeckung rechts 1 cvo“.
+  - Danach legt sie Aufträge bzw. Felgen an, die es noch nicht gibt, speichert die Planzeiten und
+    öffnet den Auftrag. Oben steht eine Meldung, was übernommen wurde.
+  - Programme ohne Auftrags- oder Felgennummer werden übergangen und in der Meldung genannt.
+  - Ein erneuter Import, z. B. nach einer Änderung im CAM, überschreibt die Planzeiten dieser
+    Programme. Eine schon vorhandene Bezeichnung bleibt.
+  - Die PDF selbst speichert die App nicht, nur den Dateinamen als Herkunft. Höchstens 10 MB je Datei.
+  - Läuft ein vorab angelegter Auftrag 7 Tage nicht an, schließt die App ihn wie gewohnt. Beim ersten
+    Lauf öffnet er sich wieder, die Planzeiten bleiben.
+- **Von Hand:** Im Auftrag hat jede Programmzeile die Spalte **Plan (CAM)** mit „ändern“.
+  - Eingabe in Stunden (`4,5`), als `h:mm` (`4:30`) oder `h:mm:ss`. Leer lassen entfernt die
+    Planzeit.
+  - Für ein Programm, das noch keine Zeile hat (z. B. eine Version ohne Tebis-Doku), gibt es unter
+    den Aufspannungen das Feld „Planzeit (CAM) für ein weiteres Programm eintragen“.
+- **Im Auftrag:**
+  - Programme mit Planzeit stehen schon vor dem ersten Lauf in ihrer Aufspannung.
+  - Hat jedes Programm einer Aufspannung eine Planzeit, steht darunter „Plan (CAM) …“. Ebenso je
+    Version und in der Kachel „Ø Bearbeitungszeit je Teil“. So lassen sich Plan und Ist vergleichen.
+  - Die Ø-Zeiten selbst kommen weiter nur aus echten Läufen.
+- **Ein Programm ist sein Name:** Die Planzeit gilt für das Programm gleichen Namens in jedem Ordner
+  und an jeder Maschine.
+- **Restlaufzeit und Palettenliste:** Gibt es vollständige Läufe, zählen diese (siehe
+  [Restlaufzeit](#restlaufzeit-und-satzanzahl)). Die Planzeit sortiert dann nur noch Testanläufe aus,
+  also Läufe unter 25 % der Planzeit.
+
 ## Werkzeugauswertung (Tab „Werkzeugauswertung“)
 
 - **Werkzeuge werden automatisch angelegt**, sobald ein Werkzeug an einer Maschine zum ersten Mal in
@@ -485,8 +530,8 @@ andere Werte liefert, wird nur dort angepasst.
   `db_path` in der `config.yaml`.
 - **`data.db`:** echte Daten. **`demo.db`:** nur für die Simulation; die beiden werden nie gemischt.
 - In der Datenbank stehen die Maschinen (`machines`), Zustandsabschnitte (`state_intervals`),
-  Programmdurchläufe (`program_runs`) und Ereignisse (`events`: Werkzeugwechsel, NC-Fehlermeldungen,
-  Verbindung auf/ab, Konfigurationsänderungen).
+  Programmdurchläufe (`program_runs`), Ereignisse (`events`: Werkzeugwechsel, NC-Fehlermeldungen,
+  Verbindung auf/ab, Konfigurationsänderungen) und die CAM-Planzeiten (`program_plans`).
 - **Bilder** liegen als Dateien im Datenordner, nicht in der Datenbank; dort steht nur der
   Dateiname:
   - `images/`: Maschinenbilder
@@ -512,6 +557,7 @@ oder 30 Tage, auf Wunsch mit der ganzen Datenbank. Inhalt:
 | `zustaende.csv`, `ereignisse.csv` | Zustandsabschnitte und Ereignisse des Zeitraums |
 | `programmdateien.csv` | Gelesene Programmdateien mit Satzanzahl, aufgerufenen Programmen und Fehlern |
 | `paletten/<maschine>/` | Palettentabellen (`.P`) im Original, wie zuletzt von der Steuerung gelesen |
+| `planzeiten.csv` | CAM-Planzeiten je Programm mit Quelle (`pdf` = Tebis-Doku, `manual` = von Hand) |
 | `logs/` | Log-Dateien der App |
 | `data.db` | Datenbank (nur wenn ausgewählt) |
 
@@ -530,6 +576,8 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
+| `POST /api/orders/import-cam` | Tebis-Doku importieren: PDF als Rumpf, Kopfzeile `X-File-Name` (URL-kodiert). Legt Aufträge an und übernimmt die Planzeiten |
+| `PUT /api/orders/{key}/plans` | Planzeit von Hand: `{"program": "26-21053-02-01", "time": "4,5"}`, leere Zeit entfernt sie |
 | `DELETE /api/orders/{key}/runs/{id}` | Beendeten Lauf aus dem Auftrag löschen (Zeit bleibt Maschinenzeit) |
 | `GET /api/orders/{key}/image?size=full\|thumb` | Bild des Auftrags (großes Bild bzw. Vorschaubild) |
 | `PUT/DELETE /api/orders/{key}/image` | Bild setzen/ersetzen bzw. entfernen. Upload: großes Bild und Vorschaubild (beide JPEG) hintereinander in einem Rumpf, Kopfzeile `X-Image-Length` = Länge des großen Bildes |

@@ -30,6 +30,7 @@
 
   <main>
     <div id="banner" class="banner error" hidden></div>
+    <div id="notice" class="banner info" role="status" hidden></div>
 
     <div class="card filters" role="group" aria-label="Filter">
       <div class="segmented" id="status" role="group" aria-label="Status">
@@ -47,6 +48,7 @@
       </label>
       <span class="spacer"></span>
       <span class="muted" id="count"></span>
+      <button type="button" class="btn" id="cam-import" title="Tebis-Doku (PDF) einer Aufspannung: legt den Auftrag an und übernimmt die Planzeiten">CAM-Doku importieren</button>
     </div>
 
     <section class="section card">
@@ -67,6 +69,7 @@
          weil Android bei Bild-Dateifeldern sonst nur die Fotoauswahl zeigt. -->
     <input type="file" id="image-input" class="visually-hidden" accept="image/*" tabindex="-1" aria-hidden="true">
     <input type="file" id="camera-input" class="visually-hidden" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+    <input type="file" id="cam-input" class="visually-hidden" accept=".pdf,application/pdf" multiple tabindex="-1" aria-hidden="true">
   </main>
 
   <script type="module" src="auftraege.js"></script>

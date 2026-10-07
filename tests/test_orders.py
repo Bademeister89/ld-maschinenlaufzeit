@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import orders
+from app.db import SCHEMA_VERSION
 from app.adapters.sim_adapter import ORDER_SETUPS, PROGRAMS, SimulatedMachine
 from app.config import MachineConfig, Settings
 from app.main import create_app
@@ -212,7 +213,7 @@ def test_update_merges_version_orders_into_the_base_order(tmp_path):
     con.close()
 
     db = Database(path)
-    assert db.get_meta("schema_version") == "14"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     assert sorted(o["key"] for o in db.orders()) == ["21053", "21055"]  # ohne Jahr und Version
     merged = db.order("21055")
     assert (merged["title"], merged["image"], merged["status"], merged["created_at"]) == ("Kunde X", "26-21055V1-abc.jpg", "open", 50.0)
@@ -506,7 +507,7 @@ def test_update_adds_auto_close_columns(tmp_path):
     con.close()
     db = Database(path)
     order = db.order("21055")
-    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, "14")
+    assert (order["opened_at"], order["closed_auto"], db.get_meta("schema_version")) == (None, 0, str(SCHEMA_VERSION))
     assert orders.close_idle(db, 100 + 7 * DAY + 1) == ["21055"]  # ab dem Anlegen gerechnet
     db.close()
 

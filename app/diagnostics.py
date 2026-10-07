@@ -10,6 +10,7 @@ Inhalt (Zeiten als Ortszeit der Konfiguration):
 - ``zustaende.csv``          Zustandsabschnitte des Zeitraums
 - ``ereignisse.csv``         Ereignisse des Zeitraums
 - ``programmdateien.csv``    gelesene Programmdateien (Satzanzahl, Aufrufe, Fehler)
+- ``planzeiten.csv``         CAM-Planzeiten der Programme (Tebis-Doku oder von Hand)
 - ``paletten/<id>/``         Palettentabellen (.P), wie zuletzt von der Steuerung gelesen
 - ``logs/``                  Log-Dateien der App
 - ``data.db``                auf Wunsch die ganze Datenbank
@@ -51,6 +52,7 @@ laeufe.csv           Programmläufe mit Ergebnis und dem Programmstatus am Ende 
 zustaende.csv        Zustandsabschnitte (Läuft, Gestoppt, Bereit …) mit Programmstatus
 ereignisse.csv       Ereignisse (Verbindung, Werkzeugwechsel, NC-Fehler, Aufträge …)
 programmdateien.csv  Gelesene Programmdateien mit Satzanzahl, aufgerufenen Programmen und Fehlern
+planzeiten.csv       CAM-Planzeiten je Programm (Quelle pdf = Tebis-Doku, manual = von Hand)
 paletten/            Palettentabellen (.P) je Maschine, wie zuletzt von der Steuerung gelesen
 logs/                Log-Dateien der App
 data.db              Datenbank (nur wenn beim Herunterladen ausgewählt)
@@ -198,6 +200,10 @@ def build_zip(ctx: AppContext, captured: dict[str, Any], days: int = 7, include_
         ]
         z.writestr("programmdateien.csv", _csv(files, [
             "machine_id", "path", "size", "blocks", "error", "calls", "gelesen", "geaendert",
+        ]))
+        plans = [{**p, "geaendert": _local(p["updated_at"], ctx)} for p in ctx.db.plans()]
+        z.writestr("planzeiten.csv", _csv(plans, [
+            "order_key", "name", "program", "planned_s", "source", "file", "machine", "geaendert",
         ]))
         for f in files:
             if f["content"] is not None:

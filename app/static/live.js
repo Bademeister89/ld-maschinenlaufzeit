@@ -106,6 +106,7 @@ function orderThumbFor(c, m) {
 const METHOD_TEXT = {
   profile: (f) => `Prognose aus dem Satzverlauf von ${f.basis_runs} früheren ${f.basis_runs === 1 ? "Lauf" : "Läufen"}`,
   history: (f) => `Prognose aus der Laufzeit von ${f.basis_runs} früheren ${f.basis_runs === 1 ? "Lauf" : "Läufen"}`,
+  plan: (f) => `Prognose aus der CAM-Planzeit (${fmtDuration(f.typical_run_s)}) – noch kein vollständiger Lauf erfasst`,
   blocks: () => "Grobe Schätzung aus der Satznummer – noch kein vollständiger Lauf dieses Programms erfasst",
 };
 
@@ -314,6 +315,7 @@ function palletBlock(m) {
     missing ? `ohne Zeit (noch nie gelaufen): ${missing}` : null,
     // Gemessen wird ab der ersten fertigen Zeile; bis dahin fehlt der Palettenwechsel in den Zeiten
     sources.has("measured") ? "Zeiten mit Palettenwechsel gemessen" : sources.has("history") ? "Zeiten aus früheren Läufen, ohne Palettenwechsel" : null,
+    sources.has("plan") ? `${programsOf(active.filter((e) => e.source === "plan"))}: Zeit aus der CAM-Planung` : null,
     estimated ? `${estimated}: geschätzt aus dem laufenden Lauf` : null,
   ];
   return el(

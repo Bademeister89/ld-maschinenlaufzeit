@@ -240,7 +240,8 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     # zählen zur selben Zeile; ``paths`` nennt alle Speicherorte
     programs: dict[str, dict[str, Any]] = {}
 
-    def program_row(path: str) -> dict[str, Any]:
+    def program_row(path: str, located: bool = True) -> dict[str, Any]:
+        """Zeile je Programmname; ``located=False`` für Planzeiten (Name ohne Speicherort)."""
         code = parse_program(path)
         row = programs.setdefault(
             call_name(path),
@@ -258,9 +259,12 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
                 "median_run_s": None,
                 "last_run": None,
                 "machines": set(),
+                "plan_s": None,  # CAM-Planzeit (Tebis-Doku oder von Hand)
+                "plan_source": None,
             },
         )
-        row["paths"].add(path)
+        if located:
+            row["paths"].add(path)
         return row
 
     for r in db.order_program_totals(key, RUN_TIME_STATES):
@@ -281,6 +285,10 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     for name, values in cycles.items():
         programs[name]["avg_run_s"] = sum(values) / len(values)
         programs[name]["median_run_s"] = median(values)
+    # Planzeiten – auch für Programme, die noch nie gelaufen sind (eigene Zeile)
+    for plan in db.plans_of_order(key):
+        row = program_row(plan["program"], located=False)
+        row["plan_s"], row["plan_source"] = plan["planned_s"], plan["source"]
 
     # Aufspannungen je Version (andere Ausführung des Teils): (Version, Aufspannung) → Aufspannung
     setups: dict[tuple[str, int], dict[str, Any]] = {}
@@ -293,7 +301,8 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             {"setup": row["setup"], "version": row["version"],
              "fixture": order["kind"] == "order" and row["setup"] in FIXTURE_SETUPS,
              **_empty_totals(), "runs": 0,
-             "finished": 0, "part_run_s": 0.0, "part_complete": True, "programs": []},
+             "finished": 0, "part_run_s": 0.0, "part_complete": True, "plan_s": 0.0, "plan_complete": True,
+             "programs": []},
         )
         setup["programs"].append(row)
         setup["running_s"] += row["running_s"]
@@ -305,6 +314,11 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             setup["part_complete"] = False
         else:
             setup["part_run_s"] += row["avg_run_s"]
+        # Planzeit je Teil: Summe der CAM-Planzeiten, nur wenn jedes Programm eine hat
+        if row["plan_s"] is None:
+            setup["plan_complete"] = False
+        else:
+            setup["plan_s"] += row["plan_s"]
 
     totals = _empty_totals()
     for setup in setups.values():
@@ -327,6 +341,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             "finished": sum(1 for r in runs if r["result"] == "finished"),
             "part_run_s": single["part_run_s"] if single else None,
             "part_complete": single["part_complete"] if single else False,
+            "plan_part_s": single["plan_part_s"] if single else None,
             "fixture_s": sum(s["running_s"] for s in setups.values() if s["fixture"]),
             "first_activity": first,
             "last_activity": last,
@@ -361,6 +376,7 @@ def _versions(setups: Any) -> list[dict[str, Any]]:
         parts = [s for s in block["setups"] if not s["fixture"]]
         block["part_complete"] = bool(parts) and all(s["part_complete"] for s in parts)
         block["part_run_s"] = sum(s["part_run_s"] for s in parts) if parts else None
+        block["plan_part_s"] = sum(s["plan_s"] for s in parts) if parts and all(s["plan_complete"] for s in parts) else None
         block["fixture_s"] = sum(s["running_s"] for s in block["setups"] if s["fixture"])
         result.append(block)
     return result

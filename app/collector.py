@@ -498,6 +498,10 @@ class MachineCollector:
         self._forecaster.invalidate(program)
         self._run_paths = None
 
+    def forget_plans(self) -> None:
+        """Nach einem CAM-Import oder einer Planzeit von Hand: Prognosen neu berechnen."""
+        self._forecaster.forget_plans()
+
     def forget_tool(self, number: int) -> None:
         """Nach dem Entfernen eines Werkzeugs: steckt es noch in der Spindel, bei der nächsten
         Abfrage neu anlegen."""
@@ -785,8 +789,8 @@ class MachineCollector:
     def _entry_expected(self, p: _PalletRun, entry: PalletEntry) -> tuple[float | None, str | None]:
         """Erwartete reine Laufzeit einer Zeile und woher sie stammt, in dieser Reihenfolge:
         ``measured`` in diesem Palettenprogramm gemessen (mit Palettenwechsel), ``history`` übliche
-        Laufzeit früherer Läufe, ``forecast`` das Programm läuft gerade zum ersten Mal – bisherige
-        Laufzeit plus Restlaufzeit-Prognose."""
+        Laufzeit früherer Läufe, ``plan`` CAM-Planzeit (Tebis-Doku oder von Hand), ``forecast`` das
+        Programm läuft gerade zum ersten Mal – bisherige Laufzeit plus Restlaufzeit-Prognose."""
         name = call_name(entry.program)
         measured = p.durations.get(name)
         if measured:
@@ -795,6 +799,9 @@ class MachineCollector:
         typical = self._forecaster.typical_run_s(path) if path else None
         if typical is not None:
             return typical, "history"
+        plan = self._forecaster.plan_s(entry.program)
+        if plan is not None:
+            return plan, "plan"
         run, forecast = self._run, self._forecast
         if run is not None and forecast is not None and call_name(run.program or "") == name:
             return run.run_s + forecast["remaining_s"], "forecast"
