@@ -10,6 +10,29 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.15.1] – 2026-10-07
+
+### Behoben
+Grundlage ist die Diagnose-Datei vom 7.10.: Palettenprogramm pal2sp.p an der DMU 70 über Nacht.
+Die Restzeit blieb die ganze Nacht eine Schätzung („mind.“, „fertig frühestens“).
+
+- **Fehlstart als „fertig“ gezählt:** Um 17:31 lief 26-21051-02-01 nur bis Satz 34 von 514.998,
+  dann kam der Neueinstieg. Die iTNC meldete direkt „inaktiv“, und der 14-s-Lauf zählte als fertig.
+  - Kommt ein Programm nicht über seine ersten Sätze hinaus, ist der Lauf jetzt „unterbrochen“.
+- **Neueinstieg per Satzvorlauf wurde ein Teillauf:** Der unterbrochene Lauf von 16:49 (bis Satz
+  66.865) wurde bei Satz 66.851 nicht fortgesetzt. Dazwischen lagen die Vorrichtung und der
+  Fehlstart.
+  - Die App merkt sich jetzt die letzten 10 beendeten Läufe und setzt den passenden fort.
+  - Palette 8 wird damit ein vollständiger Lauf und für Palette 9 die Grundlage der Prognose. Bisher
+    gab es dort nur die grobe Schätzung aus der Satznummer.
+  - In der Ablaufliste läuft Palette 8 seit dem ersten Start. Gemessen wird sie dann nicht, denn der
+    Teil vor dem Neueinstieg fehlt in der Messung. Es gilt die Laufzeit des fertigen Laufs.
+- **P-Ende ohne Zeit machte alles zur Mindestzeit:** P-Ende war noch nie gelaufen. Deshalb hieß es
+  die ganze Nacht „mind.“ und „fertig frühestens“.
+  - Fehlt nur die Zeit von Hilfsprogrammen ohne Auftragsnummer (Drehen, P-Ende), steht jetzt
+    „ca.“ mit fester Uhrzeit. Der Fuß nennt sie weiter.
+- Das echte Format der Palettentabelle (mit `#STRUCTBEGIN`-Kopf) ist jetzt als Test hinterlegt.
+
 ## [1.15.0] – 2026-10-06
 
 ### Neu

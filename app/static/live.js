@@ -242,13 +242,17 @@ function palletGroups(entries) {
   return groups;
 }
 
-/** Summe der erwarteten Zeiten; fehlt eine, ist es eine Mindestzeit. */
+/** Fehlt die Zeit eines Auftragsprogramms, ist eine Summe nur eine Mindestzeit. Hilfsprogramme wie
+ *  Drehen oder P-Ende dauern Sekunden bis wenige Minuten – ohne ihre Zeit bleibt es „ca.“. */
+const lacksOrderTime = (entries) => entries.some((e) => e.expected_s == null && e.order);
+
+/** Summe der erwarteten Zeiten. */
 function expectedText(entries) {
   const active = entries.filter((e) => e.status !== "skipped");
   const known = active.filter((e) => e.expected_s != null);
   if (!known.length) return active.length ? "Zeit unbekannt" : "";
   const sum = known.reduce((total, e) => total + e.expected_s, 0);
-  return `${known.length < active.length ? "mind. " : "ca. "}${fmtDuration(sum)}`;
+  return `${lacksOrderTime(active) ? "mind. " : "ca. "}${fmtDuration(sum)}`;
 }
 
 /** Laufende Palette: Gruppe, Beginn (erste Zeile mit bekanntem Beginn) und Stelle unter den freien Paletten. */
@@ -285,10 +289,11 @@ function palletBlock(m) {
   const cur = currentPallet(groups);
   let summary = null;
   if (p.remaining_s != null) {
-    const prefix = p.remaining_unknown ? "mind. " : "ca. ";
-    summary = `noch ${prefix}${fmtDuration(p.remaining_s)}`;
+    // Nur ein offenes Auftragsprogramm ohne Zeit (auch das laufende ohne Prognose) macht daraus eine Mindestzeit
+    const minimum = lacksOrderTime(p.entries.filter((e) => e.status === "current" || e.status === "pending"));
+    summary = `noch ${minimum ? "mind. " : "ca. "}${fmtDuration(p.remaining_s)}`;
     if (m.state !== "RUNNING") summary += " (pausiert)";
-    else summary += ` · fertig ${p.remaining_unknown ? "frühestens" : "ca."} ${fmtEta(p.eta)}`;
+    else summary += ` · fertig ${minimum ? "frühestens" : "ca."} ${fmtEta(p.eta)}`;
   }
   const active = p.entries.filter((e) => e.status !== "skipped");
   const pallets = groups.filter((g) => g.pallet != null && g.status !== "skipped").length;

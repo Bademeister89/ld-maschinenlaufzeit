@@ -3,6 +3,8 @@
 import asyncio
 import sqlite3
 
+import pytest
+
 from app.collector import MachineCollector
 from app.db import Database
 from app.nc_program import PalletEntry, ProgramFile, pallet_entries, program_calls
@@ -293,3 +295,118 @@ def test_update_rereads_pallet_tables_for_their_text(tmp_path):
     assert db.program_file("m1", TABLE)["size"] is None  # wird neu gelesen
     assert db.program_file("m1", ORDER)["size"] == 900  # Programme bleiben
     db.close()
+
+
+FIXTURE = f"{FOLDER}\\Vorrichtung\\26-21053-02-v-01.h"
+
+
+def test_night_of_06_10_restart_after_interruption(db, make_collector):
+    """DMU 70, 6./7.10.: Palette 8 unterbrochen (Satz 66865), dazwischen die Vorrichtung und ein Fehlstart
+    (bis Satz 34), dann Neueinstieg per Satzvorlauf bei Satz 66851. Bisher: Fehlstart „fertig“, der
+    Neueinstieg ein Teillauf ohne beobachteten Start – für Palette 9 gab es nur die grobe Schätzung."""
+    c = make_collector()
+    text = table(FIELD_ROWS)
+    db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+    db.save_program_file("m1", ORDER, 30_000_000, 1.0, 514_998, None, 0, ())
+    feed(
+        c,
+        (0, pal("IDLE", None)),
+        (10, pal("STARTED", MACRO, 6)),
+        (70, pal("STARTED", ORDER, 15)),  # Palette 1
+        (2000, pal("STARTED", ORDER, 65662)),
+        (2070, pal("STOPPED", ORDER, 66865)),
+        (2073, pal("IDLE", None, 0)),  # abgebrochen
+        (2200, snap("IDLE", FIXTURE)),
+        (2210, snap("STARTED", FIXTURE, current_program=FIXTURE, line_no=10)),
+        (2320, snap("IDLE", FIXTURE, line_no=0)),
+        (2400, pal("IDLE", None)),
+        (2402, pal("STARTED", MACRO, 6)),
+        (2413, pal("STARTED", ORDER, 15)),  # Fehlstart …
+        (2425, pal("STARTED", ORDER, 34)),
+        (2427, pal("IDLE", None, 0)),
+        (2432, pal("STARTED", ORDER, 66851)),  # … und Neueinstieg per Satzvorlauf
+    )
+    entries, info = view(c)
+    assert entries[0][0] == "current"
+    assert info["entries"][0]["started_at"] == 70  # Palette 1 läuft seit dem ersten Start
+    feed(
+        c,
+        (8000, pal("STARTED", ORDER, 300_000)),
+        (15000, pal("STARTED", ORDER, 514_995)),
+        (15002, pal("STARTED", DREH, 1)),
+        (15050, pal("STARTED", MACRO, 6)),
+        (15120, pal("STARTED", ORDER, 15)),  # Palette 2
+        (15200, pal("STARTED", ORDER, 3000)),
+    )
+    first, fixture, false_start, second = db.runs(0, 100_000)
+    assert (first["started_at"], first["ended_at"], first["result"], first["start_observed"]) == (70, 15002, "finished", 1)
+    assert first["run_s"] == pytest.approx(2000 + 12570)  # beide Teile, ohne die Unterbrechung
+    assert (false_start["program"], false_start["result"]) == (ORDER, "aborted")
+    assert fixture["program"] == FIXTURE
+    assert second["start_observed"] == 1
+    assert c.live()["forecast"]["method"] != "blocks"  # Prognose aus dem vollständigen ersten Lauf
+    entries, info = view(c)
+    # Palette 1 nicht gemessen (Beginn vor dem Neueinstieg), dafür die Laufzeit des fertigen Laufs
+    assert entries[4] == ("pending", pytest.approx(14570), "history")
+    assert [e["order"] for e in info["entries"]] == [True, False, True, False, True, False, False]
+
+
+def test_abort_right_after_the_start_is_not_finished(db, make_collector):
+    """Die iTNC 530 geht dabei direkt auf „inaktiv“ – wie am Programmende."""
+    c = make_collector()
+    db.save_program_file("m1", ORDER, 30_000_000, 1.0, 514_998, None, 0, ())
+    db.save_program_file("m1", DREH, 570, 1.0, 18, None, 0, ())
+    feed(
+        c,
+        (0, snap("IDLE", ORDER)),
+        (10, snap("STARTED", ORDER, current_program=ORDER, line_no=15)),
+        (22, snap("STARTED", ORDER, current_program=ORDER, line_no=34)),
+        (24, snap("IDLE", ORDER, line_no=0)),
+        (30, snap("IDLE", DREH)),
+        (32, snap("STARTED", DREH, current_program=DREH, line_no=1)),
+        (60, snap("STARTED", DREH, current_program=DREH, line_no=17)),
+        (62, snap("IDLE", DREH, line_no=0)),  # kurzes Programm, echtes Ende
+    )
+    assert [(r["program"], r["result"]) for r in db.runs(0, 1000)] == [(ORDER, "aborted"), (DREH, "finished")]
+
+
+# Echte Palettentabelle der DMU 70 (pal2sp.p aus der Diagnose vom 7.10.); die Spaltenbeschreibung
+# zwischen #STRUCTBEGIN und #STRUCTEND ist gekürzt (nur Deutsch, ohne DATUM/X/Y/Z)
+REAL_TABLE = "\n".join([
+    "BEGIN pal2sp .p ",
+    "#STRUCTBEGIN",
+    "   NAME = PAL/PGM",
+    "     TYPE = C",
+    "     WIDTH = 3",
+    "     DEC = 0",
+    "     DIA-GERMAN = Palette=PAL / Programm=PGM",
+    "   NAME = NAME",
+    "     TYPE = C",
+    "     WIDTH = 30",
+    "     DEC = 0",
+    "     DIA-GERMAN = Palette / NC-Programm?",
+    "#STRUCTEND",
+    "NR      PAL/PGM NAME                           DATUM                          X          Y          Z",
+    *(
+        f"{nr:<8}{kind:<8}{name:<31}{'':<31}{'':<11}{'':<11}"
+        for nr, (kind, name) in enumerate([
+            ("PAL", "8"), ("PGM", "26-21051-02-01.h"), ("PGM", "Dreh.h"),
+            ("PAL", "9"), ("PGM", "26-21051-02-01.h"), ("PGM", "Dreh.h"),
+            ("PAL", "10"), ("PGM", "26-21051-02-01.h"), ("PGM", "Dreh.h"),
+            ("PAL", "0"), ("PGM", "Dreh.h"), ("PGM", "P-Ende.h"),
+        ])
+    ),
+    "[END]",
+    "",
+])
+
+
+def test_real_pallet_table_of_the_dmu_70():
+    entries = pallet_entries(REAL_TABLE)
+    assert [(e.pallet, e.program, e.skipped) for e in entries] == [
+        ("8", "26-21051-02-01.h", False), ("8", "Dreh.h", False),
+        ("9", "26-21051-02-01.h", False), ("9", "Dreh.h", False),
+        ("10", "26-21051-02-01.h", False), ("10", "Dreh.h", False),
+        ("0", "Dreh.h", False), ("0", "P-Ende.h", False),
+    ]
+    assert program_calls("TNC:\\pal2sp.p", REAL_TABLE) == ("8", "26-21051-02-01", "DREH", "9", "10", "0", "P-ENDE")

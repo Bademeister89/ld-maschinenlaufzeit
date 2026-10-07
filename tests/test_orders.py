@@ -321,12 +321,11 @@ def test_deleted_run_is_not_resumed(db, make_collector):
     """Der Collector merkt sich den letzten Lauf für einen Satzvorlauf – nach dem Löschen nicht mehr."""
     c = make_collector()
     run_part(c, 0, P11, 300)
-    ended = c._ended
-    assert ended is not None
+    [ended] = c._ended
     c.forget_run(ended.id + 1, P11)  # ein anderer Lauf: bleibt
-    assert c._ended is ended
+    assert list(c._ended) == [ended]
     c.forget_run(ended.id, P11)
-    assert c._ended is None
+    assert not c._ended
 
 
 def test_meta_has_version_and_page(client):

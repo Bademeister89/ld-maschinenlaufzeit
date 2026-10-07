@@ -7,9 +7,10 @@ Regeln:
   bleibt über GESTOPPT/FEHLER offen. Er endet, sobald die Maschine BEREIT meldet oder ein anderes
   Programm aktiv ist. Fertig ist er bei "beendet" oder, wie bei der iTNC 530, wenn die Steuerung
   aus dem Programmlauf direkt auf "inaktiv" geht.
-- Ein Satzvorlauf dort, wo der letzte Lauf desselben Programms endete (z. B. nach einer Störung),
-  setzt diesen Lauf fort. Ein anderer Start mitten im Programm gilt als Teillauf (ohne beobachteten
-  Start, zählt nicht in Ø-Stückzeiten und Prognose).
+- Ein Satzvorlauf dort, wo ein kürzlich beendeter Lauf desselben Programms endete (z. B. nach einer
+  Störung), setzt diesen Lauf fort – auch wenn dazwischen ein anderes Programm oder ein Fehlstart
+  lief. Ein anderer Start mitten im Programm gilt als Teillauf (ohne beobachteten Start, zählt nicht
+  in Ø-Stückzeiten und Prognose).
 - OFFLINE/UNBEKANNT beenden keinen Lauf (kurze Netzstörungen per VPN zerreißen ihn nicht).
 - Ist eine Prüfadresse am Standort hinterlegt und antwortet auch sie nicht, ist nicht die
   Maschine aus, sondern die Verbindung zum Standort weg (z. B. VPN). Dann wird nichts
@@ -58,6 +59,7 @@ TOOL_TABLE_CHECK_S = 600  # Werkzeugtabelle (Namen) alle 10 min auf Änderungen 
 TOOL_TABLE_RETRY_S = 60  # … und früher, wenn ein Werkzeug ohne bekannten Namen auftaucht
 PROGRAM_RETRY_S = 60  # nicht lesbare Programmdatei jede Minute erneut versuchen
 RAW_LOG_KEEP = 5000  # Mitschnitt: so viele Statusänderungen je Maschine im Speicher halten
+ENDED_KEEP = 10  # so viele beendete Läufe für einen späteren Satzvorlauf merken
 # Start mitten im Programm (Satzvorlauf): erste Satznummer jenseits von 5 % der Sätze (mind. 100)
 MID_START_SHARE = 0.05
 MID_START_LINES = 100
@@ -84,11 +86,12 @@ class _Run:
     start_observed: bool
     last_active: float
     run_s: float = 0.0  # reine Laufzeit (Zustand LÄUFT) seit Start
+    max_line: int | None = None  # höchste Satznummer im Programm seit Start (None = unbekannt, z. B. nach Neustart)
 
 
 @dataclass(frozen=True)
 class _Ended:
-    """Zuletzt beendeter Lauf – ein Satzvorlauf an dieser Stelle setzt ihn fort."""
+    """Beendeter Lauf – ein Satzvorlauf an dieser Stelle setzt ihn fort."""
 
     id: int
     program: str | None
@@ -140,7 +143,7 @@ class MachineCollector:
         db.close_stale_intervals(machine.id)
         self._interval: _Interval | None = None
         self._run = self._load_open_run()
-        self._ended: _Ended | None = None
+        self._ended: deque[_Ended] = deque(maxlen=ENDED_KEEP)  # zuletzt beendete Läufe, neueste zuletzt
         self._callers: set[str] = set()  # erkannte Oberprogramme (rufen Auftragsprogramme auf)
         self._pallet: _PalletRun | None = None  # angewähltes Palettenprogramm (Ablaufliste)
         # Programme mit fertigen Läufen nach Name (``call_name``) – für die Zeiten der Ablaufliste
@@ -298,12 +301,25 @@ class MachineCollector:
         order_calls = self._calls_of(order)
         return order_calls is None or name not in order_calls
 
-    def _reached_end(self) -> bool:
+    def _reached_end(self, run: _Run) -> bool:
         """Die iTNC 530 meldet nach dem Programmende gleich "inaktiv" statt "beendet". Fertig ist das
         Programm, wenn es bis zuletzt im Programmlauf lief: Ein Abbruch geht über NC-Stopp ("gestoppt"),
-        und ein MDI-Satz oder Handbetrieb ist kein Programmende."""
+        und ein MDI-Satz oder Handbetrieb ist kein Programmende.
+        Ein Abbruch gleich nach dem Start geht aber oft auch direkt auf "inaktiv" (DMU 70, 6.10. 17:31:
+        Satz 34 von 514.998, danach Neueinstieg per Satzvorlauf). Kam das Programm nicht über seine
+        ersten Sätze hinaus, ist es nicht fertig."""
         prev = self._snapshot
-        return self._prev_state is MachineState.RUNNING and prev is not None and prev.exec_mode not in MANUAL_MODES
+        if self._prev_state is not MachineState.RUNNING or prev is None or prev.exec_mode in MANUAL_MODES:
+            return False
+        blocks = self._blocks(run.program)
+        if not blocks or run.max_line is None:
+            return True
+        return run.max_line > min(self._start_margin(blocks), blocks / 2)
+
+    @staticmethod
+    def _start_margin(blocks: int | None) -> float:
+        """Die ersten Sätze eines Programms: 5 % (mindestens 100). Ein Start dahinter ist ein Satzvorlauf."""
+        return max(MID_START_LINES, blocks * MID_START_SHARE if blocks else 0)
 
     @staticmethod
     def _position(snap: Snapshot) -> int | None:
@@ -311,26 +327,28 @@ class MachineCollector:
         return snap.line_no if (snap.current_program or snap.program) == snap.program else None
 
     def _start_run(self, snap: Snapshot, now: float) -> None:
-        """Neuer Lauf – oder Fortsetzung des letzten, wenn das Programm mitten im Programm per
-        Satzvorlauf dort wieder gestartet wird, wo der letzte Lauf endete (z. B. nach einer Störung)."""
+        """Neuer Lauf – oder Fortsetzung eines beendeten, wenn das Programm mitten im Programm per
+        Satzvorlauf dort wieder gestartet wird, wo dieser Lauf endete (z. B. nach einer Störung). Der
+        neueste passende Lauf zählt; dazwischen darf ein anderes Programm oder ein Fehlstart liegen."""
         line = self._position(snap)
-        blocks = self._blocks(snap.program)
-        margin = max(MID_START_LINES, blocks * MID_START_SHARE if blocks else 0)
+        margin = self._start_margin(self._blocks(snap.program))
         mid_start = line is not None and line > margin
-        ended = self._ended
-        if (
-            mid_start
-            and ended is not None
-            and ended.program == snap.program
-            and now - ended.ended_at <= RESUME_MAX_GAP_S
-            and ended.last_line is not None
-            and abs(line - ended.last_line) <= margin
-        ):
+        ended = next(
+            (
+                e for e in reversed(self._ended)
+                if e.program == snap.program
+                and now - e.ended_at <= RESUME_MAX_GAP_S
+                and e.last_line is not None
+                and abs(line - e.last_line) <= margin
+            ),
+            None,
+        ) if mid_start else None
+        if ended is not None:
             self._db.reopen_run(ended.id)
             self._run = self._load_open_run()
             self._db.add_event(self.machine.id, now, "run_resumed", {"run": ended.id, "program": snap.program, "line": line})
             log.info("%s: Lauf %d fortgesetzt (Satzvorlauf bis Satz %d)", self.machine.name, ended.id, line)
-            self._ended = None
+            self._ended.remove(ended)
             return
         # Ohne beobachteten Start (Neustart der Erfassung) oder mitten im Programm begonnen: kein
         # vollständiger Lauf, zählt nicht in Ø-Stückzeiten und Prognose
@@ -362,7 +380,7 @@ class MachineCollector:
             pgm_state = snap.pgm_state
             if snap.caller is not None and state is not MachineState.READY:
                 pgm_state = "FINISHED"  # Geht es im Oberprogramm weiter, hat das aufgerufene Programm sein Ende erreicht
-            elif pgm_state == "IDLE" and self._reached_end():
+            elif pgm_state == "IDLE" and self._reached_end(run):
                 pgm_state = "FINISHED"
             ended_at = now if continuous else run.last_active
             self._db.end_run(run.id, ended_at, run_result(pgm_state, run.had_error))
@@ -370,7 +388,7 @@ class MachineCollector:
             self._forecaster.invalidate(run.program)
             self._run_paths = None
             last = self._snapshot
-            self._ended = _Ended(run.id, run.program, ended_at, self._position(last) if last else None)
+            self._ended.append(_Ended(run.id, run.program, ended_at, self._position(last) if last else None))
             self._run = run = None
 
         if (
@@ -381,6 +399,9 @@ class MachineCollector:
         ):
             self._start_run(snap, now)
             run = self._run
+
+        if run is not None and state in RUN_ACTIVE_STATES and (line := self._position(snap)) is not None:
+            run.max_line = max(run.max_line or 0, line)
 
         if run is not None and state is MachineState.ERROR and not run.had_error:
             run.had_error = True
@@ -469,8 +490,8 @@ class MachineCollector:
     def forget_run(self, run_id: int, program: str | None) -> None:
         """Nach dem Löschen eines beendeten Laufs (Tab Aufträge): ihn nicht mehr per Satzvorlauf
         fortsetzen und die Prognose des Programms ohne ihn neu berechnen."""
-        if self._ended is not None and self._ended.id == run_id:
-            self._ended = None
+        for ended in [e for e in self._ended if e.id == run_id]:
+            self._ended.remove(ended)
         self._forecaster.invalidate(program)
         self._run_paths = None
 
@@ -675,7 +696,13 @@ class MachineCollector:
             return  # kein Programm der Tabelle
         resumed, p.stopped = p.stopped, False
         if index == p.pos and resumed:
-            return  # nach einer Unterbrechung an derselben Zeile weiter (z. B. Satzvorlauf)
+            # Nach einer Unterbrechung an derselben Zeile weiter (z. B. Satzvorlauf). Setzt das einen
+            # früher begonnenen Lauf fort, begann die Zeile mit ihm – und ist nicht ganz gemessen.
+            run = self._run
+            if run is not None and call_name(run.program or "") == name and run.started_at < p.started.get(index, (now,))[0]:
+                p.started[index] = (run.started_at, run.start_observed)
+                p.entry_observed = False
+            return
         if p.pos is not None and p.entry_observed and index > p.pos and all(e.skipped for e in entries[p.pos + 1 : index]):
             p.durations.setdefault(call_name(entries[p.pos].program), []).append(p.entry_run_s)
         if p.pos is None or index < p.pos:
@@ -795,6 +822,8 @@ class MachineCollector:
             items.append({
                 "program": entry.program, "pallet": entry.pallet, "status": status,
                 "expected_s": expected, "source": source,
+                # Auftragsprogramm (lange Laufzeit) oder Hilfsprogramm wie Drehen/P-Ende (kurz)
+                "order": parse_program(entry.program) is not None,
                 "started_at": started[0] if started else None,  # Beginn in diesem Durchgang
                 "started_observed": started[1] if started else None,
             })

@@ -167,8 +167,12 @@ abarbeitet:
   - Läuft ein Programm gerade zum ersten Mal, gilt für alle seine Zeilen die Prognose des laufenden
     Laufs (bisherige Laufzeit plus Restlaufzeit). Ist das nur die grobe Schätzung aus der
     Satznummer, ist auch die Liste entsprechend grob.
-  - Ein Programm, das noch nie gelaufen ist und gerade nicht läuft, hat keine Zeit. Dann heißt es
-    „mind.“ und „fertig frühestens“.
+  - Ein Programm, das noch nie gelaufen ist und gerade nicht läuft, hat keine Zeit. Der Fuß nennt
+    es („ohne Zeit: P-Ende“).
+    - Ist es ein Auftragsprogramm, heißt es „mind.“ und „fertig frühestens“, denn dann fehlen
+      womöglich Stunden.
+    - Hilfsprogramme ohne Auftragsnummer wie Drehen oder P-Ende dauern Sekunden bis wenige Minuten.
+      Ohne ihre Zeit bleibt es bei „ca.“ und einer festen Uhrzeit.
 - Liegt das Ende nicht mehr am selben Tag, steht „morgen“ bzw. der Wochentag davor.
 - **Kopf:** „noch ca. 1 h 11 min · fertig ca. 18:08 Uhr“, also die Restzeit des laufenden Programms
   plus die Zeiten der offenen Zeilen. Im Stopp steht „(pausiert)“. **Fuß:** Gesamtzeit aller
@@ -404,8 +408,14 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
   - **Fertig** ist ein Lauf, wenn die Steuerung „beendet“ meldet. Die iTNC 530 meldet nach dem
     Programmende gleich „inaktiv“. Das zählt als fertig, wenn das Programm bis zuletzt im
     Programmlauf lief. Gestoppt und dann abgebrochen bleibt „unterbrochen“.
-  - **Satzvorlauf:** Wird ein Programm dort per Satzvorlauf wieder gestartet, wo sein letzter Lauf
+  - Ein Abbruch gleich nach dem Start geht bei der iTNC 530 ebenfalls direkt auf „inaktiv“. Kam das
+    Programm nicht über seine ersten Sätze hinaus (5 %, höchstens die Hälfte), ist der Lauf
+    „unterbrochen“, nicht fertig.
+  - **Satzvorlauf:** Wird ein Programm dort per Satzvorlauf wieder gestartet, wo ein beendeter Lauf
     endete (z. B. nach einer Störung), läuft dieser Lauf weiter. Ein Teil ergibt so einen Lauf.
+    - Das gilt bis zu 12 Stunden später und für einen der letzten 10 Läufe.
+    - Dazwischen darf ein anderes Programm (z. B. die Vorrichtung) oder ein Fehlstart desselben
+      Programms liegen.
     Beginnt ein Lauf sonst mitten im Programm (jenseits von 5 % der Sätze), ist er ein Teillauf und
     zählt nicht in die Ø-Stückzeiten und die Restlaufzeit.
 - **„Start beobachtet“ / ≥:** Lief ein Programm schon, als die Erfassung begann, ist der echte Start
