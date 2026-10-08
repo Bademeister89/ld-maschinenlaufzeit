@@ -10,6 +10,16 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.21.1] – 2026-10-08
+
+### Geändert
+- **Bild auf der Live-Karte so groß wie das Maschinenbild:** 200 × 150 px statt 84 px, am Handy
+  96 × 72 px wie das Maschinenbild dort.
+  - Gilt für das Bild der Aufspannung und für das Auftragsbild, falls die Aufspannung keins hat.
+  - Der Text des Programmfelds steht oben links daneben.
+  - Damit das Bild scharf bleibt, wählt der Browser die passende Größe: Normale Bildschirme laden
+    weiter das Vorschaubild. Bildschirme mit hoher Pixeldichte (z. B. Tablet) laden das große Bild.
+
 ## [1.21.0] – 2026-10-08
 
 ### Neu

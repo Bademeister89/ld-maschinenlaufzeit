@@ -113,11 +113,12 @@ def test_live_card_gets_thumbnail_of_running_order(app_client):
     collector = app.state.ctx.collectors["m1"]
     feed(collector, (2000, snap("IDLE", PROGRAM)), (2010, snap("STARTED", PROGRAM)))
     assert client.get("/api/machines").json()["machines"][0]["order"]["thumb_url"] is None
-    thumb_url = upload(client).json()["thumb_url"]
+    uploaded = upload(client).json()
     live = client.get("/api/machines").json()["machines"][0]
     assert live["order"]["key"] == KEY
-    assert live["order"]["thumb_url"] == thumb_url
-    assert "image_url" not in live["order"]  # die Live-Ansicht lädt nie das große Bild
+    assert live["order"]["thumb_url"] == uploaded["thumb_url"]
+    # Großes Bild nur als Auswahl für Bildschirme mit hoher Pixeldichte (srcset der Live-Karte)
+    assert live["order"]["image_url"] == uploaded["image_url"]
 
 
 def test_replace_removes_old_files(client, folder):

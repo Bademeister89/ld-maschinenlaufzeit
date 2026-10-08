@@ -90,17 +90,28 @@ function orderText(o) {
 /** Bild im Programmfeld: das der laufenden Aufspannung (Spannsituation), sonst das des Bauteils zum
  * Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
 function orderThumbFor(c, m) {
-  const setupUrl = m.order?.setup_thumb_url;
-  const url = setupUrl ?? m.order?.thumb_url;
+  const o = m.order;
+  const setup = Boolean(o?.setup_thumb_url);
+  const url = setup ? o.setup_thumb_url : o?.thumb_url;
   if (!url) return null;
   if (c.orderThumbUrl !== url) {
-    const o = m.order;
-    const what = setupUrl ? (o.kind === "rim" ? "Bild der Spannung" : "Bild der Aufspannung") : "Bild des Bauteils";
+    const full = setup ? o.setup_image_url : o.image_url;
+    const what = setup ? (o.kind === "rim" ? "Bild der Spannung" : "Bild der Aufspannung") : "Bild des Bauteils";
     // Der Link daneben führt schon zum Auftrag: Bild nur für die Maus, nicht doppelt für Tastatur/Screenreader
     c.orderThumb = el(
       "a",
       { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(o.key)}`, tabindex: "-1", "aria-hidden": "true", title: `${what} – ${orderText(o)}` },
-      el("img", { src: url, alt: "", width: 84, height: 84, decoding: "async" }),
+      // So groß wie das Maschinenbild (200 px): das Vorschaubild (256 px) reicht für normale Bildschirme,
+      // bei hoher Pixeldichte (Handy, Tablet) nimmt der Browser das große Bild
+      el("img", {
+        src: url,
+        srcset: full ? `${url} 256w, ${full} 1280w` : null,
+        sizes: "(max-width: 560px) 96px, 200px", // schmale Karte (Handy): 96 px wie das Maschinenbild
+        alt: "",
+        width: 200,
+        height: 150,
+        decoding: "async",
+      }),
     );
     c.orderThumbUrl = url;
   }

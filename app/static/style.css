@@ -293,19 +293,21 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 .program-path { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .program .order-link { margin-top: 2px; }
 .program-text { display: grid; gap: 4px; min-width: 0; }
-/* Bild der Aufspannung (sonst des Bauteils) rechts neben dem Text des Programmfelds */
-.program.has-image { display: flex; align-items: center; gap: 14px; }
+/* Bild der Aufspannung (sonst des Bauteils) rechts neben dem Text des Programmfelds, so groß wie
+   das Maschinenbild im Kopf der Karte (200 px breit, 4:3; schmale Karte 96 px) */
+.program.has-image { display: flex; align-items: flex-start; gap: 16px; }
 .program.has-image > .program-text { flex: 1; }
 .program-image { flex: none; display: block; line-height: 0; }
 .program-image img {
-  width: 84px;
-  height: 84px;
-  border-radius: 8px;
+  width: 200px;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
   object-fit: cover;
   background: var(--surface);
   border: 1px solid var(--border);
 }
-@container (max-width: 520px) { .program-image img { width: 64px; height: 64px; } }
+@container (max-width: 520px) { .program-image img { width: 96px; } }
 
 .facts {
   display: grid;

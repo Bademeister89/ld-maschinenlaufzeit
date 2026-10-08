@@ -116,11 +116,11 @@ def test_unknown_setup_or_order(client, folder):
 def test_live_card_shows_image_of_running_setup(app_client):
     app, client = app_client
     collector = app.state.ctx.collectors["m1"]
-    setup_thumb = upload(client, 2).json()["thumb_url"]
+    uploaded = upload(client, 2).json()
     feed(collector, (5000, snap("IDLE", SETUP2)), (5010, snap("STARTED", SETUP2)))
     order = client.get("/api/machines").json()["machines"][0]["order"]
-    assert (order["key"], order["setup"], order["setup_thumb_url"]) == (KEY, 2, setup_thumb)
-    assert "image_url" not in order  # die Live-Ansicht lädt nie das große Bild
+    assert (order["key"], order["setup"], order["setup_thumb_url"]) == (KEY, 2, uploaded["thumb_url"])
+    assert order["setup_image_url"] == uploaded["image_url"]  # für Bildschirme mit hoher Pixeldichte
     # Aufspannung 1 hat kein Bild; Version V1 hat eine eigene Aufspannung 2
     for program in (SETUP1, V1_SETUP2):
         feed(collector, (5100, snap("FINISHED", SETUP2)), (5200, snap("IDLE", program)), (5210, snap("STARTED", program)))

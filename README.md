@@ -356,8 +356,9 @@ zugeordnet, z. B. `26-21055-01-01`:
   - **Strg+V:** Bildbereich der Aufspannung anklicken (er wird blau umrandet), dann Strg+V. Ohne
     diesen Klick setzt Strg+V wie bisher das Auftragsbild.
   - **Live-Karte:** Läuft ein Programm dieser Aufspannung, zeigt die Karte rechts im Programmfeld
-    ihr Bild statt des Auftragsbilds, 84 px groß (am Handy 64 px). Ohne Bild der Aufspannung
-    erscheint wie bisher das Bild des Auftrags.
+    ihr Bild statt des Auftragsbilds, so groß wie das Maschinenbild im Kopf der Karte (200 × 150 px,
+    am Handy 96 × 72 px). Ohne Bild der Aufspannung erscheint dort das Bild des Auftrags. Normale
+    Bildschirme laden das Vorschaubild, Bildschirme mit hoher Pixeldichte das große Bild.
   - Löschen der Aufspannung oder des Auftrags löscht auch ihre Bilder.
 - **Automatisch abgeschlossen:** Läuft 7 Tage lang kein Programm eines Auftrags, schließt die App
   ihn selbst ab. Im Detail steht dann „abgeschlossen … (automatisch, 7 Tage ohne Programmlauf)“.

@@ -117,12 +117,14 @@ def machines(request: Request) -> dict[str, Any]:
         live = collector.live()
         live["tool_info"] = tools.tool_info(ctx.db, live["id"], live["tool"])
         if live["order"] and (order := ctx.db.order(live["order"]["key"])):
-            # Vorschaubild des Bauteils für die Live-Karte (das große Bild lädt die Live-Ansicht nie) …
+            # Bild des Bauteils und der laufenden Aufspannung (die Live-Karte zeigt dieses bevorzugt), so
+            # groß wie das Maschinenbild. Das große Bild lädt der Browser nur bei hoher Pixeldichte (srcset).
             code = live["order"]
-            code["thumb_url"] = ctx.order_images.public(order)["thumb_url"]
-            # … und das der laufenden Aufspannung: Die Live-Karte zeigt es bevorzugt
+            public = ctx.order_images.public(order)
+            code["thumb_url"], code["image_url"] = public["thumb_url"], public["image_url"]
             image = ctx.db.setup_image(code["key"], code["version"], code["setup"])
-            code["setup_thumb_url"] = ctx.order_images.setup_urls(code["key"], code["version"], code["setup"], image)["thumb_url"]
+            urls = ctx.order_images.setup_urls(code["key"], code["version"], code["setup"], image)
+            code["setup_thumb_url"], code["setup_image_url"] = urls["thumb_url"], urls["image_url"]
         if live["order"] and live["order"]["kind"] == "rim":
             live["order"]["rim"] = orders.rim_info(live["order"]["key"], ctx.db.rim_design_names())
         machines.append(live)
