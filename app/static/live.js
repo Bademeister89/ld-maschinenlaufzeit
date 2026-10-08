@@ -87,16 +87,20 @@ function orderText(o) {
   return `Auftrag ${o.order}${version} · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
 }
 
-/** Vorschaubild des Bauteils zum Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
+/** Bild im Programmfeld: das der laufenden Aufspannung (Spannsituation), sonst das des Bauteils zum
+ * Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
 function orderThumbFor(c, m) {
-  const url = m.order?.thumb_url;
+  const setupUrl = m.order?.setup_thumb_url;
+  const url = setupUrl ?? m.order?.thumb_url;
   if (!url) return null;
   if (c.orderThumbUrl !== url) {
+    const o = m.order;
+    const what = setupUrl ? (o.kind === "rim" ? "Bild der Spannung" : "Bild der Aufspannung") : "Bild des Bauteils";
     // Der Link daneben führt schon zum Auftrag: Bild nur für die Maus, nicht doppelt für Tastatur/Screenreader
     c.orderThumb = el(
       "a",
-      { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}`, tabindex: "-1", "aria-hidden": "true", title: `Bild zu ${orderText(m.order)}` },
-      el("img", { src: url, alt: "", width: 64, height: 64, decoding: "async" }),
+      { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(o.key)}`, tabindex: "-1", "aria-hidden": "true", title: `${what} – ${orderText(o)}` },
+      el("img", { src: url, alt: "", width: 84, height: 84, decoding: "async" }),
     );
     c.orderThumbUrl = url;
   }
@@ -443,20 +447,24 @@ function renderLive(m, now) {
         { class: `program${orderThumb ? " has-image" : ""}` },
         el(
           "div",
-          { class: "program-top" },
-          el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
-          run ? el("div", { class: "program-run num", text: run, title: m.run.start_observed ? null : "Start vor Beginn der Erfassung" }) : null,
+          { class: "program-text" },
+          el(
+            "div",
+            { class: "program-top" },
+            el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
+            run ? el("div", { class: "program-run num", text: run, title: m.run.start_observed ? null : "Start vor Beginn der Erfassung" }) : null,
+          ),
+          m.program ? el("div", { class: "program-path", text: [m.program, current, caller].filter(Boolean).join(" · ") }) : null,
+          callerFile ? el("div", { class: "program-path", text: callerFile }) : null,
+          m.order
+            ? el(
+                "a",
+                { class: "order-link", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}` },
+                orderText(m.order),
+              )
+            : null,
+          palletMarker(m, now),
         ),
-        m.program ? el("div", { class: "program-path", text: [m.program, current, caller].filter(Boolean).join(" · ") }) : null,
-        callerFile ? el("div", { class: "program-path", text: callerFile }) : null,
-        m.order
-          ? el(
-              "a",
-              { class: "order-link", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}` },
-              orderText(m.order),
-            )
-          : null,
-        palletMarker(m, now),
         orderThumb,
       ),
       progressBlock(m),

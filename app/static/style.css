@@ -292,19 +292,20 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 .program-run { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .program-path { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .program .order-link { margin-top: 2px; }
-/* Vorschaubild des Bauteils rechts im Programmfeld – klein, das Layout der Karte bleibt */
-.program.has-image { grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
-.program.has-image > :not(.program-image) { grid-column: 1; }
-.program-image { grid-column: 2; grid-row: 1 / span 3; align-self: center; display: block; line-height: 0; }
+.program-text { display: grid; gap: 4px; min-width: 0; }
+/* Bild der Aufspannung (sonst des Bauteils) rechts neben dem Text des Programmfelds */
+.program.has-image { display: flex; align-items: center; gap: 14px; }
+.program.has-image > .program-text { flex: 1; }
+.program-image { flex: none; display: block; line-height: 0; }
 .program-image img {
-  width: 64px;
-  height: 64px;
+  width: 84px;
+  height: 84px;
   border-radius: 8px;
   object-fit: cover;
   background: var(--surface);
   border: 1px solid var(--border);
 }
-@container (max-width: 520px) { .program-image img { width: 52px; height: 52px; } }
+@container (max-width: 520px) { .program-image img { width: 64px; height: 64px; } }
 
 .facts {
   display: grid;
@@ -1017,6 +1018,39 @@ tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 v
 .order-image-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .order-image-note { font-size: 13px; color: var(--ink-2); }
 .order-image-hint { font-size: 12px; color: var(--muted); }
+/* Bild je Aufspannung (Spannsituation) oben in der Karte der Aufspannung */
+.setup-figure {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 8px;
+  border-radius: 10px;
+  outline: none;
+}
+/* Fokus zeigt, wohin Strg+V das Bild setzt */
+.setup-figure:focus-within { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-wash); }
+.setup-image {
+  flex: none;
+  display: block;
+  width: 112px;
+  height: 112px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  line-height: 0;
+}
+.setup-image img { width: 100%; height: 100%; object-fit: cover; }
+.setup-image.empty {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.2;
+}
+.setup-image-body { display: grid; gap: 6px; min-width: 0; }
 /* CAM-Planzeiten im Auftrag */
 .plan-cell { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .plan-edit { font-size: 12px; }

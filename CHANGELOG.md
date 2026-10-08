@@ -10,6 +10,26 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.21.0] – 2026-10-08
+
+### Neu
+- **Bild je Aufspannung** (Tab „Aufträge“), z. B. ein Foto der Spannsituation.
+  - Jede Karte einer Aufspannung hat oben einen Bildbereich. Die Buttons sind dieselben wie beim
+    Auftragsbild, am Handy mit „Foto aufnehmen“.
+  - Gilt für Felgen je Spannung und bei Versionen je Aufspannung der Version, auch für die
+    Vorrichtung.
+  - **Strg+V:** Bildbereich der Aufspannung anklicken, er wird blau umrandet, dann Strg+V. Ohne
+    diesen Klick setzt Strg+V wie bisher das Auftragsbild.
+  - Löschen der Aufspannung oder des Auftrags löscht auch ihre Bilder.
+- **Live-Karte:** Läuft ein Programm einer Aufspannung mit Bild, zeigt die Karte deren Bild statt
+  des Auftragsbilds. Ohne Bild der Aufspannung bleibt es beim Auftragsbild.
+
+### Geändert
+- Das Bild auf der Live-Karte ist größer: 84 statt 64 px, am Handy 64 statt 52 px. Es steht jetzt
+  neben dem ganzen Text des Programmfelds.
+- **Datenbank-Schema 16** mit der neuen Tabelle `setup_images`. Sie wird beim Start automatisch
+  angelegt.
+
 ## [1.20.0] – 2026-10-07
 
 ### Neu

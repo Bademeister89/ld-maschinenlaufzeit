@@ -72,6 +72,10 @@ def order_detail(request: Request, key: str) -> dict[str, Any]:
     if detail is None:
         raise HTTPException(404, f"Unbekannter Auftrag: {key}")
     detail["order"] = ctx.order_images.public(detail["order"])
+    images, files = ctx.db.setup_images(key), ctx.order_images.files()
+    for setup in detail["setups"]:  # dieselben Einträge wie in detail["versions"]
+        image = images.get((setup["version"], setup["setup"]))
+        setup.update(ctx.order_images.setup_urls(key, setup["version"], setup["setup"], image, files))
     detail["active"] = _active(ctx).get(key, [])
     detail["now"] = time.time()
     return detail
@@ -204,6 +208,7 @@ def delete_setup(
     if not any(orders.setup_of(p) == wanted for p in _order_programs(ctx, key)):
         raise HTTPException(404, f"{what} gehört nicht zu Auftrag {key}.")
     result = _delete_programs(ctx, key, lambda p: orders.setup_of(p) == wanted, f"{what} gelöscht")
+    ctx.order_images.delete_setup(key, *wanted)
     log.info("Auftrag %s: %s gelöscht (%d Läufe, %d Planzeiten)", key, what, result["runs"], result["plans"])
     return result
 
@@ -218,10 +223,12 @@ def delete_order(request: Request, key: str) -> dict[str, int]:
     order = ctx.db.order(key)
     if order is None:
         raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    setup_images = ctx.db.setup_images(key)
     result = _delete_programs(
         ctx, key, lambda p: True, f"Auftrag {key} gelöscht", finish=lambda: ctx.db.delete_order(key)
     )
-    ctx.order_images.remove_files(order["image"])
+    for image in (order["image"], *setup_images.values()):
+        ctx.order_images.remove_files(image)
     log.info("Auftrag %s gelöscht (%d Läufe, %d Planzeiten)", key, result["runs"], result["plans"])
     return result
 
@@ -312,6 +319,18 @@ async def upload_image(request: Request, key: str, x_image_length: str | None = 
     """
     ctx = _ctx(request)
     _check_key(ctx, key)
+    image, thumb = await _read_upload(request, x_image_length)
+    try:
+        ctx.order_images.save(key, image, thumb)
+    except ImageError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    except LookupError as exc:  # Auftrag inzwischen nicht mehr vorhanden
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}") from exc
+    return ctx.order_images.public(ctx.db.order(key))
+
+
+async def _read_upload(request: Request, x_image_length: str | None) -> tuple[bytes, bytes]:
+    """Rumpf lesen (höchstens MAX_UPLOAD_BYTES) und in großes Bild und Vorschaubild teilen."""
     data = bytearray()
     async for chunk in request.stream():
         data.extend(chunk)
@@ -322,13 +341,9 @@ async def upload_image(request: Request, key: str, x_image_length: str | None = 
     except ValueError:
         image_length = 0
     try:
-        image, thumb = split_upload(bytes(data), image_length)
-        ctx.order_images.save(key, image, thumb)
+        return split_upload(bytes(data), image_length)
     except ImageError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    except LookupError as exc:  # Auftrag inzwischen nicht mehr vorhanden
-        raise HTTPException(404, f"Unbekannter Auftrag: {key}") from exc
-    return ctx.order_images.public(ctx.db.order(key))
 
 
 @router.delete("/{key}/image")
@@ -347,6 +362,58 @@ def order_image(request: Request, key: str, size: str = Query("full", pattern="^
     if path is None:
         raise HTTPException(404, "Kein Bild hinterlegt")
     # Die Adresse enthält den Dateinamen als Version (?v=), daher darf der Browser dauerhaft cachen
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+# --- Bild je Aufspannung (Spannsituation; die Live-Karte zeigt es, solange die Aufspannung läuft) ---
+
+VersionQuery = Query("", pattern=r"^([vV]\d{1,2})?$", description="Version, z. B. V1 (leer = Grundversion)")
+
+
+def _check_setup(ctx: AppContext, key: str, setup: int, version: str) -> str:
+    """Aufspannung muss zum Auftrag gehören (über ein Programm mit Lauf oder Planzeit)."""
+    _check_key(ctx, key)
+    version = version.upper()
+    if not any(orders.setup_of(p) == (version, setup) for p in _order_programs(ctx, key)):
+        raise HTTPException(404, f"Aufspannung {setup}{f' {version}' if version else ''} gehört nicht zu Auftrag {key}.")
+    return version
+
+
+@router.put("/{key}/setups/{setup}/image")
+async def upload_setup_image(
+    request: Request, key: str, setup: int, version: str = VersionQuery, x_image_length: str | None = Header(None)
+) -> dict[str, Any]:
+    """Bild der Aufspannung setzen oder ersetzen – Format wie beim Auftragsbild."""
+    ctx = _ctx(request)
+    version = _check_setup(ctx, key, setup, version)
+    image, thumb = await _read_upload(request, x_image_length)
+    try:
+        ctx.order_images.save_setup(key, version, setup, image, thumb)
+    except ImageError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}") from exc
+    return ctx.order_images.setup_urls(key, version, setup, ctx.db.setup_image(key, version, setup))
+
+
+@router.delete("/{key}/setups/{setup}/image")
+def delete_setup_image(request: Request, key: str, setup: int, version: str = VersionQuery) -> dict[str, Any]:
+    ctx = _ctx(request)
+    _check_key(ctx, key)
+    ctx.order_images.delete_setup(key, version.upper(), setup)
+    return ctx.order_images.setup_urls(key, version.upper(), setup, None)
+
+
+@router.get("/{key}/setups/{setup}/image")
+def setup_image(
+    request: Request, key: str, setup: int, version: str = VersionQuery,
+    size: str = Query("full", pattern="^(full|thumb)$"),
+) -> FileResponse:
+    ctx = _ctx(request)
+    _check_key(ctx, key)
+    path = ctx.order_images.path(ctx.db.setup_image(key, version.upper(), setup), size)
+    if path is None:
+        raise HTTPException(404, "Kein Bild hinterlegt")
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 

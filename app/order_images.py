@@ -1,14 +1,16 @@
-"""Ein Bild je Auftrag (fertiges Bauteil).
+"""Ein Bild je Auftrag (fertiges Bauteil) und je Aufspannung (Spannsituation).
 
 Der Browser verkleinert das Foto und schickt in *einer* Anfrage zwei JPEGs: das große Bild
 (längste Kante 1280 px) und das Vorschaubild (256 px). Der Server kodiert nichts um (keine
 Bildbibliothek), er prüft nur Typ und Größe. Gespeichert wird in ``<datenordner>/images/orders/``:
 
-- ``26-21055-<token>.jpg``        großes Bild (Auftragsdetail)
-- ``26-21055-<token>-thumb.jpg``  Vorschaubild (Auftragsliste, Live-Karte)
+- ``21055-<token>.jpg``           großes Bild des Auftrags (Auftragsdetail)
+- ``21055-<token>-thumb.jpg``     Vorschaubild (Auftragsliste, Live-Karte)
+- ``21055V1-sp02-<token>.jpg``    Bild der Aufspannung 2 von Version V1 (``…-thumb.jpg`` ebenso);
+  die Live-Karte zeigt es statt des Auftragsbilds, solange ein Programm dieser Aufspannung läuft
 
-In der Datenbank steht nur der Dateiname des großen Bildes (``orders.image``), das Vorschaubild
-folgt aus dem Namen. Beide Dateien werden geschrieben, bevor der Name in die Datenbank kommt –
+In der Datenbank steht nur der Dateiname des großen Bildes (``orders.image`` bzw.
+``setup_images.image``), das Vorschaubild folgt aus dem Namen. Beide Dateien werden geschrieben, bevor der Name in die Datenbank kommt –
 so fehlt das Vorschaubild nie. Beim Ersetzen und Entfernen werden die alten Dateien gelöscht.
 Fehlt eine Datei auf der Platte, gilt der Auftrag einfach als „ohne Bild“.
 
@@ -23,6 +25,7 @@ import os
 import re
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +37,8 @@ log = logging.getLogger(__name__)
 # "\n" am Ende durch) und nur ASCII-Ziffern (``\d`` erlaubt auch andere Schriften) – der Schlüssel landet
 # im Dateinamen.
 KEY_RE = re.compile(r"[0-9]{4,5}|1[0-9]{7}")
+VERSION_RE = re.compile(r"(V[0-9]{1,2})?")  # "" = Grundversion
+MAX_SETUP = 99
 MAX_IMAGE_BYTES = 1024 * 1024  # großes Bild; die Verkleinerung im Browser liefert ca. 150–250 KB
 MAX_THUMB_BYTES = 100 * 1024  # Vorschaubild; die Verkleinerung liefert ca. 10–20 KB
 MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES + MAX_THUMB_BYTES
@@ -51,6 +56,10 @@ class ImageError(ValueError):
 
 def valid_key(key: str) -> bool:
     return KEY_RE.fullmatch(key) is not None
+
+
+def valid_setup(version: str, setup: int) -> bool:
+    return VERSION_RE.fullmatch(version) is not None and 0 <= setup <= MAX_SETUP
 
 
 def thumb_name(image: str) -> str:
@@ -104,6 +113,11 @@ class OrderImages:
         except FileNotFoundError:
             return set()
 
+    def _present(self, image: str | None, files: set[str] | None) -> bool:
+        if files is None:
+            return self.path(image) is not None and self.path(image, "thumb") is not None
+        return bool(image) and image in files and thumb_name(image) in files
+
     def public(self, order: dict[str, Any], files: set[str] | None = None) -> dict[str, Any]:
         """Auftrag für die API: statt des Dateinamens ``image_url`` und ``thumb_url`` (oder None).
 
@@ -112,35 +126,45 @@ class OrderImages:
         """
         order = dict(order)
         image = order.pop("image", None)
-        if files is None:
-            present = self.path(image) is not None and self.path(image, "thumb") is not None
-        else:
-            present = bool(image) and image in files and thumb_name(image) in files
+        present = self._present(image, files)
         base = f"/api/orders/{order['key']}/image"
         order["image_url"] = f"{base}?size=full&v={image}" if present else None
         order["thumb_url"] = f"{base}?size=thumb&v={image}" if present else None
         return order
 
+    def setup_urls(
+        self, key: str, version: str, setup: int, image: str | None, files: set[str] | None = None
+    ) -> dict[str, str | None]:
+        """``image_url`` und ``thumb_url`` des Bildes einer Aufspannung (oder None)."""
+        if not self._present(image, files):
+            return {"image_url": None, "thumb_url": None}
+        base = f"/api/orders/{key}/setups/{setup}/image?" + (f"version={version}&" if version else "")
+        return {"image_url": f"{base}size=full&v={image}", "thumb_url": f"{base}size=thumb&v={image}"}
+
     # --- Ändern --------------------------------------------------------------------
+
+    def _store(self, prefix: str, image: bytes, thumb: bytes, previous: str | None, register: Any) -> None:
+        """Beide Dateien schreiben, dann ``register(name)`` (Datenbank); danach das alte Bild löschen."""
+        name = f"{prefix}-{secrets.token_hex(4)}.jpg"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (self.dir / thumb_name(name)).write_bytes(thumb)
+            (self.dir / name).write_bytes(image)
+            register(name)
+        except BaseException:
+            self._unlink(name)
+            raise
+        self._unlink(previous)
 
     def save(self, key: str, image: bytes, thumb: bytes) -> None:
         """Bild setzen oder ersetzen; die Dateien des bisherigen Bildes werden gelöscht."""
         if not valid_key(key):
             raise ImageError(f"Ungültiger Auftragsschlüssel: {key}")
-        name = f"{key}-{secrets.token_hex(4)}.jpg"
         with self._lock:
             order = self.db.order(key)
             if order is None:
                 raise LookupError(key)
-            self.dir.mkdir(parents=True, exist_ok=True)
-            try:
-                (self.dir / thumb_name(name)).write_bytes(thumb)
-                (self.dir / name).write_bytes(image)
-                self.db.set_order_image(key, name)
-            except BaseException:
-                self._unlink(name)
-                raise
-            self._unlink(order["image"])
+            self._store(key, image, thumb, order["image"], lambda name: self.db.set_order_image(key, name))
 
     def delete(self, key: str) -> None:
         with self._lock:
@@ -149,6 +173,26 @@ class OrderImages:
                 raise LookupError(key)
             self.db.set_order_image(key, None)
             self._unlink(order["image"])
+
+    def save_setup(self, key: str, version: str, setup: int, image: bytes, thumb: bytes) -> None:
+        """Bild einer Aufspannung setzen oder ersetzen (``version`` "" = Grundversion)."""
+        if not valid_key(key) or not valid_setup(version, setup):
+            raise ImageError(f"Ungültige Aufspannung: {key} {version} {setup}")
+        with self._lock:
+            if self.db.order(key) is None:
+                raise LookupError(key)
+            previous = self.db.setup_image(key, version, setup)
+            self._store(
+                f"{key}{version}-sp{setup:02d}", image, thumb, previous,
+                lambda name: self.db.set_setup_image(key, version, setup, name, time.time()),
+            )
+
+    def delete_setup(self, key: str, version: str, setup: int) -> None:
+        """Bild einer Aufspannung entfernen (auch beim Löschen der Aufspannung); ohne Bild nichts."""
+        with self._lock:
+            previous = self.db.setup_image(key, version, setup)
+            self.db.set_setup_image(key, version, setup, None, time.time())
+            self._unlink(previous)
 
     def remove_files(self, image: str | None) -> None:
         """Dateien eines Bildes löschen, dessen Auftrag es nicht mehr gibt (Auftrag gelöscht)."""

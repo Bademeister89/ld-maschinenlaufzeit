@@ -346,8 +346,19 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Kann der Browser eine Datei nicht als Bild lesen, erscheint ein Hinweis; ein vorhandenes
     Bild bleibt dann unverändert.
   - Das Vorschaubild steht in der Auftragsliste und auf der Live-Karte, solange der Auftrag an
-    einer Maschine angewählt ist. Das große Bild erscheint nur im Detail; ein Klick öffnet es in
-    voller Größe.
+    einer Maschine angewählt ist (außer die Aufspannung hat ein eigenes Bild, siehe unten). Das
+    große Bild erscheint nur im Detail; ein Klick öffnet es in voller Größe.
+- **Bild je Aufspannung** (Spannsituation; bei Felgen je Spannung, bei Versionen je Aufspannung der
+  Version):
+  - Jede Karte einer Aufspannung hat oben einen Bildbereich mit denselben Buttons wie das
+    Auftragsbild: „Bild hinzufügen“/„Bild ersetzen“, „Aus Zwischenablage“, „Bild entfernen“, am
+    Handy „Foto aufnehmen“ und „Aus Galerie“.
+  - **Strg+V:** Bildbereich der Aufspannung anklicken (er wird blau umrandet), dann Strg+V. Ohne
+    diesen Klick setzt Strg+V wie bisher das Auftragsbild.
+  - **Live-Karte:** Läuft ein Programm dieser Aufspannung, zeigt die Karte rechts im Programmfeld
+    ihr Bild statt des Auftragsbilds, 84 px groß (am Handy 64 px). Ohne Bild der Aufspannung
+    erscheint wie bisher das Bild des Auftrags.
+  - Löschen der Aufspannung oder des Auftrags löscht auch ihre Bilder.
 - **Automatisch abgeschlossen:** Läuft 7 Tage lang kein Programm eines Auftrags, schließt die App
   ihn selbst ab. Im Detail steht dann „abgeschlossen … (automatisch, 7 Tage ohne Programmlauf)“.
   - Gezählt wird ab dem Ende des letzten Laufs. Hat ein Auftrag noch nie ein Programm laufen
@@ -552,7 +563,8 @@ andere Werte liefert, wird nur dort angepasst.
   Dateiname:
   - `images/`: Maschinenbilder
   - `images/orders/`: Auftragsbilder, je Auftrag ein großes Bild und ein Vorschaubild,
-    z. B. `26-21055-1a2b3c4d.jpg` und `26-21055-1a2b3c4d-thumb.jpg`
+    z. B. `21055-1a2b3c4d.jpg` und `21055-1a2b3c4d-thumb.jpg`; Bilder der Aufspannungen ebenso,
+    z. B. `21055-sp02-1a2b3c4d.jpg` bzw. `21055V1-sp02-…` für Aufspannung 2 der Version V1
   - Größenordnung: 600 Aufträge mit Bild ≈ 100–150 MB.
   - Fehlt eine Bilddatei, gilt der Auftrag als „ohne Bild“; es entsteht kein Fehler.
 - **Sicherung:** immer den ganzen Datenordner sichern, also Datenbank **und** `images/`. Eine
@@ -600,6 +612,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `DELETE /api/orders/{key}` | Auftrag bzw. Felge komplett löschen (Läufe, Planzeiten, Bezeichnung, Bild) |
 | `GET /api/orders/{key}/image?size=full\|thumb` | Bild des Auftrags (großes Bild bzw. Vorschaubild) |
 | `PUT/DELETE /api/orders/{key}/image` | Bild setzen/ersetzen bzw. entfernen. Upload: großes Bild und Vorschaubild (beide JPEG) hintereinander in einem Rumpf, Kopfzeile `X-Image-Length` = Länge des großen Bildes |
+| `GET/PUT/DELETE /api/orders/{key}/setups/{n}/image?version=&size=` | Bild der Aufspannung `n` (Version z. B. `V1`, leer = Grundversion); Upload wie beim Auftragsbild |
 | `GET/POST/PUT/DELETE /api/config/...` | Konfiguration: Maschinen, Bild, Reihenfolge, Verbindungstest |
 | `GET /api/tools`, `POST /api/tools` | Werkzeuge (Liste, von Hand anlegen) |
 | `PUT/DELETE /api/tools/{maschine}/{nr}`, `POST …/reset` | Werkzeugdaten/Standzeit, Entfernen, Zurücksetzen |

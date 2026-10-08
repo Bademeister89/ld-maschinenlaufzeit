@@ -117,8 +117,12 @@ def machines(request: Request) -> dict[str, Any]:
         live = collector.live()
         live["tool_info"] = tools.tool_info(ctx.db, live["id"], live["tool"])
         if live["order"] and (order := ctx.db.order(live["order"]["key"])):
-            # Vorschaubild des Bauteils für die Live-Karte (das große Bild lädt die Live-Ansicht nie)
-            live["order"]["thumb_url"] = ctx.order_images.public(order)["thumb_url"]
+            # Vorschaubild des Bauteils für die Live-Karte (das große Bild lädt die Live-Ansicht nie) …
+            code = live["order"]
+            code["thumb_url"] = ctx.order_images.public(order)["thumb_url"]
+            # … und das der laufenden Aufspannung: Die Live-Karte zeigt es bevorzugt
+            image = ctx.db.setup_image(code["key"], code["version"], code["setup"])
+            code["setup_thumb_url"] = ctx.order_images.setup_urls(code["key"], code["version"], code["setup"], image)["thumb_url"]
         if live["order"] and live["order"]["kind"] == "rim":
             live["order"]["rim"] = orders.rim_info(live["order"]["key"], ctx.db.rim_design_names())
         machines.append(live)

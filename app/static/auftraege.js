@@ -389,6 +389,7 @@ function setupCard(setup, o) {
         ),
       ),
     ),
+    setupFigure(o, setup, `${title}${setup.version ? ` (${versionName(setup.version)})` : ""}`),
     el("div", { class: "table-wrap" }, table(columns, setup.programs)),
     el("p", { class: "muted", style: { margin: "10px 0 0" }, text: partText }),
   );
@@ -443,7 +444,7 @@ function deleteSetup(o, setup, title) {
   deleteItems(
     `/api/orders/${encodeURIComponent(o.key)}/setups/${setup.setup}${version}`,
     `${title}${setup.version ? ` (${versionName(setup.version)})` : ""} aus ${deleteName(o)} löschen?\n\n` +
-      `Gelöscht werden: ${countText(setup.programs.length, runs, plans)}.\n\n${DELETE_NOTE}`,
+      `Gelöscht werden: ${countText(setup.programs.length, runs, plans)}${setup.image_url ? ", das Bild" : ""}.\n\n${DELETE_NOTE}`,
     refresh,
   );
 }
@@ -453,11 +454,12 @@ function deleteOrder(d) {
   const programs = d.setups.flatMap((s) => s.programs);
   const plans = programs.filter((p) => p.plan_s != null).length;
   const it = isRim(o) ? "die Felge" : "den Auftrag";
+  const pictures = (o.image_url ? 1 : 0) + d.setups.filter((s) => s.image_url).length;
   deleteItems(
     `/api/orders/${encodeURIComponent(o.key)}`,
     `${deleteName(o)} komplett löschen?\n\n` +
       `Gelöscht werden: ${countText(programs.length, d.runs.length, plans)}${o.title ? ", die Bezeichnung" : ""}` +
-      `${o.image_url ? ", das Bild" : ""}.\n\n` +
+      `${pictures ? `, ${pictures === 1 ? "das Bild" : `${pictures} Bilder`}` : ""}.\n\n` +
       `Ist ein Programm noch an einer Maschine angewählt oder läuft es später wieder, legt die App ${it} neu an – ohne die gelöschten Daten. ` +
       "Die Laufzeit der Maschine in der Auswertung bleibt erhalten.\n\nDas lässt sich nicht rückgängig machen.",
     async (r) => {
@@ -559,28 +561,93 @@ async function saveOrder(key, changes) {
   }
 }
 
-// --- Bild des Auftrags (fertiges Bauteil) ------------------------------------------------------
+// --- Bilder: Auftrag (fertiges Bauteil) und Aufspannung (Spannsituation) ------------------------
 
 let current = null; // angezeigter Auftrag
 let runsOpen = false; // Liste „Programmdurchläufe“ aufgeklappt
-const imageState = { key: null, text: null, error: false, busy: false }; // Hinweis zum Hochladen
+const imageState = { id: null, text: null, error: false, busy: false }; // Hinweis zum Hochladen
 // Handy/Tablet: eigener Kamera-Button. Android (ab 13) zeigt bei einem Bild-Dateifeld nur die
 // Fotoauswahl ohne Kamera; die Kamera öffnet sich nur über ein eigenes Feld mit "capture".
 const touch = matchMedia("(pointer: coarse)").matches;
 // Zwischenablage per Button nur in sicherer Umgebung (https oder localhost); Strg+V geht überall
 const clipboardButton = !touch && typeof navigator.clipboard?.read === "function";
 
-function imageButtons(o, disabled) {
-  const button = (text, source) => el("button", { type: "button", class: "btn", disabled, onclick: () => pickImage(o.key, source) }, text);
+// Ziel eines Bildes: der Auftrag oder eine Aufspannung. ``id`` ordnet Hinweise und Neuzeichnen zu,
+// ``render`` zeichnet den Bildbereich neu.
+const targets = new Map();
+
+function orderTarget(o) {
+  const t = { id: o.key, key: o.key, setup: null, version: "", name: `Bild von ${orderTitle(o)}`, hasImage: Boolean(o.image_url), render: () => imageBlock(o) };
+  targets.set(t.id, t);
+  return t;
+}
+
+function setupTarget(o, setup, title) {
+  const id = `${o.key}|${setup.version}|${setup.setup}`;
+  const t = { id, key: o.key, setup: setup.setup, version: setup.version, name: `Bild von ${title}`, hasImage: Boolean(setup.image_url), render: () => setupFigure(o, setup, title) };
+  targets.set(id, t);
+  return t;
+}
+
+function imagePath(t) {
+  const base = `/api/orders/${encodeURIComponent(t.key)}`;
+  return t.setup == null ? `${base}/image` : `${base}/setups/${t.setup}/image${t.version ? `?version=${encodeURIComponent(t.version)}` : ""}`;
+}
+
+function imageButtons(t, disabled, small = false) {
+  const cls = `btn${small ? " small" : ""}`;
+  const button = (text, source) => el("button", { type: "button", class: cls, disabled, onclick: () => pickImage(t, source) }, text);
   if (touch) return [button("Foto aufnehmen", "camera"), button("Aus Galerie", "gallery")];
   return [
-    button(o.image_url ? "Bild ersetzen" : "Bild hinzufügen", "gallery"),
-    clipboardButton ? el("button", { type: "button", class: "btn", disabled, onclick: () => imageFromClipboardApi(o) }, "Aus Zwischenablage") : null,
+    button(t.hasImage ? "Bild ersetzen" : "Bild hinzufügen", "gallery"),
+    clipboardButton ? el("button", { type: "button", class: cls, disabled, onclick: () => imageFromClipboardApi(t) }, "Aus Zwischenablage") : null,
   ];
 }
 
+function imageNote(t, hint) {
+  if (imageState.id === t.id && imageState.text) {
+    return el("div", { class: imageState.error ? "form-error" : "order-image-note", role: "status", text: imageState.text });
+  }
+  return hint ? el("div", { class: "order-image-hint", text: hint }) : null;
+}
+
+/** Bild einer Aufspannung: erscheint auf der Live-Karte, solange ein Programm dieser Aufspannung läuft. */
+function setupFigure(o, setup, title) {
+  const t = setupTarget(o, setup, title);
+  const busy = imageState.id === t.id && imageState.busy;
+  const picture = setup.image_url
+    ? el(
+        "a",
+        { class: "setup-image", href: setup.image_url, target: "_blank", rel: "noopener", title: "Bild in voller Größe öffnen" },
+        cachedImg(setup.thumb_url, { alt: t.name, decoding: "async" }),
+      )
+    : el("div", { class: "setup-image empty", text: "Kein Bild" });
+  let hint = "Erscheint auf der Live-Karte, solange ein Programm dieser " + setupWord(o) + " läuft.";
+  if (!touch) hint += " Hier anklicken und Bild mit Strg+V einfügen geht auch.";
+  return el(
+    "figure",
+    // Fokus im Bildbereich: Strg+V setzt das Bild dieser Aufspannung statt des Auftragsbilds
+    { class: "setup-figure", tabindex: "0", "data-image-id": t.id, "aria-label": `${t.name}${setup.image_url ? "" : " (noch keins)"}` },
+    picture,
+    el(
+      "figcaption",
+      { class: "setup-image-body" },
+      el(
+        "div",
+        { class: "order-image-actions" },
+        imageButtons(t, busy, true),
+        setup.image_url
+          ? el("button", { type: "button", class: "btn small danger", disabled: busy, onclick: () => removeImage(t) }, "Bild entfernen")
+          : null,
+      ),
+      imageNote(t, hint),
+    ),
+  );
+}
+
 function imageBlock(o) {
-  const own = imageState.key === o.key;
+  const t = orderTarget(o);
+  const own = imageState.id === t.id;
   const picture = o.image_url
     ? el(
         "a",
@@ -590,33 +657,35 @@ function imageBlock(o) {
     : el("div", { class: "order-image empty", text: "Noch kein Bild vom Bauteil" });
   return el(
     "figure",
-    { class: "order-figure", id: "order-figure" },
+    { class: "order-figure", "data-image-id": t.id },
     picture,
     el(
       "figcaption",
       { class: "order-image-actions" },
-      imageButtons(o, own && imageState.busy),
+      imageButtons(t, own && imageState.busy),
       o.image_url
-        ? el("button", { type: "button", class: "btn danger", disabled: own && imageState.busy, onclick: () => removeImage(o) }, "Bild entfernen")
+        ? el("button", { type: "button", class: "btn danger", disabled: own && imageState.busy, onclick: () => removeImage(t) }, "Bild entfernen")
         : null,
     ),
-    own && imageState.text
-      ? el("div", { class: imageState.error ? "form-error" : "order-image-note", role: "status", text: imageState.text })
-      : !touch
-        ? el("div", { class: "order-image-hint", text: "Tipp: Bild kopieren (z. B. Screenshot) und hier mit Strg+V einfügen" })
-        : null,
+    imageNote(t, touch ? null : "Tipp: Bild kopieren (z. B. Screenshot) und hier mit Strg+V einfügen"),
   );
 }
 
-function setImageState(key, text = null, { error = false, busy = false } = {}) {
-  Object.assign(imageState, { key, text, error, busy });
-  if (current) $("order-figure")?.replaceWith(imageBlock(current));
+/** Hinweis setzen und den Bildbereich des Ziels neu zeichnen (``id`` null: nur Hinweis löschen). */
+function setImageState(id, text = null, { error = false, busy = false } = {}) {
+  const previous = imageState.id;
+  Object.assign(imageState, { id, text, error, busy });
+  for (const which of new Set([previous, id])) {
+    const t = which != null ? targets.get(which) : null;
+    const node = t && document.querySelector(`[data-image-id="${CSS.escape(t.id)}"]`);
+    node?.replaceWith(t.render());
+  }
 }
 
-function pickImage(key, source) {
+function pickImage(t, source) {
   const input = $(source === "camera" ? "camera-input" : "image-input");
   input.value = "";
-  input.dataset.key = key;
+  input.dataset.target = t.id;
   input.click();
 }
 
@@ -624,11 +693,12 @@ const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function uploadImage(e) {
   const file = e.target.files[0];
-  const key = e.target.dataset.key;
-  if (file && key) uploadFile(key, file);
+  const t = targets.get(e.target.dataset.target);
+  if (file && t) uploadFile(t, file);
 }
 
-/** Bild aus der Zwischenablage (Strg+V auf der Seite). Text einfügen, z. B. in die Bezeichnung, bleibt unberührt. */
+/** Bild aus der Zwischenablage (Strg+V auf der Seite): ins Bild der Aufspannung, in deren Bildbereich
+ * der Fokus steht, sonst ins Auftragsbild. Text einfügen, z. B. in die Bezeichnung, bleibt unberührt. */
 function pasteImage(e) {
   const o = current;
   if (!o || $("detail").hidden || imageState.busy) return;
@@ -636,58 +706,60 @@ function pasteImage(e) {
   const file = item?.getAsFile();
   if (!file) return;
   e.preventDefault();
-  if (o.image_url && !confirm(`Bild von ${orderTitle(o)} durch das Bild aus der Zwischenablage ersetzen?`)) return;
-  uploadFile(o.key, file);
+  const focused = document.activeElement?.closest?.(".setup-figure")?.dataset.imageId;
+  const t = (focused && targets.get(focused)) || orderTarget(o);
+  if (t.hasImage && !confirm(`${t.name} durch das Bild aus der Zwischenablage ersetzen?`)) return;
+  uploadFile(t, file);
 }
 
 /** Button „Aus Zwischenablage“ (Clipboard-API; der Browser fragt evtl. nach Erlaubnis). */
-async function imageFromClipboardApi(o) {
+async function imageFromClipboardApi(t) {
   let file = null;
   try {
     for (const item of await navigator.clipboard.read()) {
-      const type = item.types.find((t) => t.startsWith("image/"));
+      const type = item.types.find((ty) => ty.startsWith("image/"));
       if (type) {
         file = new File([await item.getType(type)], "Zwischenablage", { type });
         break;
       }
     }
   } catch {
-    setImageState(o.key, "Kein Zugriff auf die Zwischenablage – Bild bitte mit Strg+V einfügen.", { error: true });
+    setImageState(t.id, "Kein Zugriff auf die Zwischenablage – Bild bitte mit Strg+V einfügen.", { error: true });
     return;
   }
   if (!file) {
-    setImageState(o.key, "In der Zwischenablage ist kein Bild. Bild kopieren (z. B. Screenshot) und erneut versuchen.", { error: true });
+    setImageState(t.id, "In der Zwischenablage ist kein Bild. Bild kopieren (z. B. Screenshot) und erneut versuchen.", { error: true });
     return;
   }
-  if (o.image_url && !confirm(`Bild von ${orderTitle(o)} durch das Bild aus der Zwischenablage ersetzen?`)) return;
-  uploadFile(o.key, file);
+  if (t.hasImage && !confirm(`${t.name} durch das Bild aus der Zwischenablage ersetzen?`)) return;
+  uploadFile(t, file);
 }
 
-async function uploadFile(key, file) {
-  setImageState(key, "Bild wird verkleinert …", { busy: true });
+async function uploadFile(t, file) {
+  setImageState(t.id, "Bild wird verkleinert …", { busy: true });
   try {
     const [full, thumb] = await shrinkImage(file, [ORDER_IMAGE, ORDER_THUMB]);
-    setImageState(key, `Bild wird hochgeladen (${kb(full.size + thumb.size)}) …`, { busy: true });
+    setImageState(t.id, `Bild wird hochgeladen (${kb(full.size + thumb.size)}) …`, { busy: true });
     // Beide Größen in einer Anfrage, damit nie ein Bild ohne Vorschau gespeichert wird
-    await send("PUT", `/api/orders/${encodeURIComponent(key)}/image`, new Blob([full, thumb], { type: "application/octet-stream" }), {
+    await send("PUT", imagePath(t), new Blob([full, thumb], { type: "application/octet-stream" }), {
       "X-Image-Length": String(full.size),
     });
     setImageState(null);
     await refresh();
   } catch (err) {
-    setImageState(key, err.message, { error: true });
+    setImageState(t.id, err.message, { error: true });
   }
 }
 
-async function removeImage(o) {
-  if (!confirm(`Bild von ${orderTitle(o)} entfernen?`)) return;
-  setImageState(o.key, "Bild wird entfernt …", { busy: true });
+async function removeImage(t) {
+  if (!confirm(`${t.name} entfernen?`)) return;
+  setImageState(t.id, "Bild wird entfernt …", { busy: true });
   try {
-    await send("DELETE", `/api/orders/${encodeURIComponent(o.key)}/image`);
+    await send("DELETE", imagePath(t));
     setImageState(null);
     await refresh();
   } catch (err) {
-    setImageState(o.key, err.message, { error: true });
+    setImageState(t.id, err.message, { error: true });
   }
 }
 

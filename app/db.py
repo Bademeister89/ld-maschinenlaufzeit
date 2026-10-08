@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -161,6 +161,14 @@ CREATE TABLE IF NOT EXISTS program_plans (
     updated_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_plans_order ON program_plans(order_key);
+CREATE TABLE IF NOT EXISTS setup_images (
+    order_key  TEXT NOT NULL,
+    version    TEXT NOT NULL DEFAULT '',
+    setup      INTEGER NOT NULL,
+    image      TEXT NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (order_key, version, setup)
+);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -275,6 +283,7 @@ class Database:
         if self.get_meta("pallet_tables_reread") is None:
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
             self.set_meta("pallet_tables_reread", "1")
+        # v15 → v16: Bild je Aufspannung. Die Tabelle setup_images kommt über SCHEMA.
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def _merge_orders(self, pattern: str) -> None:
@@ -612,10 +621,36 @@ class Database:
         und das Nachtragen beim Start (``orders.backfill``) legt den Auftrag so nicht wieder an."""
         with self.transaction():
             self._execute("DELETE FROM program_plans WHERE order_key = ?", (key,))
+            self._execute("DELETE FROM setup_images WHERE order_key = ?", (key,))
             self._execute("DELETE FROM orders WHERE key = ?", (key,))
 
     def set_order_image(self, key: str, image: str | None) -> None:
         self._execute("UPDATE orders SET image = ? WHERE key = ?", (image, key))
+
+    # --- Bild je Aufspannung (Version "" = Grundversion; bei Felgen: Spannung) ------------------
+
+    def setup_images(self, order_key: str) -> dict[tuple[str, int], str]:
+        rows = self._query("SELECT version, setup, image FROM setup_images WHERE order_key = ?", (order_key,))
+        return {(r["version"], r["setup"]): r["image"] for r in rows}
+
+    def setup_image(self, order_key: str, version: str, setup: int) -> str | None:
+        rows = self._query(
+            "SELECT image FROM setup_images WHERE order_key = ? AND version = ? AND setup = ?", (order_key, version, setup)
+        )
+        return rows[0]["image"] if rows else None
+
+    def set_setup_image(self, order_key: str, version: str, setup: int, image: str | None, t: float) -> None:
+        """Bild setzen bzw. ersetzen; ``None`` entfernt den Eintrag."""
+        if image is None:
+            self._execute(
+                "DELETE FROM setup_images WHERE order_key = ? AND version = ? AND setup = ?", (order_key, version, setup)
+            )
+            return
+        self._execute(
+            "INSERT INTO setup_images(order_key, version, setup, image, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(order_key, version, setup) DO UPDATE SET image = excluded.image, updated_at = excluded.updated_at",
+            (order_key, version, setup, image, t),
+        )
 
     def programs_without_order(self) -> list[str]:
         with self._lock:
