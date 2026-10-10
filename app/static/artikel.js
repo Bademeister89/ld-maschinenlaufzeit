@@ -113,6 +113,16 @@ const COLUMNS = [
   { label: "€ je kg", cls: "r", value: (a) => fmtEur(a.price_per_kg) },
   { label: "Material­preis", cls: "r", value: (a) => fmtEur(a.material_cost) },
   {
+    label: "Maschine",
+    cls: "wrap",
+    value: (a) => {
+      if (!a.machines?.length) return "—";
+      const names = a.machines.join(", ");
+      if (!a.machine_planned) return names;
+      return el("span", { title: "Noch nicht (vollständig) gelaufen: Maschine aus der Tebis-Doku" }, names, el("span", { class: "art-sub", text: "laut Tebis-Doku" }));
+    },
+  },
+  {
     label: "Laufzeit je Teil",
     cls: "r",
     value: (a) => {
@@ -121,6 +131,14 @@ const COLUMNS = [
       if (!a.inherited?.length) return time;
       return el("span", { title: `Inklusive Spannung ${a.inherited.join(", ")} der Grundversion (gemeinsame Vorstufe)` }, time, el("span", { class: "art-sub", text: `inkl. Sp. ${a.inherited.join(", ")}` }));
     },
+  },
+  {
+    label: "Stunden­satz",
+    cls: "r",
+    value: (a) =>
+      a.rate == null
+        ? a.part_s != null ? el("a", { class: "muted", href: "konfiguration.html#maschinen", title: "Stundensatz fehlt: Konfiguration → Maschinen → Bearbeiten", onclick: (e) => e.stopPropagation(), text: "fehlt" }) : "—"
+        : estimated(`${fmtEur(a.rate)}/h`, a.mill_estimated, "Geschätzt: Durchschnitt der eingetragenen Stundensätze (Maschine unbekannt)"),
   },
   {
     label: "Fräsen",
@@ -370,7 +388,7 @@ function visible() {
   return data.articles.filter(
     (a) =>
       (state.kind === "all" || a.kind === state.kind) &&
-      (!needle || `${a.key} ${name(a)} ${a.material ?? ""} ${a.note ?? ""}`.toLowerCase().includes(needle)),
+      (!needle || `${a.key} ${name(a)} ${a.material ?? ""} ${a.machines?.join(" ") ?? ""} ${a.note ?? ""}`.toLowerCase().includes(needle)),
   );
 }
 
@@ -410,7 +428,6 @@ function render() {
 function syncFilters() {
   for (const b of $("status").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.status === state.status));
   for (const b of $("kind").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.kind === state.kind));
-  $("export").href = `/api/articles/export.xlsx?status=${state.status}`;
 }
 
 async function load() {
@@ -547,6 +564,30 @@ async function addArticle(e) {
   }
 }
 
+// --- Excel-Export: erst fragen, ob mit oder ohne Felgen ---------------------------------------------
+
+function openExporter() {
+  const count = { all: data.articles.length, order: 0, rim: 0 };
+  for (const a of data.articles) count[a.kind] = (count[a.kind] ?? 0) + 1;
+  for (const input of document.querySelectorAll('input[name="x-kind"]')) {
+    input.checked = input.value === state.kind;
+    $(`x-count-${input.value}`).textContent = `${count[input.value]} ${count[input.value] === 1 ? "Zeile" : "Zeilen"}`;
+  }
+  const status = { open: "nur offene", closed: "nur abgeschlossene", all: "offene und abgeschlossene" }[state.status];
+  $("x-info").textContent = `Wie der Statusfilter oben: ${status} Aufträge. Die Suche gilt nicht für den Export.`;
+  $("exporter").showModal();
+}
+
+function startExport(e) {
+  e.preventDefault();
+  const kind = document.querySelector('input[name="x-kind"]:checked')?.value ?? "all";
+  const link = el("a", { href: `/api/articles/export.xlsx?status=${state.status}&kind=${kind}`, download: "" });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  $("exporter").close();
+}
+
 // --- Start ---------------------------------------------------------------------------------------
 
 async function main() {
@@ -572,6 +613,9 @@ async function main() {
     render();
   });
   $("add").addEventListener("click", openAdder);
+  $("export").addEventListener("click", openExporter);
+  $("exporter-form").addEventListener("submit", startExport);
+  $("x-cancel").addEventListener("click", () => $("exporter").close());
   $("adder-form").addEventListener("submit", addArticle);
   $("a-cancel").addEventListener("click", () => $("adder").close());
   $("editor-form").addEventListener("submit", save);

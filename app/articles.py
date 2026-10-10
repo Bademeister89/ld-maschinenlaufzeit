@@ -212,6 +212,37 @@ def _rate(
     return None, False
 
 
+def _plan_machine(plan_machine: str | None, machines: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Maschine aus der Tebis-Doku, wenn ihr Name eindeutig zu einer eingerichteten passt."""
+    if not plan_machine:
+        return None
+    hits = [m for m in machines if m["name"].lower() in plan_machine.lower()]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _machines_of(
+    programs: list[dict[str, Any]],
+    machine_time: dict[str, dict[str, float]],
+    plans: dict[str, dict[str, Any]],
+    machines: list[dict[str, Any]],
+) -> tuple[list[str], bool]:
+    """Maschinen, auf denen die Programme liefen (meiste Laufzeit zuerst); ein Programm ohne Lauf
+    zählt mit der Maschine aus der Tebis-Doku. (Namen, mindestens eine nur geplant)."""
+    names = {m["id"]: m["name"] for m in machines}
+    seconds: dict[str, float] = defaultdict(float)
+    planned = False
+    for p in programs:
+        ran = {mid: s for mid, s in machine_time.get(p["call_name"], {}).items() if s > 0}
+        if not ran:
+            plan = plans.get(p["call_name"])
+            hit = _plan_machine(plan["machine"] if plan else None, machines)
+            if hit is not None:
+                ran, planned = {hit["id"]: p["plan_s"] or 0.0}, True
+        for mid, s in ran.items():
+            seconds[mid] += s
+    return [names.get(mid, mid) for mid in sorted(seconds, key=lambda mid: -seconds[mid])], planned
+
+
 def _version_row(
     version: dict[str, Any] | None,
     machine_time: dict[str, dict[str, float]],
@@ -250,10 +281,15 @@ def _version_row(
     if setups:
         final = max(setups, key=lambda s: s["setup"])["programs"][-1]
         last = last_finished.get(final["call_name"])
+    machine_names, machine_planned = _machines_of(programs, machine_time, plans, machines)
     return {
         "inherited": sorted(inherited),
+        "machines": machine_names,
+        "machine_planned": machine_planned,
         "part_s": part_s,
         "part_estimated": part_estimated,
+        # wirksamer Stundensatz der Version (bei mehreren Maschinen nach Laufzeit gewichtet)
+        "rate": round(mill / (part_s / 3600), 2) if mill is not None and part_s else None,
         "mill_cost": round(mill, 2) if mill is not None else None,
         "mill_estimated": mill_estimated,
         "parts": (version or {}).get("parts", 0),
@@ -366,6 +402,12 @@ DURATION = "[h]:mm"
 FIRST_ROW = 3  # Zeile 1: Gruppen, Zeile 2: Spaltenköpfe
 THUMB_PX = (96, 72)  # Vorschaubild in der Tabelle (4:3)
 SHAPE_NAMES = {"block": "Block", "round": "Rund"}
+# Auswahl beim Export: Art → (Beschriftung, Anfang des Dateinamens)
+EXPORT_KINDS = {
+    "order": ("Nur Artikel (ohne Felgen)", "artikel_ohne_felgen"),
+    "all": ("Artikel und Felgen", "artikel"),
+    "rim": ("Nur Felgen", "felgen"),
+}
 
 # (Schlüssel, Überschrift, Breite, Format, Eingabe?)
 _COLS = [
@@ -384,6 +426,7 @@ _COLS = [
     ("weight", "Gewicht (kg)", 11, "0.000", False),
     ("price_kg", "€ je kg", 11, EUR, False),
     ("material_cost", "Material­preis", 13, EUR, False),
+    ("machine", "Maschine", 16, "@", False),
     ("part", "Laufzeit je Teil", 12, DURATION, True),
     ("rate", "Stundensatz (€/h)", 12, EUR, True),
     ("mill", "Preis Fräsen", 13, EUR, False),
@@ -401,7 +444,7 @@ _COLS = [
 _GROUPS = [
     ("Artikel", "image", "status", "2F4F6F"),
     ("Rohling und Material", "material", "material_cost", "3E6B48"),
-    ("Fertigung", "part", "mill", "6B4E2F"),
+    ("Fertigung", "machine", "mill", "6B4E2F"),
     ("Kosten und Preise", "cost", "margin_pct", "5B3E6B"),
     ("Produktion", "parts", "last", "2F5F6B"),
     ("", "hints", "note", "4A4A48"),
@@ -414,6 +457,8 @@ def hints(row: dict[str, Any]) -> str:
         notes.append(f"inkl. Spannung {', '.join(map(str, row['inherited']))} der Grundversion")
     if row["part_estimated"]:
         notes.append("Laufzeit teils aus CAM-Planzeit")
+    if row.get("machine_planned"):
+        notes.append("Maschine teils aus der Tebis-Doku")
     if row["mill_estimated"]:
         notes.append("Stundensatz geschätzt (Durchschnitt)")
     if row["part_s"] is not None and row["mill_cost"] is None:
@@ -453,9 +498,11 @@ def export_xlsx(
     tz: ZoneInfo,
     now: float,
     images: dict[str, bytes] | None = None,
+    kind: str = "all",
 ) -> bytes:
     """Artikelliste als Excel-Arbeitsmappe mit Bildern und Formeln (Blatt „Artikel“), der Materialliste
-    (Blatt „Materialien“, Grundlage der Formeln) und einer kurzen Erläuterung."""
+    (Blatt „Materialien“, Grundlage der Formeln) und einer kurzen Erläuterung. ``kind`` (siehe
+    ``EXPORT_KINDS``) nennt die Auswahl in der Erläuterung; gefiltert sind ``rows`` schon."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -500,9 +547,6 @@ def export_xlsx(
     for n, row in enumerate(rows):
         r = FIRST_ROW + n
         c = {key: f"{col[key]}{r}" for key in col}
-        rate = None
-        if row["mill_cost"] is not None and row["part_s"]:
-            rate = round(row["mill_cost"] / (row["part_s"] / 3600), 2)  # wirksamer Stundensatz (gewichtet)
         last = datetime.fromtimestamp(row["last_production"], tz).replace(tzinfo=None) if row["last_production"] else None
         values = {
             "key": row["key"],
@@ -527,8 +571,9 @@ def export_xlsx(
             "material_cost": (
                 f'=IF(AND(ISNUMBER({c["weight"]}),ISNUMBER({c["price_kg"]})),ROUND({c["weight"]}*{c["price_kg"]},2),"")'
             ),
+            "machine": ", ".join(row["machines"]) or None,
             "part": row["part_s"] / 86400 if row["part_s"] is not None else None,
-            "rate": rate,
+            "rate": row["rate"],
             "mill": f'=IF(AND(ISNUMBER({c["part"]}),ISNUMBER({c["rate"]})),ROUND({c["part"]}*24*{c["rate"]},2),"")',
             "cost": f'=IF(COUNT({c["material_cost"]},{c["mill"]})=0,"",SUM({c["material_cost"]},{c["mill"]}))',
             "ek": row["price_ek"],
@@ -549,7 +594,7 @@ def export_xlsx(
                 cell.number_format = fmt
             cell.border = grid
             cell.font = Font(size=11, bold=key in ("key", "cost", "margin"))
-            wrap = key in ("title", "hints", "note")
+            wrap = key in ("title", "machine", "hints", "note")
             cell.alignment = Alignment(vertical="center", wrap_text=wrap, horizontal="left" if fmt == "@" else None)
             if is_input:
                 cell.fill = input_fill
@@ -614,12 +659,14 @@ def export_xlsx(
     lines = [
         ("Artikelliste – Stand des Exports", True),
         (f"Erstellt am {datetime.fromtimestamp(now, tz):%d.%m.%Y um %H:%M} Uhr mit LD-Machine-Viewer.", False),
+        (f"Auswahl: {EXPORT_KINDS[kind][0]} · {len(rows)} Zeilen", False),
         ("", False),
         ("Gelbe Zellen sind Eingaben, alle anderen rechnen mit Formeln wie in der Artikelliste:", True),
         ("Volumen (l) = Block: L × B × H / 1.000.000 · Rund: π × (Ø/2)² × L / 1.000.000 (Maße in mm)", False),
         ("Dichte und Preis je kg kommen über das Material aus dem Blatt „Materialien“ (dort änderbar).", False),
         ("Gewicht (kg) = Volumen × Dichte · Materialpreis = Gewicht × Preis je kg", False),
         ("Preis Fräsen = Laufzeit je Teil × Stundensatz (bei mehreren Maschinen nach Laufzeit gewichtet)", False),
+        ("Maschine: wo die Programme liefen, meiste Laufzeit zuerst; ohne Lauf die Maschine aus der Tebis-Doku.", False),
         ("Herstellkosten = Materialpreis + Preis Fräsen · Marge = Preis VK − Herstellkosten", False),
         ("", False),
         ("Laufzeit je Teil: Summe der Ø-Laufzeiten aller Aufspannungen, bei Versionen inkl. der gemeinsamen", False),

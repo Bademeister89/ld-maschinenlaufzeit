@@ -486,7 +486,9 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
   | Material | aus der Materialliste (Konfiguration → Artikel) |
   | Rohling (Maße) | Block L × B × H oder Rund Ø × L in mm, darunter das Gewicht in kg |
   | € je kg, Materialpreis | Preis je kg des Materials. Gewicht = Volumen × Dichte (g/cm³ = kg je Liter), Materialpreis = Gewicht × Preis je kg |
+  | Maschine | wo die Programme der Version liefen, die mit der meisten Laufzeit zuerst; ohne Lauf die Maschine aus der Tebis-Doku („laut Tebis-Doku“) |
   | Laufzeit je Teil | Summe der Ø-Laufzeiten aller Programme der Version über alle Aufspannungen, ohne Vorrichtung |
+  | Stundensatz | Satz, mit dem Fräsen rechnet: bei mehreren Maschinen nach Laufzeit gewichtet (Fräsen ÷ Laufzeit je Teil) |
   | Fräsen | je Programm Laufzeit je Teil × Stundensatz seiner Maschine |
   | Herstellkosten | Material + Fräsen |
   | EK, VK | von Hand |
@@ -502,7 +504,7 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
 - **Mehrere Maschinen:** Lief ein Programm auf mehreren Maschinen, wird der Stundensatz nach Laufzeit
   gewichtet.
 - **Fehlende Angaben:**
-  - Ohne Stundensatz steht „kein €/h“. Den Satz trägst du unter Konfiguration → Maschinen →
+  - Ohne Stundensatz steht „fehlt“ bzw. „kein €/h“. Den Satz trägst du unter Konfiguration → Maschinen →
     Bearbeiten ein.
   - Fehlt Material oder Fräsen, heißen die Herstellkosten „mind.“, und eine Marge gibt es nicht.
 - **Bild:** Beim Drüberfahren mit der Maus erscheint das Bild groß neben dem Vorschaubild.
@@ -528,9 +530,13 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
   Artikel, z. B. Alu 7075 mit 2,81 g/cm³. Ein neuer Preis gilt sofort für alle Artikel mit diesem
   Material. Ohne Dichte gibt es kein Gewicht und keinen Materialpreis.
 - **Excel-Export:** eine Arbeitsmappe zum Weiterrechnen mit den gefilterten Artikeln (Status).
+  - **Auswahl:** Nach „Excel-Export“ fragt ein Fenster: **Nur Artikel** (ohne Felgen), **Artikel und
+    Felgen** oder **Nur Felgen**, jeweils mit der Zahl der Zeilen. Vorausgewählt ist der Art-Filter
+    der Seite; die Suche gilt nicht. Dateiname `artikel_ohne_felgen_…`, `artikel_…` bzw. `felgen_…`.
   - **Aufbau:**
     - Bild des Artikels in jeder Zeile
-    - farbige Spaltengruppen (Artikel, Rohling und Material, Fertigung, Kosten und Preise, Produktion)
+    - farbige Spaltengruppen (Artikel, Rohling und Material, Fertigung mit Maschine, Kosten und
+      Preise, Produktion)
     - größere Schrift und Zeilen
     - Bild und Artikel bleiben beim Scrollen stehen
     - Filter, Summenzeile, Querformat beim Drucken
@@ -762,7 +768,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET/PUT /api/config/orders` | Frist bis zum automatischen Abschließen: `{"close_days": 7}`, 0 = nie |
 | `GET /api/articles?status=`, `POST /api/articles` | Artikel mit Kosten und Preisen; anlegen mit `{"key": "21060V1"}` |
 | `PUT/DELETE /api/articles/{key}` | Rohling (Material, Form, Maße), EK, VK, Notiz bzw. diese Angaben entfernen |
-| `GET /api/articles/export.xlsx?status=` | Excel-Export der Artikel |
+| `GET /api/articles/export.xlsx?status=&kind=` | Excel-Export der Artikel (`kind`: `all`, `order` = ohne Felgen, `rim` = nur Felgen) |
 | `GET/POST/PUT/DELETE /api/config/materials` | Materialliste: `{"name", "density" (g/cm³), "price_per_kg"}` |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |

@@ -10,6 +10,20 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.27.0] – 2026-10-10
+
+### Neu
+- **Artikel: Spalten „Maschine“ und „Stundensatz“.**
+  - **Maschine:** wo die Programme des Artikels liefen, die mit der meisten Laufzeit zuerst. Ist ein
+    Programm noch nicht gelaufen, gilt die Maschine aus der Tebis-Doku („laut Tebis-Doku“).
+  - **Stundensatz:** der Satz, mit dem „Fräsen“ rechnet, bei mehreren Maschinen nach Laufzeit
+    gewichtet. „≈“ heißt Durchschnitt aller Stundensätze, „fehlt“ führt zur Konfiguration.
+  - Die Suche findet Artikel auch über den Maschinennamen. Im Excel-Export gibt es die Spalte
+    „Maschine“ in der Gruppe „Fertigung“.
+- **Excel-Export mit oder ohne Felgen:** Nach „Excel-Export“ fragt ein Fenster: Nur Artikel,
+  Artikel und Felgen oder Nur Felgen, jeweils mit der Zahl der Zeilen. Die Auswahl steht auch im
+  Blatt „Erläuterung“.
+
 ## [1.26.0] – 2026-10-10
 
 ### Neu

@@ -50,7 +50,7 @@
       <span class="spacer"></span>
       <span class="muted" id="count"></span>
       <button type="button" class="btn" id="add">+ Artikel anlegen</button>
-      <a class="btn primary" id="export" href="/api/articles/export.xlsx" download>Excel-Export</a>
+      <button type="button" class="btn primary" id="export" aria-haspopup="dialog">Excel-Export</button>
     </div>
 
     <section class="section card">
@@ -58,7 +58,8 @@
         <h2>Artikel</h2>
         <p class="muted">Je Auftrag und Version ein Artikel (21053, 21053V1 …), je Felge einer – automatisch aus
           den erfassten Programmen. Rohling, EK, VK und Notiz über „Bearbeiten“. Laufzeit je Teil = Summe der
-          Ø-Laufzeiten aller Aufspannungen; Fräsen = Laufzeit × Stundensatz der Maschine.</p>
+          Ø-Laufzeiten aller Aufspannungen; Fräsen = Laufzeit × Stundensatz der Maschine (lief ein Artikel auf
+          mehreren, nach Laufzeit gewichtet).</p>
       </div>
       <div id="articles"></div>
     </section>
@@ -138,6 +139,32 @@
         <span class="spacer"></span>
         <button type="button" class="btn" id="a-cancel">Abbrechen</button>
         <button type="submit" class="btn primary">Anlegen</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="exporter" aria-labelledby="exporter-title">
+    <form id="exporter-form" novalidate>
+      <header><h2 id="exporter-title">Excel-Export</h2></header>
+      <div class="form-body">
+        <fieldset class="form-group">
+          <legend>Was soll in die Datei?</legend>
+          <label class="choice"><input type="radio" name="x-kind" value="order">
+            <span>Nur Artikel<span class="field-hint">Aufträge und ihre Versionen, ohne Felgen · <span id="x-count-order"></span></span></span>
+          </label>
+          <label class="choice"><input type="radio" name="x-kind" value="all">
+            <span>Artikel und Felgen<span class="field-hint">alles · <span id="x-count-all"></span></span></span>
+          </label>
+          <label class="choice"><input type="radio" name="x-kind" value="rim">
+            <span>Nur Felgen<span class="field-hint"><span id="x-count-rim"></span></span></span>
+          </label>
+        </fieldset>
+        <p class="field-hint" id="x-info" style="margin: 0"></p>
+      </div>
+      <footer>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="x-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary">Exportieren</button>
       </footer>
     </form>
   </dialog>

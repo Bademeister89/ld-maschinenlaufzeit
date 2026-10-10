@@ -21,17 +21,20 @@ router = APIRouter(prefix="/api/articles")
 log = logging.getLogger(__name__)
 
 STATUS = Query("all", pattern="^(all|open|closed)$")
+KIND = Query("all", pattern="^(all|order|rim)$")
 
 
 def _ctx(request: Request) -> AppContext:
     return request.app.state.ctx
 
 
-def _rows(ctx: AppContext, status: str, thumbs: dict[str, bytes] | None = None) -> list[dict[str, Any]]:
-    """Artikel mit Bild-Adressen; ``thumbs`` (falls übergeben) bekommt je Artikel das Vorschaubild
-    als JPEG für den Excel-Export."""
+def _rows(
+    ctx: AppContext, status: str, thumbs: dict[str, bytes] | None = None, kind: str = "all"
+) -> list[dict[str, Any]]:
+    """Artikel mit Bild-Adressen, auf Wunsch nur Aufträge (``order``) oder Felgen (``rim``); ``thumbs``
+    (falls übergeben) bekommt je Artikel das Vorschaubild als JPEG für den Excel-Export."""
     files = ctx.order_images.files()
-    rows = articles.list_articles(ctx.db, ctx.tz, status)
+    rows = [r for r in articles.list_articles(ctx.db, ctx.tz, status) if kind == "all" or r["kind"] == kind]
     for row in rows:
         # Bild der Spannung (je Version das eigene), sonst das Bild des Auftrags
         image = row.pop("image")
@@ -65,13 +68,14 @@ def list_articles(request: Request, status: str = STATUS) -> dict[str, Any]:
 
 
 @router.get("/export.xlsx")
-async def export(request: Request, status: str = STATUS) -> Response:
+async def export(request: Request, status: str = STATUS, kind: str = KIND) -> Response:
+    """Excel-Datei: Artikel und Felgen (``kind=all``), nur Artikel (``order``) oder nur Felgen (``rim``)."""
     ctx = _ctx(request)
     thumbs: dict[str, bytes] = {}
-    rows = _rows(ctx, status, thumbs)
+    rows = _rows(ctx, status, thumbs, kind)
     now = time.time()
-    data = await asyncio.to_thread(articles.export_xlsx, rows, ctx.db.materials(), ctx.tz, now, thumbs)
-    name = f"artikel_{datetime.fromtimestamp(now, ctx.tz):%Y-%m-%d}.xlsx"
+    data = await asyncio.to_thread(articles.export_xlsx, rows, ctx.db.materials(), ctx.tz, now, thumbs, kind)
+    name = f"{articles.EXPORT_KINDS[kind][1]}_{datetime.fromtimestamp(now, ctx.tz):%Y-%m-%d}.xlsx"
     return Response(
         data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

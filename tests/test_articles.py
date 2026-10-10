@@ -225,6 +225,8 @@ def test_costs_material_milling_and_margin(client):
     assert (a["weight_kg"], a["material_cost"]) == (pytest.approx(1.07904), 5.61)
     assert a["part_s"] == pytest.approx(5400)
     assert a["mill_cost"] == pytest.approx(90 + 60.25)
+    # Maschinen mit der meisten Laufzeit zuerst; Stundensatz nach Laufzeit gewichtet: 150,25 € / 1,5 h
+    assert (a["machines"], a["machine_planned"], a["rate"]) == (["DMU 70", "DMU 105"], False, pytest.approx(100.17))
     assert (a["cost"], a["cost_complete"]) == (pytest.approx(155.86), True)
     assert (a["margin"], a["margin_pct"]) == (pytest.approx(94.14), 37.7)
     assert (a["parts"], a["mill_estimated"], a["part_estimated"]) == (1, False, False)
@@ -254,6 +256,20 @@ def test_milling_rate_weighted_and_plan_fallback(client):
     # Ø 2000 s × (100·3000 + 60·1000)/4000 = 90 €/h → 50 €; Planzeit 1 h × Durchschnitt 80 €/h (geschätzt)
     assert a["mill_cost"] == pytest.approx(50 + 80)
     assert a["mill_estimated"] is True
+    assert a["rate"] == pytest.approx(round(130 / (5600 / 3600), 2))
+    assert (a["machines"], a["machine_planned"]) == (["DMU 70", "DMU 105"], False)  # Planzeit ohne Maschine
+
+
+def test_machine_from_the_tebis_document_until_the_program_runs(client):
+    ctx = client.app.state.ctx
+    run_part(ctx.collectors["m1"], 1000, P11, 600)
+    ctx.db.set_plan("26-21055-02-01", "26-21055-02-01", "21055", 1200, "pdf", 1000, "x.pdf", "DMU 105 monoBLOCK")
+    rate(client, "m2", "120")
+    a = article(client, "21055")
+    assert (a["machines"], a["machine_planned"]) == (["DMU 105", "DMU 70"], True)  # 1200 s geplant > 600 s gelaufen
+    assert (a["rate"], a["mill_estimated"]) == (120, True)  # DMU 70 ohne Stundensatz → Durchschnitt
+    rate(client, "m1", "60")
+    assert article(client, "21055")["rate"] == pytest.approx((600 * 60 + 1200 * 120) / 1800)
 
 
 def test_article_validation(client):
@@ -302,7 +318,7 @@ def test_excel_export(client):
     # Formeln ergeben dasselbe wie die App: 1 l Alu 7075 = 2,81 kg × 5,20 €/kg
     assert (val("Volumen (l)"), val("Gewicht (kg)"), val("Materialpreis")) == (pytest.approx(1), pytest.approx(2.81), 14.61)
     assert val("Laufzeit je Teil") == timedelta(hours=1)
-    assert (val("Stundensatz (€/h)"), val("Preis Fräsen"), val("Herstellkosten")) == (90, 90, pytest.approx(104.61))
+    assert (val("Maschine"), val("Stundensatz (€/h)"), val("Preis Fräsen"), val("Herstellkosten")) == ("DMU 70", 90, 90, pytest.approx(104.61))
     assert (val("Marge"), val("Marge %")) == (pytest.approx(95.39), pytest.approx(0.47695))
     # In der Datei geändert → rechnet neu: Rund Ø 100 × 100 statt Block, VK 300
     ws[f"{col['Form']}3"] = "Rund"
@@ -325,6 +341,27 @@ def test_excel_export(client):
     assert ws[f"{col['Laufzeit je Teil']}3"].number_format == "[h]:mm"
     assert len(ws.data_validations.dataValidation) == 2  # Auswahllisten Form und Material
     assert [c.value for c in wb["Materialien"][2]] == ["Alu 7075", 2.81, 10, 1]
+    assert wb["Erläuterung"]["A3"].value == "Auswahl: Artikel und Felgen · 2 Zeilen"
+
+
+def test_excel_export_with_or_without_rims(client):
+    run_part(client.app.state.ctx.collectors["m1"], 1000, P11, 60)
+    client.post("/api/articles", json={"key": "10101018"})
+
+    def keys(kind):
+        r = client.get("/api/articles/export.xlsx", params={"kind": kind})
+        assert r.status_code == 200
+        ws = load_workbook(io.BytesIO(r.content))["Artikel"]
+        rows = [ws.cell(row=i, column=2).value for i in range(3, ws.max_row + 1)]
+        return r.headers["content-disposition"], rows[:-1]  # ohne Summenzeile
+
+    disposition, rows = keys("all")
+    assert rows == ["10101018", "21055"] and 'filename="artikel_' in disposition
+    disposition, rows = keys("order")
+    assert rows == ["21055"] and 'filename="artikel_ohne_felgen_' in disposition
+    disposition, rows = keys("rim")
+    assert rows == ["10101018"] and 'filename="felgen_' in disposition
+    assert client.get("/api/articles/export.xlsx", params={"kind": "x"}).status_code == 422
 
 
 def test_excel_export_embeds_the_order_image(client):
