@@ -358,6 +358,13 @@ zugeordnet, z. B. `26-21055-01-01`:
       nicht.
     - Was gelöscht wurde, steht als Ereignis `run_deleted` in der Datenbank und in der
       Diagnose-Datei.
+  - **Ø-Zeit zurücksetzen** („zurücksetzen“ neben der Ø-Zeit eines Programms), z. B. nach dem
+    Einfahren mit Abbrüchen und Neustarts:
+    - Die bisherigen Läufe bleiben mit ihren Zeiten stehen. Sie zählen nicht mehr in die Ø-Zeit
+      (Auftrag, Auswertung je Programm), die Restlaufzeit-Prognose und die Artikelkosten.
+    - Bis zum nächsten fertigen Lauf gilt die CAM-Planzeit.
+    - Die Zeile zeigt dann „neu ab …“. „aufheben“ macht es rückgängig.
+    - Anders als „Löschen“ verschwindet dabei nichts.
   - **Programm, Aufspannung oder ganzen Auftrag löschen**, z. B. nach dem Import einer falsch
     benannten CAM-Doku oder für Testprogramme:
     - **Programm:** „Löschen“ am Ende der Programmzeile. Gelöscht werden alle Läufe des Programms in
@@ -474,7 +481,8 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
 
   | Spalte | Herkunft |
   |---|---|
-  | Bild, Bezeichnung | aus dem Auftrag |
+  | Bild | aus der letzten Spannung des Artikels (je Version eigenes), sonst Spannung 1 der Grundversion, sonst der Auftrag |
+  | Bezeichnung | aus dem Auftrag |
   | Material | aus der Materialliste (Konfiguration → Artikel) |
   | Rohling (Maße) | Block L × B × H oder Rund Ø × L in mm, darunter das Gewicht in kg |
   | € je kg, Materialpreis | Preis je kg des Materials. Gewicht = Volumen × Dichte (g/cm³ = kg je Liter), Materialpreis = Gewicht × Preis je kg |
@@ -763,6 +771,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `PUT /api/orders/{key}/plans` | Planzeit von Hand: `{"program": "26-21053-02-01", "time": "4,5"}`, leere Zeit entfernt sie |
 | `DELETE /api/orders/{key}/runs/{id}` | Beendeten Lauf aus dem Auftrag löschen (Zeit bleibt Maschinenzeit) |
 | `DELETE /api/orders/{key}/programs/{name}` | Programm löschen (alle Läufe und Planzeit); `name` wie `26-21053-02-01` |
+| `POST/DELETE /api/orders/{key}/programs/{name}/reset` | Ø-Zeit zurücksetzen bzw. aufheben |
 | `DELETE /api/orders/{key}/setups/{nr}?version=` | Aufspannung löschen (alle Programme); `version` z. B. `V2`, leer = Grundversion |
 | `DELETE /api/orders/{key}` | Auftrag bzw. Felge komplett löschen (Läufe, Planzeiten, Bezeichnung, Bild) |
 | `GET /api/orders/{key}/image?size=full\|thumb` | Bild des Auftrags (großes Bild bzw. Vorschaubild) |

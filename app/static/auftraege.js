@@ -246,6 +246,58 @@ const hoursMinutes = (sec) => `${Math.floor(sec / 3600)}:${String(Math.round((se
 const PLAN_SOURCE = { pdf: "aus der Tebis-Doku", manual: "von Hand eingetragen" };
 
 /** Planzeit eines Programms mit Knopf zum Ändern. */
+/** Ø-Laufzeit mit „zurücksetzen“ (Einfahren: Abbrüche, Neustarts) bzw. „aufheben“. */
+function avgCell(o, p) {
+  const path = `/api/orders/${encodeURIComponent(o.key)}/programs/${encodeURIComponent(p.call_name)}/reset`;
+  if (p.avg_reset_at != null) {
+    return el(
+      "span",
+      { class: "plan-cell" },
+      el("span", { text: fmtDuration(p.avg_run_s), title: `Ø zurückgesetzt am ${fmtDateTime(p.avg_reset_at)} – es zählen nur Läufe danach` }),
+      el("span", { class: "muted avg-reset-mark", text: "neu ab " + fmtDateTime(p.avg_reset_at).split(",")[0] }),
+      el("button", {
+        type: "button",
+        class: "link-button plan-edit",
+        title: "Zurücksetzen aufheben: alle Läufe zählen wieder",
+        onclick: () => resetAverage(path, "DELETE", null),
+        text: "aufheben",
+      }),
+    );
+  }
+  if (p.avg_run_s == null) return "—";
+  return el(
+    "span",
+    { class: "plan-cell" },
+    el("span", { text: fmtDuration(p.avg_run_s) }),
+    el("button", {
+      type: "button",
+      class: "link-button plan-edit",
+      title: "Bisherige Läufe nicht mehr in die Ø-Zeit zählen",
+      "aria-label": `Ø-Zeit von ${p.name} zurücksetzen`,
+      onclick: () =>
+        resetAverage(
+          path,
+          "POST",
+          `Ø-Zeit von ${p.name} zurücksetzen?\n\n` +
+            `Die bisherigen ${p.runs} Läufe bleiben mit ihren Zeiten erhalten, zählen aber nicht mehr in die Ø-Zeit, ` +
+            "die Restlaufzeit-Prognose und die Artikelkosten. Bis zum nächsten fertigen Lauf gilt die CAM-Planzeit (falls eingetragen).\n\n" +
+            "Lässt sich mit „aufheben“ rückgängig machen.",
+        ),
+      text: "zurücksetzen",
+    }),
+  );
+}
+
+async function resetAverage(path, method, question) {
+  if (question && !confirm(question)) return;
+  try {
+    await send(method, path);
+    await refresh();
+  } catch (err) {
+    showError(err);
+  }
+}
+
 function planCell(o, p) {
   return el(
     "span",
@@ -357,7 +409,7 @@ function setupCard(setup, o) {
     { label: "Fertig", value: (p) => String(p.finished), cls: "r" },
     { label: "Laufzeit", value: (p) => fmtHours(p.running_s), cls: "r" },
     { label: "Gestoppt / Fehler", value: (p) => fmtHours(p.stopped_s), cls: "r" },
-    { label: `Ø Laufzeit je ${partWord(o)}`, value: (p) => fmtDuration(p.avg_run_s), cls: "r" },
+    { label: `Ø Laufzeit je ${partWord(o)}`, value: (p) => avgCell(o, p), cls: "r" },
     { label: "Plan (CAM)", value: (p) => planCell(o, p), cls: "r" },
     { label: "Letzter Lauf", value: (p) => fmtDateTime(p.last_run), cls: "r" },
     {

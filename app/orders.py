@@ -295,6 +295,15 @@ def list_orders(db: Database, status: str = "all") -> list[dict[str, Any]]:
     return sorted(result, key=lambda r: -(r["last_activity"] or r["created_at"]))
 
 
+def counts_for_average(run: dict[str, Any], resets: dict[str, float]) -> bool:
+    """Zählt ein fertiger Lauf in die Ø-Zeit? Nur vollständig beobachtet, mit Laufzeit und nach einem
+    Zurücksetzen der Ø-Zeit dieses Programms (``db.program_resets``)."""
+    if not run["start_observed"] or not run["run_s"] or run["run_s"] <= 0:
+        return False
+    reset = resets.get(call_name(run["program"] or ""))
+    return reset is None or run["started_at"] >= reset
+
+
 def setup_of(path: str) -> tuple[str, int]:
     """(Version, Aufspannung) eines Programms, so wie das Auftragsdetail gruppiert."""
     code = parse_program(path)
@@ -332,6 +341,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
                 "last_run": None,
                 "machines": set(),
                 "plan_s": None,  # CAM-Planzeit (Tebis-Doku oder von Hand)
+                "avg_reset_at": None,
                 "plan_source": None,
                 "open": False,  # ein Lauf ist noch nicht beendet
             },
@@ -346,6 +356,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         row["machines"].add(r["machine_id"])
 
     cycles: dict[str, list[float]] = defaultdict(list)
+    resets = db.program_resets()
     for run in runs:
         row = program_row(run["program"])
         row["runs"] += 1
@@ -354,11 +365,13 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         row["open"] = row["open"] or run["ended_at"] is None
         if run["result"] == "finished":
             row["finished"] += 1
-            if run["start_observed"] and run["run_s"] > 0:
+            if counts_for_average(run, resets):
                 cycles[call_name(run["program"])].append(run["run_s"])
     for name, values in cycles.items():
         programs[name]["avg_run_s"] = sum(values) / len(values)
         programs[name]["median_run_s"] = median(values)
+    for name, row in programs.items():
+        row["avg_reset_at"] = resets.get(name)  # Ø zurückgesetzt: frühere Läufe zählen nicht
     # Planzeiten – auch für Programme, die noch nie gelaufen sind (eigene Zeile)
     for plan in db.plans_of_order(key):
         row = program_row(plan["program"], located=False)

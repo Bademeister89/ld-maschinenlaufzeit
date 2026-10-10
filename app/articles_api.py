@@ -33,9 +33,14 @@ def _rows(ctx: AppContext, status: str, thumbs: dict[str, bytes] | None = None) 
     files = ctx.order_images.files()
     rows = articles.list_articles(ctx.db, ctx.tz, status)
     for row in rows:
-        # Vorschaubild des Auftrags (die Versionen teilen sich das Bild)
+        # Bild der Spannung (je Version das eigene), sonst das Bild des Auftrags
         image = row.pop("image")
+        setup = row.pop("setup_image")
         public = ctx.order_images.public({"key": row["order_key"], "image": image}, files)
+        if setup is not None:
+            urls = ctx.order_images.setup_urls(row["order_key"], setup[0], setup[1], setup[2], files)
+            if urls["thumb_url"]:
+                public, image = urls, setup[2]
         row["thumb_url"], row["image_url"] = public["thumb_url"], public["image_url"]
         path = ctx.order_images.path(image, "thumb") if thumbs is not None and public["thumb_url"] else None
         if path is not None:

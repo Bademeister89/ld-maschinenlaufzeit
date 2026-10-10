@@ -10,6 +10,23 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.26.0] – 2026-10-10
+
+### Neu
+- **Ø-Zeit zurücksetzen** (Auftrag → Programmzeile → „zurücksetzen“ neben der Ø-Zeit), z. B. nach dem
+  Einfahren mit Abbrüchen und Neustarts.
+  - Die bisherigen Läufe bleiben mit ihren Zeiten stehen. Sie zählen aber nicht mehr in die Ø-Zeit
+    (Auftrag, Auswertung je Programm), die Restlaufzeit-Prognose und die Artikelkosten.
+  - Bis zum nächsten fertigen Lauf gilt die CAM-Planzeit.
+  - Die Zeile zeigt „neu ab …“. Mit „aufheben“ zählen wieder alle Läufe.
+- **Artikelbild aus der Spannung:** Jeder Artikel zeigt das Bild seiner letzten Spannung, so hat
+  jede Version ihr eigenes. Ohne Bild gilt die übernommene Spannung 1, sonst das Auftragsbild. Das
+  gilt auch für den Excel-Export.
+
+### Geändert
+- **Datenbank-Schema 18** mit der neuen Tabelle `program_resets`. Sie wird beim Start automatisch
+  angelegt.
+
 ## [1.25.0] – 2026-10-10
 
 ### Geändert

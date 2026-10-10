@@ -133,6 +133,7 @@ def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float
         r[key] += iv["end"] - iv["start"]
 
     cycles: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
+    resets = db.program_resets()
     for run in db.runs(t0, t1):
         if not run["program"] or not (t0 <= run["started_at"] < t1):
             continue
@@ -142,8 +143,9 @@ def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float
         r["last_run"] = max(r["last_run"] or 0, run["started_at"])
         if run["result"] == "finished":
             r["finished"] += 1
-            # Stückzeiten nur aus vollständig beobachteten Läufen
-            if run["start_observed"]:
+            # Stückzeiten nur aus vollständig beobachteten Läufen (und nach einem Zurücksetzen der Ø-Zeit)
+            reset = resets.get(call_name(run["program"]))
+            if run["start_observed"] and (reset is None or run["started_at"] >= reset):
                 cycles[k].append((run["run_s"], run["ended_at"] - run["started_at"]))
 
     for k, values in cycles.items():

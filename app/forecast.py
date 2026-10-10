@@ -110,9 +110,11 @@ class Forecaster:
         name = call_name(program)
         paths = {program, *(p for p in self._db.run_programs(self._machine_id) if call_name(p) == name)}
         plan = self.plan_s(program)
+        reset = self._db.program_resets().get(name)  # Ø zurückgesetzt: frühere Läufe zählen nicht
         runs = [
             r for r in self._db.reference_runs(self._machine_id, sorted(paths), REFERENCE_RUNS)
             if r["run_s"] > 0 and (plan is None or r["run_s"] >= PLAN_MIN_SHARE * plan)
+            and (reset is None or r["started_at"] >= reset)
         ]
         if not runs:
             return None

@@ -262,6 +262,24 @@ def _version_row(
     }
 
 
+def _setup_image(
+    version: dict[str, Any] | None, key: str, images: dict[tuple[str, int], str]
+) -> tuple[str, int, str] | None:
+    """Bild des Artikels aus seinen Spannungen statt aus dem Auftrag – so hat jede Version ihr eigenes:
+    die letzte Spannung der Version mit Bild, sonst eine übernommene der Grundversion.
+    (Version, Spannung, Dateiname) oder None (dann gilt das Auftragsbild)."""
+    if version is None:
+        return None
+    own = sorted((s["setup"] for s in version["setups"] if not s["fixture"]), reverse=True)
+    for setup in own:
+        if (key, setup) in images:
+            return key, setup, images[(key, setup)]
+    for setup in sorted(version.get("inherited", []), reverse=True):
+        if ("", setup) in images:
+            return "", setup, images[("", setup)]
+    return None
+
+
 def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[str, Any]]:
     """Alle Artikel mit Rohling, Kosten, Preisen und Produktionsdaten (je Auftrag einmal ausgewertet)."""
     sync(db)
@@ -285,6 +303,7 @@ def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[
             name = call_name(r["program"])
             last_finished[name] = max(last_finished.get(name, 0.0), r["last"] or 0.0)
         plans = {p["name"]: p for p in db.plans_of_order(order_key)}
+        setup_images = db.setup_images(order_key)
         versions = {v["version"]: v for v in detail["versions"]}
         order = detail["order"]
         for art in arts:
@@ -311,6 +330,7 @@ def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[
                 "rim": order.get("rim"),
                 "status": order["status"],
                 "image": order["image"],
+                "setup_image": _setup_image(versions.get(art["version"]), art["version"], setup_images),
                 "manual": bool(art["manual"]),
                 "material_id": art["material_id"],
                 "material": material["name"] if material else None,

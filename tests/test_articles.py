@@ -150,6 +150,59 @@ def test_base_with_its_own_last_setup_stays_an_article(client):
     assert (rows["21055"]["parts"], rows["21055V1"]["part_s"]) == (1, pytest.approx(1500))
 
 
+def test_article_image_comes_from_its_setup(client):
+    """Jede Version zeigt das Bild ihrer letzten Spannung, sonst das der übernommenen Spannung 1,
+    sonst das Auftragsbild."""
+    ctx = client.app.state.ctx
+    col = ctx.collectors["m1"]
+    t = run_part(col, 1000, "TNC:\\X\\21-21054-01-01.H", 600)
+    t = run_part(col, t + 10, "TNC:\\X\\21-21054v1-02-01.H", 600)
+    run_part(col, t + 10, "TNC:\\X\\21-21054v2-02-01.H", 600)
+    jpeg = b"\xff\xd8\xff"
+    ctx.order_images.save("21054", jpeg + b"auftrag", jpeg + b"auftrag-t")
+    ctx.order_images.save_setup("21054", "V1", 2, jpeg + b"v1", jpeg + b"v1-t")
+    ctx.order_images.save_setup("21054", "", 1, jpeg + b"sp1", jpeg + b"sp1-t")
+    rows = {a["key"]: a for a in client.get("/api/articles").json()["articles"]}
+    assert "/setups/2/image?version=V1&size=thumb" in rows["21054V1"]["thumb_url"]
+    assert "/setups/1/image?size=thumb" in rows["21054V2"]["thumb_url"]  # V2 ohne eigenes Bild: Spannung 1
+    with zipfile.ZipFile(io.BytesIO(client.get("/api/articles/export.xlsx").content)) as z:
+        media = sorted(z.read(n) for n in z.namelist() if n.startswith("xl/media/"))
+    assert media == sorted([jpeg + b"v1-t", jpeg + b"sp1-t"])
+
+
+def test_reset_average_ignores_earlier_runs_until_new_ones(client):
+    """Einfahren: Abbrüche und Neustarts verfälschen die Ø-Zeit. Zurücksetzen – die Läufe bleiben, zählen
+    aber nicht mehr; bis zum nächsten Lauf gilt die Planzeit."""
+    ctx = client.app.state.ctx
+    col = ctx.collectors["m1"]
+    t = run_part(col, 1000, P11, 18)  # Fehlstart „fertig“
+    t = run_part(col, t + 10, P11, 1600)
+    client.put("/api/orders/21055/plans", json={"program": "26-21055-01-01", "time": "1"})
+    row = lambda: client.get("/api/orders/21055").json()["setups"][0]["programs"][0]  # noqa: E731
+    assert row()["avg_run_s"] == pytest.approx(809)
+
+    r = client.post("/api/orders/21055/programs/26-21055-01-01/reset")
+    assert r.status_code == 200
+    p = row()
+    assert (p["avg_run_s"], p["runs"], p["avg_reset_at"]) == (None, 2, pytest.approx(r.json()["reset_at"]))
+    a = article(client, "21055")
+    assert (a["part_s"], a["part_estimated"]) == (3600, True)  # Planzeit
+    assert [x for x in client.get("/api/stats", params={"from": 0}).json()["programs"] if x["avg_run_s"]] == []
+    # Prognose: keine Referenzläufe mehr → Planzeit statt der alten Läufe
+    assert (col._forecaster.typical_run_s(P11), col._forecaster.plan_s(P11)) == (None, 3600)
+
+    # Neuer Lauf nach dem Zurücksetzen zählt
+    import time as _time
+    now = _time.time()
+    run_part(col, now + 10, P11, 1500)
+    assert row()["avg_run_s"] == pytest.approx(1500)
+    # Aufheben: alle Läufe zählen wieder
+    assert client.delete("/api/orders/21055/programs/26-21055-01-01/reset").status_code == 204
+    assert row()["avg_run_s"] == pytest.approx((18 + 1600 + 1500) / 3)
+    assert client.delete("/api/orders/21055/programs/26-21055-01-01/reset").status_code == 404
+    assert client.post("/api/orders/21055/programs/26-99999-01-01/reset").status_code == 404
+
+
 # --- Kosten --------------------------------------------------------------------------------------
 
 
@@ -301,7 +354,7 @@ def test_update_from_schema_16_adds_articles_and_hourly_rate(tmp_path):
     )
     con.close()
     db = Database(path)
-    assert db.get_meta("schema_version") == str(SCHEMA_VERSION) == "17"
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
     assert db.machine("m1")["hourly_rate"] is None
     assert db.articles() == [] and db.materials() == []
     db.close()

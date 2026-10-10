@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -194,6 +194,10 @@ CREATE TABLE IF NOT EXISTS articles (
     updated_at  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_articles_order ON articles(order_key);
+CREATE TABLE IF NOT EXISTS program_resets (
+    name       TEXT PRIMARY KEY,
+    reset_at   REAL NOT NULL
+);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -310,6 +314,7 @@ class Database:
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
             self.set_meta("pallet_tables_reread", "1")
         # v15 → v16: Bild je Aufspannung. Die Tabelle setup_images kommt über SCHEMA.
+        # v17 → v18: Ø-Zeit je Programm zurücksetzen (Tabelle program_resets über SCHEMA)
         # v16 → v17: Artikel und Materialien (Tabellen über SCHEMA), Stundensatz je Maschine (oben).
         # Materialien werden je kg eingekauft: Dichte (g/cm³) und Preis je kg (eine frühe Entwicklungs-
         # fassung hatte nur einen Preis je Liter).
@@ -1052,6 +1057,22 @@ class Database:
             "WHERE i.order_key = ? AND i.run_id IS NOT NULL AND i.state = 'RUNNING' GROUP BY i.program, i.machine_id",
             (order_key,),
         )
+
+    # --- Ø-Zeit zurücksetzen (Einfahren: Abbrüche, Neustarts) --------------------------------
+
+    def program_resets(self) -> dict[str, float]:
+        """Programmname (``call_name``) → Zeitpunkt: Läufe davor zählen nicht in die Ø-Zeiten."""
+        return {r["name"]: r["reset_at"] for r in self._query("SELECT name, reset_at FROM program_resets")}
+
+    def set_program_reset(self, name: str, t: float) -> None:
+        self._execute(
+            "INSERT INTO program_resets(name, reset_at) VALUES (?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET reset_at = excluded.reset_at",
+            (name, t),
+        )
+
+    def delete_program_reset(self, name: str) -> bool:
+        return self._execute("DELETE FROM program_resets WHERE name = ?", (name,)).rowcount > 0
 
     # --- Felgen-Designs (Namen zu den Ziffern 3–4 der Felgennummer) ------------------------
 

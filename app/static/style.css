@@ -1231,6 +1231,7 @@ tr.selectable[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 v
 /* CAM-Planzeiten im Auftrag */
 .plan-cell { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .plan-edit { font-size: 12px; }
+.avg-reset-mark { font-size: 12px; }
 .plan-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 16px; }
 .plan-form-label { font-size: 13px; color: var(--ink-2); }
 .plan-form .plan-program { flex: 1 1 180px; max-width: 240px; }

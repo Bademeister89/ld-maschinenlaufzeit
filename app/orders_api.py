@@ -194,6 +194,41 @@ def delete_program(request: Request, key: str, name: str) -> dict[str, int]:
     return result
 
 
+@router.post("/{key}/programs/{name}/reset")
+def reset_average(request: Request, key: str, name: str) -> dict[str, Any]:
+    """Ø-Zeit eines Programms zurücksetzen (z. B. nach dem Einfahren mit Abbrüchen und Neustarts): Die
+    bisherigen Läufe bleiben mit ihren Zeiten erhalten, zählen aber nicht mehr in Ø-Zeiten, Prognose und
+    Artikelkosten. Bis zum nächsten fertigen Lauf gilt die CAM-Planzeit."""
+    ctx = _ctx(request)
+    name = _program_of(ctx, key, name)
+    now = time.time()
+    ctx.db.set_program_reset(name, now)
+    _forget_plans(ctx)  # Prognosen ohne die alten Läufe neu rechnen
+    log.info("Auftrag %s: Ø-Zeit von %s zurückgesetzt", key, name)
+    return {"name": name, "reset_at": now}
+
+
+@router.delete("/{key}/programs/{name}/reset", status_code=204)
+def undo_reset_average(request: Request, key: str, name: str) -> Response:
+    """Zurücksetzen aufheben: alle Läufe zählen wieder."""
+    ctx = _ctx(request)
+    name = _program_of(ctx, key, name)
+    if not ctx.db.delete_program_reset(name):
+        raise HTTPException(404, f"Die Ø-Zeit von {name} ist nicht zurückgesetzt.")
+    _forget_plans(ctx)
+    log.info("Auftrag %s: Zurücksetzen der Ø-Zeit von %s aufgehoben", key, name)
+    return Response(status_code=204)
+
+
+def _program_of(ctx: AppContext, key: str, name: str) -> str:
+    if ctx.db.order(key) is None:
+        raise HTTPException(404, f"Unbekannter Auftrag: {key}")
+    name = name.strip().upper()
+    if not any(call_name(p) == name for p in _order_programs(ctx, key)):
+        raise HTTPException(404, f"Programm {name} gehört nicht zu Auftrag {key}.")
+    return name
+
+
 @router.delete("/{key}/setups/{setup}")
 def delete_setup(
     request: Request, key: str, setup: int, version: str = Query("", pattern=r"^([vV]\d{1,2})?$")
