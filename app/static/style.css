@@ -220,6 +220,23 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 .art-table tbody tr { cursor: pointer; }
 .art-thumb-cell { width: 44px; padding-right: 0; }
 .art-thumb { display: block; width: 40px; height: 30px; border-radius: 6px; object-fit: cover; background: var(--surface-2); border: 1px solid var(--border); }
+.art-thumb-wrap { position: relative; display: block; }
+.art-zoom {
+  display: none;
+  position: fixed;  /* Lage setzt artikel.js beim Drüberfahren */
+  z-index: 30;
+  width: 360px;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.art-thumb-wrap:hover .art-zoom { display: block; }
+@media (hover: none) { .art-zoom { display: none !important; } }
 .art-key { font-weight: 700; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .art-key:hover { text-decoration: underline; }
 .art-version { margin-left: 2px; color: var(--accent); }

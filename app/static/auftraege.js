@@ -223,12 +223,15 @@ function versionBlocks(d, o) {
           el("h2", { text: `${versionName(v.version)} · ${o.number}${v.version}` }),
           el("span", {
             class: "muted",
-            text: [
-              `${fmtHours(v.running_s)} Laufzeit`,
-              `${v.parts} ${partsWord(o, v.parts)} fertig`,
-              `Ø je ${partWord(o)} ${v.part_complete ? fmtDuration(v.part_run_s) : "noch offen"}`,
-              v.plan_part_s ? `Plan ${fmtDuration(v.plan_part_s)}` : null,
-            ].filter(Boolean).join(" · "),
+            text: v.pre_stage
+              ? `${fmtHours(v.running_s)} Laufzeit · gemeinsame Vorstufe der Versionen – zählt dort in die Ø-Zeit je ${partWord(o)}`
+              : [
+                  `${fmtHours(v.running_s)} Laufzeit`,
+                  `${v.parts} ${partsWord(o, v.parts)} fertig`,
+                  `Ø je ${partWord(o)} ${v.part_complete ? fmtDuration(v.part_run_s) : "noch offen"}`,
+                  v.inherited?.length ? `inkl. ${setupWord(o)} ${v.inherited.join(", ")} der Grundversion` : null,
+                  v.plan_part_s ? `Plan ${fmtDuration(v.plan_part_s)}` : null,
+                ].filter(Boolean).join(" · "),
           }),
         ),
         el("div", { class: "setup-grid" }, v.setups.map((s) => setupCard(s, o))),
@@ -839,6 +842,7 @@ function renderDetail(d) {
               `Ø Bearbeitungszeit je ${partWord(o)}`,
               "je Version",
               d.versions
+                .filter((v) => !v.pre_stage)
                 .map((v) => `${versionName(v.version)} ${v.part_complete ? fmtDuration(v.part_run_s) : "—"}${v.plan_part_s ? ` (Plan ${fmtDuration(v.plan_part_s)})` : ""}`)
                 .join(" · "),
             )

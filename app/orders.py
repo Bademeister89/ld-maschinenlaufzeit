@@ -191,22 +191,39 @@ def close_idle(db: Database, now: float) -> list[str]:
     return keys
 
 
+def pre_stage(setups: dict[str, set[int]]) -> bool:
+    """Ist die Grundversion nur die gemeinsame Vorstufe der Versionen? ``setups``: Aufspannungen je
+    Version (ohne Vorrichtung). Ja, wenn es Versionen gibt und jede Aufspannung der Grundversion vor der
+    ersten eigenen Aufspannung jeder Version liegt – z. B. 21054: Spannung 1 gemeinsam, Spannung 2 je
+    Version (V1, V2, V3). Dann ist kein Teil der Grundversion fertig; jede Version übernimmt ihre
+    Spannung 1."""
+    base = setups.get("")
+    others = [s for version, s in setups.items() if version and s]
+    return bool(base) and bool(others) and max(base) < min(min(s) for s in others)
+
+
 def finished_parts(programs: Any, kind: str) -> dict[str, int]:
     """Fertige Teile je Version aus ``(Programm, fertige Läufe)``: die fertigen Läufe des letzten
     Programms der letzten Aufspannung – erst dort ist ein Teil fertig. Vorrichtungsbau (08/09) zählt
-    nicht. Reihenfolge wie im Auftragsdetail (Aufspannung, Programmnummer, Name)."""
+    nicht. Reihenfolge wie im Auftragsdetail (Aufspannung, Programmnummer, Name). Ist die Grundversion
+    nur Vorstufe der Versionen (``pre_stage``), hat sie keine fertigen Teile."""
     counts: dict[str, int] = defaultdict(int)
     last: dict[str, tuple[tuple[int, int, str], str]] = {}
+    setups: dict[str, set[int]] = defaultdict(set)
     for path, finished in programs:
         code = parse_program(path)
         if code is None or (kind == "order" and code.setup in FIXTURE_SETUPS):
             continue
         name = call_name(path)
         counts[name] += finished or 0
+        setups[code.version].add(code.setup)
         rank = (code.setup, code.program, code.name)
         if code.version not in last or rank > last[code.version][0]:
             last[code.version] = (rank, name)
-    return {version: counts[name] for version, (_, name) in last.items()}
+    result = {version: counts[name] for version, (_, name) in last.items()}
+    if pre_stage(setups):
+        result[""] = 0
+    return result
 
 
 # --- Auswertung ------------------------------------------------------------------------
@@ -383,6 +400,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         totals["running_s"] += setup["running_s"]
         totals["stopped_s"] += setup["stopped_s"]
     versions = _versions(setups.values())
+    _inherit(versions)
     parts = finished_parts(((row["program"], row["finished"]) for row in programs.values()), order["kind"])
     for block in versions:
         block["parts"] = parts.get(block["version"], 0)
@@ -419,6 +437,30 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
 def version_order(version: str) -> tuple[int, int]:
     """Grundversion zuerst, dann V1, V2 … V10 der Zahl nach."""
     return (1, int(version[1:])) if version else (0, 0)
+
+
+def _inherit(versions: list[dict[str, Any]]) -> None:
+    """Versionen übernehmen die Aufspannungen der Grundversion, die vor ihrer ersten eigenen liegen
+    (z. B. Spannung 1 gemeinsam, Spannung 2 je Version): Ø-Zeit und Planzeit je Teil zählen sie mit.
+    ``inherited``: übernommene Aufspannungen; ``pre_stage``: Grundversion ist nur Vorstufe."""
+    base = next((v for v in versions if not v["version"]), None)
+    own = {v["version"]: {s["setup"] for s in v["setups"] if not s["fixture"]} for v in versions}
+    is_pre = pre_stage(own)
+    for v in versions:
+        v["pre_stage"] = not v["version"] and is_pre
+        v["inherited"] = []
+        if not v["version"] or base is None or not own[v["version"]]:
+            continue
+        first = min(own[v["version"]])
+        inherited = [s for s in base["setups"] if not s["fixture"] and s["setup"] < first]
+        if not inherited:
+            continue
+        v["inherited"] = [s["setup"] for s in inherited]
+        v["part_complete"] = v["part_complete"] and all(s["part_complete"] for s in inherited)
+        v["part_run_s"] = (v["part_run_s"] or 0.0) + sum(s["part_run_s"] for s in inherited)
+        if v["plan_part_s"] is not None:
+            complete = all(s["plan_complete"] for s in inherited)
+            v["plan_part_s"] = v["plan_part_s"] + sum(s["plan_s"] for s in inherited) if complete else None
 
 
 def _versions(setups: Any) -> list[dict[str, Any]]:

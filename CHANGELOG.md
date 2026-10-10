@@ -10,6 +10,36 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.25.0] – 2026-10-10
+
+### Geändert
+- **Versionen bauen auf der gemeinsamen Spannung 1 auf.** Beispiel 21054: Spannung 1 ist für alle
+  gleich (Grundversion), Spannung 2 unterscheidet V1, V2 und V3.
+  - **Artikel:** Nur die Endartikel V1, V2, V3 stehen in der Liste. Die Grundversion fällt weg,
+    wenn sie nur aus der Vorstufe besteht.
+  - **Laufzeit je Teil und Fräsen** jeder Version enthalten die Spannung 1 der Grundversion, mit dem
+    Hinweis „inkl. Sp. 1“.
+  - **Aufträge:** Die Grundversion heißt dort „gemeinsame Vorstufe der Versionen“ und hat keine
+    fertigen Teile mehr; bisher zählten bei 21054 z. B. 17 Vorstufen als fertig. Ø-Zeit und Planzeit
+    je Teil der Versionen enthalten die übernommene Spannung.
+  - Hat die Grundversion eine eigene letzte Spannung (z. B. 02), bleibt sie ein eigener Artikel.
+
+### Neu
+- **Excel-Export neu: übersichtlicher, mit Bild und Formeln.**
+  - **Aufbau:**
+    - Bild des Artikels in jeder Zeile
+    - farbige Spaltengruppen, größere Schrift und Zeilen
+    - Bild und Artikel bleiben beim Scrollen stehen
+    - Querformat beim Drucken
+  - **Formeln wie in der Artikelliste:** Material (Auswahl), Form, Maße, Laufzeit je Teil,
+    Stundensatz, EK und VK sind Eingaben (gelb).
+    - Volumen, Gewicht, Materialpreis, Fräsen, Herstellkosten und Marge rechnen nach.
+    - Dichte und Preis je kg kommen aus dem Blatt „Materialien“.
+    - Alles auf dem Stand des Exports.
+  - Neues Blatt „Erläuterung“ mit den Formeln in Worten.
+- **Bild groß beim Drüberfahren** (Tab Artikel): Das Vorschaubild öffnet rechts daneben eine große
+  Ansicht. Sie bleibt immer im sichtbaren Bereich und lädt das große Bild erst beim ersten Hovern.
+
 ## [1.24.0] – 2026-10-10
 
 ### Neu

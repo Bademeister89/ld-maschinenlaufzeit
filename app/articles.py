@@ -218,10 +218,15 @@ def _version_row(
     plans: dict[str, dict[str, Any]],
     machines: list[dict[str, Any]],
     last_finished: dict[str, float],
+    base: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Laufzeit je Teil, Fräsen, Stückzahl, Laufzeit und letzte Produktion einer Version."""
+    """Laufzeit je Teil, Fräsen, Stückzahl, Laufzeit und letzte Produktion einer Version. Von der
+    Grundversion übernommene Aufspannungen (z. B. die gemeinsame Spannung 1) zählen in Laufzeit je
+    Teil und Fräsen mit."""
     setups = [s for s in (version or {}).get("setups", []) if not s["fixture"]]
-    programs = [p for s in setups for p in s["programs"]]
+    inherited = set((version or {}).get("inherited", []))
+    shared = [s for s in (base or {}).get("setups", []) if not s["fixture"] and s["setup"] in inherited]
+    programs = [p for s in shared + setups for p in s["programs"]]
     part_s: float | None = 0.0 if programs else None
     part_estimated = False
     mill: float | None = 0.0 if programs else None
@@ -246,6 +251,7 @@ def _version_row(
         final = max(setups, key=lambda s: s["setup"])["programs"][-1]
         last = last_finished.get(final["call_name"])
     return {
+        "inherited": sorted(inherited),
         "part_s": part_s,
         "part_estimated": part_estimated,
         "mill_cost": round(mill, 2) if mill is not None else None,
@@ -282,13 +288,15 @@ def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[
         versions = {v["version"]: v for v in detail["versions"]}
         order = detail["order"]
         for art in arts:
+            if versions.get(art["version"], {}).get("pre_stage"):
+                continue  # Grundversion ist nur die gemeinsame Vorstufe (Spannung 1) der Versionen
             material = materials.get(art["material_id"])
             volume = volume_l(art["shape"], art["dim_a"], art["dim_b"], art["dim_c"])
             density = material["density"] if material else None
             weight = volume * density if volume is not None and density is not None else None  # g/cm³ = kg/l
             price_kg = material["price_per_kg"] if material else None
             material_cost = round(weight * price_kg, 2) if weight is not None and price_kg is not None else None
-            prod = _version_row(versions.get(art["version"]), machine_time, plans, machines, last_finished)
+            prod = _version_row(versions.get(art["version"]), machine_time, plans, machines, last_finished, versions.get(""))
             known = [c for c in (material_cost, prod["mill_cost"]) if c is not None]
             cost = round(sum(known), 2) if known else None
             cost_complete = material_cost is not None and prod["mill_cost"] is not None
@@ -329,40 +337,61 @@ def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[
 
 
 # --- Excel-Export ------------------------------------------------------------------------------
+# Eine Arbeitsmappe zum Weiterrechnen: Rohling, Material, Stundensatz und Preise sind Eingaben (gelb),
+# Volumen, Gewicht, Materialpreis, Fräsen, Herstellkosten und Marge sind Formeln wie in der Artikelliste.
+# Ändert man in Excel z. B. die Maße oder das Material, rechnet die Zeile neu (Stand des Exports).
 
 EUR = '#,##0.00 "€"'
 DURATION = "[h]:mm"
-COLUMNS = [
-    # (Überschrift, Schlüssel bzw. Funktion, Format, Breite)
-    ("Artikel", "key", "@", 12),
-    ("Art", lambda r: "Felge" if r["kind"] == "rim" else "Auftrag", "@", 9),
-    ("Bezeichnung", lambda r: r["title"] or (r["rim"] or {}).get("label") or "", "@", 32),
-    ("Status", lambda r: "abgeschlossen" if r["status"] == "closed" else "offen", "@", 13),
-    ("Material", "material", "@", 16),
-    ("Rohling", lambda r: blank_text(None, r["shape"], r["dim_a"], r["dim_b"], r["dim_c"]), "@", 26),
-    ("Volumen (l)", "volume_l", "0.000", 10),
-    ("Dichte (g/cm³)", "density", "0.00", 10),
-    ("Gewicht (kg)", "weight_kg", "0.000", 11),
-    ("Preis je kg", "price_per_kg", EUR, 12),
-    ("Materialpreis", "material_cost", EUR, 13),
-    ("Laufzeit je Teil", lambda r: r["part_s"] / 86400 if r["part_s"] is not None else None, DURATION, 14),
-    ("Preis Fräsen", "mill_cost", EUR, 13),
-    ("Herstellkosten", "cost", EUR, 14),
-    ("Preis EK", "price_ek", EUR, 12),
-    ("Preis VK", "price_vk", EUR, 12),
-    ("Marge", "margin", EUR, 12),
-    ("Marge %", lambda r: r["margin_pct"] / 100 if r["margin_pct"] is not None else None, "0.0%", 9),
-    ("Stück produziert", "parts", "0", 10),
-    ("Gesamtlaufzeit", lambda r: r["running_s"] / 86400, DURATION, 13),
-    ("Letzte Produktion", "last_production", "DD.MM.YYYY", 14),
-    ("Hinweise", "hints", "@", 30),
-    ("Notiz", "note", "@", 30),
+FIRST_ROW = 3  # Zeile 1: Gruppen, Zeile 2: Spaltenköpfe
+THUMB_PX = (96, 72)  # Vorschaubild in der Tabelle (4:3)
+SHAPE_NAMES = {"block": "Block", "round": "Rund"}
+
+# (Schlüssel, Überschrift, Breite, Format, Eingabe?)
+_COLS = [
+    ("image", "Bild", 14, None, False),
+    ("key", "Artikel", 12, "@", False),
+    ("title", "Bezeichnung", 30, "@", False),
+    ("kind", "Art", 9, "@", False),
+    ("status", "Status", 13, "@", False),
+    ("material", "Material", 16, "@", True),
+    ("shape", "Form", 9, "@", True),
+    ("dim_a", "Maß 1 (mm)\nL bzw. Ø", 11, "0.0", True),
+    ("dim_b", "Maß 2 (mm)\nB bzw. L", 11, "0.0", True),
+    ("dim_c", "Maß 3 (mm)\nH (Block)", 11, "0.0", True),
+    ("volume", "Volumen (l)", 11, "0.000", False),
+    ("density", "Dichte (g/cm³)", 11, "0.00", False),
+    ("weight", "Gewicht (kg)", 11, "0.000", False),
+    ("price_kg", "€ je kg", 11, EUR, False),
+    ("material_cost", "Material­preis", 13, EUR, False),
+    ("part", "Laufzeit je Teil", 12, DURATION, True),
+    ("rate", "Stundensatz (€/h)", 12, EUR, True),
+    ("mill", "Preis Fräsen", 13, EUR, False),
+    ("cost", "Herstell­kosten", 14, EUR, False),
+    ("ek", "Preis EK", 12, EUR, True),
+    ("vk", "Preis VK", 12, EUR, True),
+    ("margin", "Marge", 13, EUR, False),
+    ("margin_pct", "Marge %", 10, "0.0%", False),
+    ("parts", "Stück produziert", 11, "0", False),
+    ("running", "Gesamt­laufzeit", 12, DURATION, False),
+    ("last", "Letzte Produktion", 13, "DD.MM.YYYY", False),
+    ("hints", "Hinweise", 34, "@", False),
+    ("note", "Notiz", 30, "@", False),
 ]
-SUM_COLUMNS = {"Stück produziert", "Gesamtlaufzeit"}
+_GROUPS = [
+    ("Artikel", "image", "status", "2F4F6F"),
+    ("Rohling und Material", "material", "material_cost", "3E6B48"),
+    ("Fertigung", "part", "mill", "6B4E2F"),
+    ("Kosten und Preise", "cost", "margin_pct", "5B3E6B"),
+    ("Produktion", "parts", "last", "2F5F6B"),
+    ("", "hints", "note", "4A4A48"),
+]
 
 
 def hints(row: dict[str, Any]) -> str:
     notes = []
+    if row.get("inherited"):
+        notes.append(f"inkl. Spannung {', '.join(map(str, row['inherited']))} der Grundversion")
     if row["part_estimated"]:
         notes.append("Laufzeit teils aus CAM-Planzeit")
     if row["mill_estimated"]:
@@ -372,65 +401,217 @@ def hints(row: dict[str, Any]) -> str:
     return "; ".join(notes)
 
 
-def export_xlsx(rows: list[dict[str, Any]], materials: list[dict[str, Any]], tz: ZoneInfo, now: float) -> bytes:
-    """Artikelliste als formatierte Excel-Datei: Kopf fett und fixiert, Filter, €- und Zeitformate,
-    Summenzeile; zweites Blatt mit der Materialliste."""
+def _jpeg_size(data: bytes) -> tuple[int, int] | None:
+    """Breite und Höhe aus dem JPEG-Kopf (SOF-Segment) – ohne Bildbibliothek."""
+    i = 2
+    while i + 9 < len(data) and data[i] == 0xFF:
+        marker, length = data[i + 1], int.from_bytes(data[i + 2 : i + 4], "big")
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            return int.from_bytes(data[i + 7 : i + 9], "big"), int.from_bytes(data[i + 5 : i + 7], "big")
+        i += 2 + length
+    return None
+
+
+def _image(data: bytes) -> Any:
+    """Bild für openpyxl ohne Pillow: die Vorschaubilder sind schon JPEG und werden unverändert eingebettet."""
+    from openpyxl.drawing.image import Image
+
+    class JpegImage(Image):
+        def __init__(self, raw: bytes):  # noqa: D107 – Image.__init__ bräuchte Pillow
+            self.ref, self._raw, self.format = raw, raw, "jpeg"
+            self.width, self.height = THUMB_PX
+
+        def _data(self) -> bytes:
+            return self._raw
+
+    return JpegImage(data)
+
+
+def export_xlsx(
+    rows: list[dict[str, Any]],
+    materials: list[dict[str, Any]],
+    tz: ZoneInfo,
+    now: float,
+    images: dict[str, bytes] | None = None,
+) -> bytes:
+    """Artikelliste als Excel-Arbeitsmappe mit Bildern und Formeln (Blatt „Artikel“), der Materialliste
+    (Blatt „Materialien“, Grundlage der Formeln) und einer kurzen Erläuterung."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    images = images or {}
+    col = {key: get_column_letter(i) for i, (key, *_) in enumerate(_COLS, start=1)}
+    thin = Side(style="thin", color="C9C7BE")
+    grid = Border(left=thin, right=thin, top=thin, bottom=thin)
+    input_fill = PatternFill("solid", fgColor="FFF6D6")  # Eingaben: hellgelb
+    zebra = PatternFill("solid", fgColor="F4F4F1")
+    white = Font(bold=True, color="FFFFFF", size=12)
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Artikel"
-    head_font = Font(bold=True, color="FFFFFF")
-    head_fill = PatternFill("solid", fgColor="2F4F6F")
-    thin = Side(style="thin", color="B4B2A9")
-    ws.append([c[0] for c in COLUMNS])
-    for i, (title, _, _, width) in enumerate(COLUMNS, start=1):
-        cell = ws.cell(row=1, column=i)
-        cell.font, cell.fill = head_font, head_fill
-        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    ws.sheet_properties.tabColor = "2F4F6F"
+
+    # Zeile 1: Gruppen über mehrere Spalten, Zeile 2: Spaltenköpfe in der Farbe der Gruppe
+    group_of = {}
+    for title, first, last, color in _GROUPS:
+        a, b = col[first], col[last]
+        ws.merge_cells(f"{a}1:{b}1")
+        cell = ws[f"{a}1"]
+        cell.value = title or None
+        cell.font, cell.fill = white, PatternFill("solid", fgColor=color)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        start, end = [k for k, *_ in _COLS].index(first), [k for k, *_ in _COLS].index(last)
+        for key, *_ in _COLS[start : end + 1]:
+            group_of[key] = color
+    for i, (key, title, width, _, is_input) in enumerate(_COLS, start=1):
+        cell = ws.cell(row=2, column=i, value=title.replace("­", ""))
+        cell.font = Font(bold=True, color="FFFFFF", size=11)
+        cell.fill = PatternFill("solid", fgColor=group_of[key])
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = grid
         ws.column_dimensions[get_column_letter(i)].width = width
-    ws.row_dimensions[1].height = 30
+    ws.row_dimensions[1].height = 24
+    ws.row_dimensions[2].height = 42
 
-    def value(row: dict[str, Any], getter: Any) -> Any:
-        if getter == "hints":
-            return hints(row) or None
-        v = getter(row) if callable(getter) else row.get(getter)
-        if getter == "last_production" and v is not None:
-            return datetime.fromtimestamp(v, tz).replace(tzinfo=None)
-        return v
+    materials_ref = f"Materialien!$A$2:$C${max(len(materials) + 1, 2) + 200}"
+    for n, row in enumerate(rows):
+        r = FIRST_ROW + n
+        c = {key: f"{col[key]}{r}" for key in col}
+        rate = None
+        if row["mill_cost"] is not None and row["part_s"]:
+            rate = round(row["mill_cost"] / (row["part_s"] / 3600), 2)  # wirksamer Stundensatz (gewichtet)
+        last = datetime.fromtimestamp(row["last_production"], tz).replace(tzinfo=None) if row["last_production"] else None
+        values = {
+            "key": row["key"],
+            "title": row["title"] or (row["rim"] or {}).get("label") or "",
+            "kind": "Felge" if row["kind"] == "rim" else "Auftrag",
+            "status": "abgeschlossen" if row["status"] == "closed" else "offen",
+            "material": row["material"],
+            "shape": SHAPE_NAMES.get(row["shape"] or ""),
+            "dim_a": row["dim_a"],
+            "dim_b": row["dim_b"],
+            "dim_c": row["dim_c"],
+            # Formeln wie in der Artikelliste
+            "volume": (
+                f'=IF(AND({c["shape"]}="Block",N({c["dim_a"]})>0,N({c["dim_b"]})>0,N({c["dim_c"]})>0),'
+                f'{c["dim_a"]}*{c["dim_b"]}*{c["dim_c"]}/1000000,'
+                f'IF(AND({c["shape"]}="Rund",N({c["dim_a"]})>0,N({c["dim_b"]})>0),'
+                f'PI()*({c["dim_a"]}/2)^2*{c["dim_b"]}/1000000,""))'
+            ),
+            "density": f'=IFERROR(VLOOKUP({c["material"]},{materials_ref},2,FALSE),"")',
+            "weight": f'=IF(AND(ISNUMBER({c["volume"]}),ISNUMBER({c["density"]})),{c["volume"]}*{c["density"]},"")',
+            "price_kg": f'=IFERROR(VLOOKUP({c["material"]},{materials_ref},3,FALSE),"")',
+            "material_cost": (
+                f'=IF(AND(ISNUMBER({c["weight"]}),ISNUMBER({c["price_kg"]})),ROUND({c["weight"]}*{c["price_kg"]},2),"")'
+            ),
+            "part": row["part_s"] / 86400 if row["part_s"] is not None else None,
+            "rate": rate,
+            "mill": f'=IF(AND(ISNUMBER({c["part"]}),ISNUMBER({c["rate"]})),ROUND({c["part"]}*24*{c["rate"]},2),"")',
+            "cost": f'=IF(COUNT({c["material_cost"]},{c["mill"]})=0,"",SUM({c["material_cost"]},{c["mill"]}))',
+            "ek": row["price_ek"],
+            "vk": row["price_vk"],
+            "margin": (
+                f'=IF(AND(ISNUMBER({c["vk"]}),COUNT({c["material_cost"]},{c["mill"]})=2),{c["vk"]}-{c["cost"]},"")'
+            ),
+            "margin_pct": f'=IF(AND(ISNUMBER({c["margin"]}),N({c["vk"]})>0),{c["margin"]}/{c["vk"]},"")',
+            "parts": row["parts"],
+            "running": row["running_s"] / 86400,
+            "last": last,
+            "hints": hints(row) or None,
+            "note": row["note"] or None,
+        }
+        for i, (key, _, _, fmt, is_input) in enumerate(_COLS, start=1):
+            cell = ws.cell(row=r, column=i, value=values.get(key))
+            if fmt:
+                cell.number_format = fmt
+            cell.border = grid
+            cell.font = Font(size=11, bold=key in ("key", "cost", "margin"))
+            wrap = key in ("title", "hints", "note")
+            cell.alignment = Alignment(vertical="center", wrap_text=wrap, horizontal="left" if fmt == "@" else None)
+            if is_input:
+                cell.fill = input_fill
+            elif n % 2:
+                cell.fill = zebra
+        ws.row_dimensions[r].height = 58
+        data = images.get(row["key"])
+        if data:
+            img = _image(data)
+            img.anchor = c["image"]
+            ws.add_image(img)
 
-    for r_index, row in enumerate(rows, start=2):
-        for c_index, (_, getter, fmt, _) in enumerate(COLUMNS, start=1):
-            cell = ws.cell(row=r_index, column=c_index, value=value(row, getter))
-            cell.number_format = fmt
-    last = len(rows) + 1
+    last_row = FIRST_ROW + len(rows) - 1
     if rows:
-        total = last + 1
-        ws.cell(row=total, column=1, value="Summe").font = Font(bold=True)
-        for c_index, (title, _, fmt, _) in enumerate(COLUMNS, start=1):
-            if title in SUM_COLUMNS:
-                letter = get_column_letter(c_index)
-                cell = ws.cell(row=total, column=c_index, value=f"=SUM({letter}2:{letter}{last})")
-                cell.number_format, cell.font = fmt, Font(bold=True)
-            ws.cell(row=total, column=c_index).border = Border(top=thin)
-    ws.freeze_panes = "B2"
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}{last}"
-    ws.sheet_view.zoomScale = 100
+        total = last_row + 1
+        ws.cell(row=total, column=2, value="Summe").font = Font(bold=True, size=11)
+        for key in ("parts", "running"):
+            cell = ws[f"{col[key]}{total}"]
+            cell.value = f"=SUM({col[key]}{FIRST_ROW}:{col[key]}{last_row})"
+            cell.font = Font(bold=True, size=11)
+            cell.number_format = dict((k, f) for k, _, _, f, _ in _COLS)[key]
+        for i in range(1, len(_COLS) + 1):
+            ws.cell(row=total, column=i).border = Border(top=Side(style="medium", color="2F4F6F"))
+        ws.row_dimensions[total].height = 24
+        # Auswahllisten für die Eingaben
+        shapes = DataValidation(type="list", formula1='"Block,Rund"', allow_blank=True)
+        shapes.add(f"{col['shape']}{FIRST_ROW}:{col['shape']}{last_row}")
+        names = DataValidation(type="list", formula1=f"=Materialien!$A$2:$A${len(materials) + 201}", allow_blank=True)
+        names.error, names.errorTitle = "Bitte ein Material aus dem Blatt „Materialien“ wählen.", "Material"
+        names.add(f"{col['material']}{FIRST_ROW}:{col['material']}{last_row}")
+        ws.add_data_validation(shapes)
+        ws.add_data_validation(names)
+    ws.freeze_panes = f"{col['title']}{FIRST_ROW}"  # Bild und Artikel bleiben beim Scrollen stehen
+    ws.auto_filter.ref = f"A2:{get_column_letter(len(_COLS))}{max(last_row, 2)}"
+    ws.sheet_view.zoomScale = 90
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = "1:2"
 
     ms = wb.create_sheet("Materialien")
+    ms.sheet_properties.tabColor = "3E6B48"
     ms.append(["Material", "Dichte (g/cm³)", "Preis je kg", "Artikel"])
-    for i, width in enumerate((24, 14, 14, 10), start=1):
+    for i, width in enumerate((26, 16, 16, 10), start=1):
         cell = ms.cell(row=1, column=i)
-        cell.font, cell.fill = head_font, head_fill
+        cell.font = Font(bold=True, color="FFFFFF", size=11)
+        cell.fill = PatternFill("solid", fgColor="3E6B48")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
         ms.column_dimensions[get_column_letter(i)].width = width
+    ms.row_dimensions[1].height = 24
     for m in materials:
         ms.append([m["name"], m["density"], m["price_per_kg"], m["articles"]])
-        ms.cell(row=ms.max_row, column=2).number_format = "0.00"
-        ms.cell(row=ms.max_row, column=3).number_format = EUR
+        r = ms.max_row
+        ms.cell(row=r, column=2).number_format = "0.00"
+        ms.cell(row=r, column=3).number_format = EUR
+        for i in (1, 2, 3):
+            ms.cell(row=r, column=i).fill = input_fill
+            ms.cell(row=r, column=i).border = grid
     ms.freeze_panes = "A2"
 
+    info = wb.create_sheet("Erläuterung")
+    lines = [
+        ("Artikelliste – Stand des Exports", True),
+        (f"Erstellt am {datetime.fromtimestamp(now, tz):%d.%m.%Y um %H:%M} Uhr mit LD-Machine-Viewer.", False),
+        ("", False),
+        ("Gelbe Zellen sind Eingaben, alle anderen rechnen mit Formeln wie in der Artikelliste:", True),
+        ("Volumen (l) = Block: L × B × H / 1.000.000 · Rund: π × (Ø/2)² × L / 1.000.000 (Maße in mm)", False),
+        ("Dichte und Preis je kg kommen über das Material aus dem Blatt „Materialien“ (dort änderbar).", False),
+        ("Gewicht (kg) = Volumen × Dichte · Materialpreis = Gewicht × Preis je kg", False),
+        ("Preis Fräsen = Laufzeit je Teil × Stundensatz (bei mehreren Maschinen nach Laufzeit gewichtet)", False),
+        ("Herstellkosten = Materialpreis + Preis Fräsen · Marge = Preis VK − Herstellkosten", False),
+        ("", False),
+        ("Laufzeit je Teil: Summe der Ø-Laufzeiten aller Aufspannungen, bei Versionen inkl. der gemeinsamen", False),
+        ("Spannung 1 der Grundversion. Ohne fertigen Lauf gilt die CAM-Planzeit (siehe Hinweise).", False),
+        ("Änderungen hier wirken nur in dieser Datei, nicht in der App.", False),
+    ]
+    for text, bold in lines:
+        info.append([text])
+        info.cell(row=info.max_row, column=1).font = Font(bold=bold, size=12 if bold else 11)
+    info.column_dimensions["A"].width = 110
+
+    wb.calculation.fullCalcOnLoad = True  # Excel rechnet die Formeln beim Öffnen
     wb.properties.creator = "LD-Machine-Viewer"
     wb.properties.created = datetime.fromtimestamp(now, tz).replace(tzinfo=None)
     buf = io.BytesIO()

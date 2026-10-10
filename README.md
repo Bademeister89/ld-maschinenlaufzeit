@@ -281,6 +281,13 @@ zugeordnet, z. B. `26-21055-01-01`:
   - Laufzeit, Stopps und Läufe des Auftrags sind die Summe aller Versionen.
   - Im Detail hat jede Version einen eigenen Block („Grundversion“, „Version V1“ …) mit ihren
     Aufspannungen und ihrer **Ø Bearbeitungszeit je Teil**. Die Kachel nennt sie je Version.
+  - **Gemeinsame Vorstufe:** Fehlen einer Version die ersten Aufspannungen, übernimmt sie sie von der
+    Grundversion. Typisch ist Spannung 1 gemeinsam und Spannung 2 je Version (`21-21054-01-01`,
+    `21-21054v1-02-01`, `21-21054v2-02-01`).
+    - Ø-Zeit und Planzeit je Teil der Version enthalten dann die Spannung 1 („inkl. Aufspannung 1 der
+      Grundversion“).
+    - Besteht die Grundversion nur aus dieser Vorstufe, heißt sie „gemeinsame Vorstufe der
+      Versionen“. Sie hat keine fertigen Teile und keinen eigenen Artikel.
   - Von Version 1.9.0 bis 1.16.0 waren Versionen eigene Aufträge. Beim Update auf 1.17.0 werden sie
     einmalig in den Grundauftrag übernommen. Bezeichnung und Bild des Grundauftrags bleiben; hat er
     keine, kommen sie von der Version.
@@ -455,6 +462,10 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
 
 - **Je Auftrag und Version ein Artikel:** `21053`, `21053V1` und `21053V2` sind drei Artikel, weil eine
   Version eine andere Ausführung des Teils ist. Eine Felge (`10101018`) ist ein Artikel.
+  - **Nur Endartikel:** Ist die Grundversion nur die gemeinsame Spannung 1 der Versionen, steht sie
+    nicht in der Liste.
+    - Jede Version rechnet die Spannung 1 in Laufzeit je Teil und Fräsen mit („inkl. Sp. 1“).
+    - Mehr dazu unter [Aufträge → Versionen](#aufträge-tab-aufträge).
   - Die Artikel entstehen automatisch, sobald eine Version in Läufen oder Planzeiten vorkommt. Die
     App gleicht beim Öffnen des Tabs ab und stündlich.
   - **+ Artikel anlegen** (z. B. `21060` oder `21060V1`) legt den Auftrag mit an, falls es ihn noch
@@ -486,6 +497,7 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
   - Ohne Stundensatz steht „kein €/h“. Den Satz trägst du unter Konfiguration → Maschinen →
     Bearbeiten ein.
   - Fehlt Material oder Fräsen, heißen die Herstellkosten „mind.“, und eine Marge gibt es nicht.
+- **Bild:** Beim Drüberfahren mit der Maus erscheint das Bild groß neben dem Vorschaubild.
 - **Darstellung:** Ab 1280 px Breite passen alle Spalten ohne Scrollbalken auf den Bildschirm, die
   Seite nutzt dafür die volle Breite. Schmaler (Tablet, Handy) wird jede Zeile eine Karte.
 - **Direkt in der Zelle bearbeiten, wie in Excel:** Ein Klick auf Material, Rohling, EK oder VK öffnet
@@ -507,11 +519,23 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
 - **Materialien:** Die Liste mit Dichte (g/cm³) und Preis je kg pflegst du unter Konfiguration →
   Artikel, z. B. Alu 7075 mit 2,81 g/cm³. Ein neuer Preis gilt sofort für alle Artikel mit diesem
   Material. Ohne Dichte gibt es kein Gewicht und keinen Materialpreis.
-- **Excel-Export:** echte .xlsx-Datei mit den gefilterten Artikeln (Status).
-  - Kopfzeile fixiert, Filter, €-Format, Laufzeiten als Stunden:Minuten, Datum
-  - Summenzeile für Stück und Laufzeit
-  - Spalte „Hinweise“ für geschätzte Werte
-  - zweites Blatt „Materialien“
+- **Excel-Export:** eine Arbeitsmappe zum Weiterrechnen mit den gefilterten Artikeln (Status).
+  - **Aufbau:**
+    - Bild des Artikels in jeder Zeile
+    - farbige Spaltengruppen (Artikel, Rohling und Material, Fertigung, Kosten und Preise, Produktion)
+    - größere Schrift und Zeilen
+    - Bild und Artikel bleiben beim Scrollen stehen
+    - Filter, Summenzeile, Querformat beim Drucken
+  - **Formeln wie in der Artikelliste:** Gelbe Zellen sind Eingaben. Das sind Material (Auswahl),
+    Form (Block/Rund), Maße, Laufzeit je Teil, Stundensatz, EK und VK.
+    - Volumen, Dichte, Gewicht, € je kg, Materialpreis, Preis Fräsen, Herstellkosten und Marge
+      rechnen mit Formeln.
+    - Ändert man in Excel z. B. die Maße oder das Material, rechnet die Zeile neu.
+    - Dichte und Preis je kg kommen aus dem Blatt „Materialien“ und sind dort änderbar.
+    - Grundlage ist der Stand des Exports. Änderungen wirken nur in der Datei, nicht in der App.
+  - **Stundensatz:** Lief ein Artikel auf mehreren Maschinen, steht dort der nach Laufzeit gewichtete
+    Satz.
+  - **Weitere Blätter:** „Materialien“ und „Erläuterung“ mit den Formeln in Worten.
 
 ## Werkzeugauswertung (Tab „Werkzeugauswertung“)
 

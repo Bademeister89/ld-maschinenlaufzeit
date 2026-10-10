@@ -27,13 +27,22 @@ def _ctx(request: Request) -> AppContext:
     return request.app.state.ctx
 
 
-def _rows(ctx: AppContext, status: str) -> list[dict[str, Any]]:
+def _rows(ctx: AppContext, status: str, thumbs: dict[str, bytes] | None = None) -> list[dict[str, Any]]:
+    """Artikel mit Bild-Adressen; ``thumbs`` (falls übergeben) bekommt je Artikel das Vorschaubild
+    als JPEG für den Excel-Export."""
     files = ctx.order_images.files()
     rows = articles.list_articles(ctx.db, ctx.tz, status)
     for row in rows:
         # Vorschaubild des Auftrags (die Versionen teilen sich das Bild)
-        public = ctx.order_images.public({"key": row["order_key"], "image": row.pop("image")}, files)
+        image = row.pop("image")
+        public = ctx.order_images.public({"key": row["order_key"], "image": image}, files)
         row["thumb_url"], row["image_url"] = public["thumb_url"], public["image_url"]
+        path = ctx.order_images.path(image, "thumb") if thumbs is not None and public["thumb_url"] else None
+        if path is not None:
+            try:
+                thumbs[row["key"]] = path.read_bytes()
+            except OSError:
+                pass  # Bild fehlt: Zeile ohne Bild
     return rows
 
 
@@ -53,9 +62,10 @@ def list_articles(request: Request, status: str = STATUS) -> dict[str, Any]:
 @router.get("/export.xlsx")
 async def export(request: Request, status: str = STATUS) -> Response:
     ctx = _ctx(request)
-    rows = _rows(ctx, status)
+    thumbs: dict[str, bytes] = {}
+    rows = _rows(ctx, status, thumbs)
     now = time.time()
-    data = await asyncio.to_thread(articles.export_xlsx, rows, ctx.db.materials(), ctx.tz, now)
+    data = await asyncio.to_thread(articles.export_xlsx, rows, ctx.db.materials(), ctx.tz, now, thumbs)
     name = f"artikel_{datetime.fromtimestamp(now, ctx.tz):%Y-%m-%d}.xlsx"
     return Response(
         data,

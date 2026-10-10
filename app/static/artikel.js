@@ -68,7 +68,29 @@ const COLUMNS = [
   {
     label: "",
     cls: "art-thumb-cell",
-    value: (a) => (a.thumb_url ? el("img", { class: "art-thumb", src: a.thumb_url, alt: "", loading: "lazy" }) : el("span", { class: "art-thumb empty-thumb", "aria-hidden": "true" })),
+    value: (a) => {
+      if (!a.thumb_url) return el("span", { class: "art-thumb empty-thumb", "aria-hidden": "true" });
+      // Beim Drüberfahren groß: das große Bild erst dann laden (die Liste bleibt schnell)
+      const zoom = el("img", { class: "art-zoom", alt: `Bild ${a.key}` });
+      return el(
+        "span",
+        {
+          class: "art-thumb-wrap",
+          onmouseenter: (e) => {
+            if (!zoom.src) zoom.src = a.image_url || a.thumb_url;
+            // Rechts neben dem Vorschaubild, immer ganz im sichtbaren Bereich
+            const r = e.currentTarget.getBoundingClientRect();
+            const width = Math.min(360, innerWidth * 0.5);
+            const height = (width * 3) / 4;
+            zoom.style.width = `${width}px`;
+            zoom.style.left = `${r.right + 10}px`;
+            zoom.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, r.top + r.height / 2 - height / 2))}px`;
+          },
+        },
+        el("img", { class: "art-thumb", src: a.thumb_url, alt: "", loading: "lazy" }),
+        zoom,
+      );
+    },
   },
   {
     label: "Artikel / Bezeichnung",
@@ -93,7 +115,12 @@ const COLUMNS = [
   {
     label: "Laufzeit je Teil",
     cls: "r",
-    value: (a) => (a.part_s == null ? "—" : estimated(fmtDuration(a.part_s), a.part_estimated, "Teils aus der CAM-Planzeit (noch nicht jedes Programm vollständig gelaufen)")),
+    value: (a) => {
+      if (a.part_s == null) return "—";
+      const time = estimated(fmtDuration(a.part_s), a.part_estimated, "Teils aus der CAM-Planzeit (noch nicht jedes Programm vollständig gelaufen)");
+      if (!a.inherited?.length) return time;
+      return el("span", { title: `Inklusive Spannung ${a.inherited.join(", ")} der Grundversion (gemeinsame Vorstufe)` }, time, el("span", { class: "art-sub", text: `inkl. Sp. ${a.inherited.join(", ")}` }));
+    },
   },
   {
     label: "Fräsen",

@@ -2,13 +2,16 @@
 
 import io
 import math
+import re
 import sqlite3
+import zipfile
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from app import articles
 from app.config import MachineConfig, Settings
@@ -16,6 +19,7 @@ from app.db import SCHEMA_VERSION, Database
 from app.main import create_app
 
 from .conftest import feed, snap
+from .xlsx_formula import Evaluator
 
 TZ = ZoneInfo("Europe/Berlin")
 P11 = "TNC:\\X\\26-21055-01-01.H"
@@ -107,6 +111,45 @@ def test_sync_creates_one_article_per_version_and_manual_articles_create_the_ord
     assert "21060V1" not in [a["key"] for a in client.get("/api/articles").json()["articles"]]
 
 
+def test_versions_build_on_the_shared_first_setup(client):
+    """21054: Spannung 1 gemeinsam (Grundversion), Spannung 2 je Version (V1, V2). Artikel sind nur die
+    Endartikel V1 und V2 – mit der Laufzeit von Spannung 1; die Grundversion hat keine fertigen Teile."""
+    ctx = client.app.state.ctx
+    col = ctx.collectors["m1"]
+    t = 1000
+    for _ in range(3):
+        t = run_part(col, t + 10, "TNC:\\X\\21-21054-01-01.H", 1200)  # Vorstufe: 20 min
+    t = run_part(col, t + 10, "TNC:\\X\\21-21054v1-02-01.H", 3600)
+    t = run_part(col, t + 10, "TNC:\\X\\21-21054v2-02-01.H", 1800)
+    rate(client, "m1", "60")
+    rows = {a["key"]: a for a in client.get("/api/articles").json()["articles"]}
+    assert sorted(rows) == ["21054V1", "21054V2"]  # Grundversion nur Vorstufe
+    assert (rows["21054V1"]["part_s"], rows["21054V1"]["inherited"]) == (pytest.approx(4800), [1])
+    assert rows["21054V2"]["part_s"] == pytest.approx(3000)
+    assert rows["21054V1"]["mill_cost"] == pytest.approx(80)  # 1 h 20 min × 60 €/h
+    assert (rows["21054V1"]["parts"], rows["21054V2"]["parts"]) == (1, 1)
+
+    detail = client.get("/api/orders/21054").json()
+    blocks = {v["version"]: v for v in detail["versions"]}
+    assert (blocks[""]["pre_stage"], blocks[""]["parts"]) == (True, 0)
+    assert (blocks["V1"]["inherited"], blocks["V1"]["part_run_s"]) == ([1], pytest.approx(4800))
+    assert detail["totals"]["parts"] == 2
+    [row] = [o for o in client.get("/api/orders").json()["orders"] if o["key"] == "21054"]
+    assert row["parts"] == 2  # nicht 3 Vorstufen + 2
+
+
+def test_base_with_its_own_last_setup_stays_an_article(client):
+    """Hat die Grundversion selbst eine Spannung 2, ist sie ein eigener Endartikel."""
+    ctx = client.app.state.ctx
+    col = ctx.collectors["m1"]
+    t = run_part(col, 1000, P11, 600)
+    t = run_part(col, t + 10, P21, 600)
+    run_part(col, t + 10, "TNC:\\X\\26-21055V1-02-01.H", 900)
+    rows = {a["key"]: a for a in client.get("/api/articles").json()["articles"]}
+    assert sorted(rows) == ["21055", "21055V1"]
+    assert (rows["21055"]["parts"], rows["21055V1"]["part_s"]) == (1, pytest.approx(1500))
+
+
 # --- Kosten --------------------------------------------------------------------------------------
 
 
@@ -192,26 +235,56 @@ def test_excel_export(client):
     assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
     assert r.headers["content-disposition"].startswith('attachment; filename="artikel_')
     wb = load_workbook(io.BytesIO(r.content))
-    assert wb.sheetnames == ["Artikel", "Materialien"]
+    assert wb.sheetnames == ["Artikel", "Materialien", "Erläuterung"]
     ws = wb["Artikel"]
-    head = [c.value for c in ws[1]]
-    assert head[:4] == ["Artikel", "Art", "Bezeichnung", "Status"]
-    col = {name: i for i, name in enumerate(head)}
-    row = [c for c in ws[2]]
-    assert row[col["Artikel"]].value == "21055"
-    assert row[col["Gewicht (kg)"]].value == pytest.approx(2.81)  # 1 l Alu 7075
-    assert row[col["Materialpreis"]].value == pytest.approx(14.61)
-    assert row[col["Materialpreis"]].number_format == '#,##0.00 "€"'
-    assert row[col["Laufzeit je Teil"]].value == timedelta(hours=1)  # Excel-Dauer, als Zeit eingelesen
-    assert row[col["Laufzeit je Teil"]].number_format == "[h]:mm"
-    assert row[col["Preis Fräsen"]].value == pytest.approx(90)
-    assert row[col["Marge"]].value == pytest.approx(200 - 104.61)
-    assert row[col["Letzte Produktion"]].number_format == "DD.MM.YYYY"
-    assert ws.cell(row=3, column=1).value == "21055V1"
-    assert ws.cell(row=4, column=1).value == "Summe"
-    assert ws.cell(row=4, column=col["Stück produziert"] + 1).value.startswith("=SUM(")
-    assert ws.freeze_panes == "B2" and ws.auto_filter.ref.startswith("A1:")
-    assert [c.value for c in wb["Materialien"][2]] == ["Alu 7075", 2.81, 5.2, 1]
+    assert [ws[f"{c}1"].value for c in "AFP"] == ["Artikel", "Rohling und Material", "Fertigung"]  # Gruppen
+    head = [c.value for c in ws[2]]
+    assert head[:5] == ["Bild", "Artikel", "Bezeichnung", "Art", "Status"]
+    col = {name.split("\n")[0]: get_column_letter(i) for i, name in enumerate(head, start=1)}
+    ev = Evaluator(wb)
+    val = lambda name, row=3: ev.cell("Artikel", f"{col[name]}{row}")  # noqa: E731
+
+    assert val("Artikel") == "21055"
+    assert ws[f"{col['Materialpreis']}3"].value.startswith("=")  # Formel, kein fester Wert
+    # Formeln ergeben dasselbe wie die App: 1 l Alu 7075 = 2,81 kg × 5,20 €/kg
+    assert (val("Volumen (l)"), val("Gewicht (kg)"), val("Materialpreis")) == (pytest.approx(1), pytest.approx(2.81), 14.61)
+    assert val("Laufzeit je Teil") == timedelta(hours=1)
+    assert (val("Stundensatz (€/h)"), val("Preis Fräsen"), val("Herstellkosten")) == (90, 90, pytest.approx(104.61))
+    assert (val("Marge"), val("Marge %")) == (pytest.approx(95.39), pytest.approx(0.47695))
+    # In der Datei geändert → rechnet neu: Rund Ø 100 × 100 statt Block, VK 300
+    ws[f"{col['Form']}3"] = "Rund"
+    ws[f"{col['Preis VK']}3"] = 300
+    assert val("Volumen (l)") == pytest.approx(math.pi * 50**2 * 100 / 1e6)
+    assert val("Materialpreis") == pytest.approx(round(math.pi * 50**2 * 100 / 1e6 * 2.81 * 5.2, 2))  # 11,48 €
+    assert val("Marge") == pytest.approx(300 - (val("Materialpreis") + 90))
+    # Material und Preis je kg im Blatt „Materialien“ ändern
+    wb["Materialien"]["C2"] = 10
+    assert val("€ je kg") == 10
+    ws[f"{col['Material']}3"] = "Gibt es nicht"
+    assert (val("Dichte (g/cm³)"), val("Materialpreis"), val("Marge")) == ("", "", "")
+
+    # Version ohne Rohling: keine Materialkosten, Herstellkosten nur Fräsen
+    assert (val("Artikel", 4), val("Materialpreis", 4), val("Herstellkosten", 4)) == ("21055V1", "", 45)
+    assert ws.cell(row=5, column=2).value == "Summe"
+    assert ev.cell("Artikel", f"{col['Stück produziert']}5") == 2
+    assert ws.freeze_panes == "C3" and ws.auto_filter.ref.startswith("A2:")
+    assert ws[f"{col['Materialpreis']}3"].number_format == '#,##0.00 "€"'
+    assert ws[f"{col['Laufzeit je Teil']}3"].number_format == "[h]:mm"
+    assert len(ws.data_validations.dataValidation) == 2  # Auswahllisten Form und Material
+    assert [c.value for c in wb["Materialien"][2]] == ["Alu 7075", 2.81, 10, 1]
+
+
+def test_excel_export_embeds_the_order_image(client):
+    ctx = client.app.state.ctx
+    run_part(ctx.collectors["m1"], 1000, P11, 60)
+    thumb = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffc0001108004800600301110002110103110100ffd9")
+    ctx.order_images.save("21055", thumb, thumb)
+    # openpyxl liest Bilder nur mit Pillow wieder ein – deshalb direkt in die Datei schauen
+    with zipfile.ZipFile(io.BytesIO(client.get("/api/articles/export.xlsx").content)) as z:
+        assert z.read("xl/media/image1.jpeg") == thumb  # unverändert eingebettet
+        drawing = z.read("xl/drawings/drawing1.xml").decode()
+    assert re.search(r"<(\w+:)?col>0</(\w+:)?col>", drawing) and re.search(r"<(\w+:)?row>2</(\w+:)?row>", drawing)  # A3
+    assert articles._jpeg_size(thumb) == (96, 72)
 
 
 # --- Migration ----------------------------------------------------------------------------------
