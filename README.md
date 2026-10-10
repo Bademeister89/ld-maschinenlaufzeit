@@ -26,6 +26,8 @@ spätere Laufzeitauswertungen:
   CSV-Export für Excel.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
+- **Artikel:** je Auftrag und Version ein Artikel mit Rohling, Material- und Fräskosten, EK, VK, Marge
+  und Excel-Export, siehe [Artikel](#artikel-tab-artikel).
 - **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T1000) und Maschine, Werkzeugdaten, Maximallaufzeit mit
   Vorwarnung und roter Meldung, Zurücksetzen beim Werkzeugwechsel, Standzeit-Historie.
 - **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
@@ -97,7 +99,8 @@ Die Konfiguration hat fünf Untertabs:
 
 - **Maschinen:** die Maschinen (siehe unten) und der Fehlersammler
 - **Werkzeuge:** die Werkzeughersteller
-- **Artikel:** die Frist, nach der Aufträge und Felgen abgeschlossen werden, und die Felgen-Designs
+- **Artikel:** die Frist, nach der Aufträge und Felgen abgeschlossen werden, die Materialien (Dichte und
+  Preis je kg, für den Rohling der Artikel) und die Felgen-Designs
 - **System:** Allgemeines (Version, Build, Einstellungen) und die Diagnose-Datei
 - **Versionen:** das Änderungsprotokoll
 
@@ -119,6 +122,8 @@ neueste zuerst. Dazu gehören NC-Fehler und Meldungen der Maschine wie „Puffer
   noch diese Adresse, ist die Verbindung zum Standort weg (etwa das VPN). Die Karte zeigt dann
   „Standort nicht erreichbar“, und die Zeit wird als „Keine Daten“ gebucht statt als „Offline“.
   Ohne Prüfadresse gilt jede nicht erreichbare Steuerung als „Offline“.
+- **Stundensatz in €/h** (optional), z. B. 92,50: Grundlage für den Preis Fräsen im Tab
+  [Artikel](#artikel-tab-artikel).
 - **Werkzeugplätze im Magazin** (optional), z. B. 30 oder 60: Die Werkzeugauswertung markiert dann
   so viele meistgebrauchte Werkzeuge dieser Maschine (siehe [Aufrufe](#werkzeugauswertung-tab-werkzeugauswertung)).
 - **▲ ▼:** Reihenfolge der Karten auf der Live-Seite.
@@ -444,6 +449,70 @@ Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die 
   [Restlaufzeit](#restlaufzeit-und-satzanzahl)). Die Planzeit sortiert dann nur noch Testanläufe aus,
   also Läufe unter 25 % der Planzeit.
 
+## Artikel (Tab „Artikel“)
+
+Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise und Produktionsdaten.
+
+- **Je Auftrag und Version ein Artikel:** `21053`, `21053V1` und `21053V2` sind drei Artikel, weil eine
+  Version eine andere Ausführung des Teils ist. Eine Felge (`10101018`) ist ein Artikel.
+  - Die Artikel entstehen automatisch, sobald eine Version in Läufen oder Planzeiten vorkommt. Die
+    App gleicht beim Öffnen des Tabs ab und stündlich.
+  - **+ Artikel anlegen** (z. B. `21060` oder `21060V1`) legt den Auftrag mit an, falls es ihn noch
+    nicht gibt, ähnlich wie der CAM-Import.
+- **Spalten:**
+
+  | Spalte | Herkunft |
+  |---|---|
+  | Bild, Bezeichnung | aus dem Auftrag |
+  | Material | aus der Materialliste (Konfiguration → Artikel) |
+  | Rohling (Maße) | Block L × B × H oder Rund Ø × L in mm, darunter das Gewicht in kg |
+  | € je kg, Materialpreis | Preis je kg des Materials. Gewicht = Volumen × Dichte (g/cm³ = kg je Liter), Materialpreis = Gewicht × Preis je kg |
+  | Laufzeit je Teil | Summe der Ø-Laufzeiten aller Programme der Version über alle Aufspannungen, ohne Vorrichtung |
+  | Fräsen | je Programm Laufzeit je Teil × Stundensatz seiner Maschine |
+  | Herstellkosten | Material + Fräsen |
+  | EK, VK | von Hand |
+  | Marge | VK − Herstellkosten, dazu in Prozent vom VK |
+  | Stück | fertige Teile (letztes Programm der letzten Aufspannung) |
+  | Gesamtlaufzeit | Laufzeit aller Läufe der Version |
+  | Letzte Produktion | Ende des letzten fertigen Teils |
+
+- **Geschätzte Werte (≈):**
+  - Hat ein Programm noch keine Ø-Zeit, gilt seine CAM-Planzeit.
+  - Lief ein Programm noch nie, gilt der Stundensatz der Maschine aus der Tebis-Doku. Ist die
+    Maschine nicht eindeutig, gilt der Durchschnitt aller Stundensätze.
+- **Mehrere Maschinen:** Lief ein Programm auf mehreren Maschinen, wird der Stundensatz nach Laufzeit
+  gewichtet.
+- **Fehlende Angaben:**
+  - Ohne Stundensatz steht „kein €/h“. Den Satz trägst du unter Konfiguration → Maschinen →
+    Bearbeiten ein.
+  - Fehlt Material oder Fräsen, heißen die Herstellkosten „mind.“, und eine Marge gibt es nicht.
+- **Darstellung:** Ab 1280 px Breite passen alle Spalten ohne Scrollbalken auf den Bildschirm, die
+  Seite nutzt dafür die volle Breite. Schmaler (Tablet, Handy) wird jede Zeile eine Karte.
+- **Direkt in der Zelle bearbeiten, wie in Excel:** Ein Klick auf Material, Rohling, EK oder VK öffnet
+  das Eingabefeld in der Zelle.
+  - **Material:** Auswahl aus der Liste.
+  - **Rohling:** Ein kleines Fenster mit Form und Maßen öffnet sich. Es rechnet Volumen und
+    Materialpreis beim Tippen mit. Alles leeren entfernt den Rohling.
+  - **EK, VK:** Eingabe mit Dezimalkomma.
+  - **Tastatur:**
+    - Enter oder Verlassen der Zelle speichert.
+    - Esc verwirft.
+    - Tab speichert und springt zur nächsten Zelle der Zeile (Material → Rohling → EK → VK).
+- **Bearbeiten-Dialog (✎):**
+  - Felder: Material, Form, Maße, EK, VK und Notiz, alles auf einmal.
+  - Die Artikelnummer selbst öffnet den Auftrag.
+  - „Entfernen“ löscht nur diese Angaben. Hat die Version Läufe oder Planzeiten, erscheint der
+    Artikel gleich wieder, ohne die Angaben. Der Auftrag bleibt.
+  - Wer einen Auftrag löscht, löscht auch seine Artikel.
+- **Materialien:** Die Liste mit Dichte (g/cm³) und Preis je kg pflegst du unter Konfiguration →
+  Artikel, z. B. Alu 7075 mit 2,81 g/cm³. Ein neuer Preis gilt sofort für alle Artikel mit diesem
+  Material. Ohne Dichte gibt es kein Gewicht und keinen Materialpreis.
+- **Excel-Export:** echte .xlsx-Datei mit den gefilterten Artikeln (Status).
+  - Kopfzeile fixiert, Filter, €-Format, Laufzeiten als Stunden:Minuten, Datum
+  - Summenzeile für Stück und Laufzeit
+  - Spalte „Hinweise“ für geschätzte Werte
+  - zweites Blatt „Materialien“
+
 ## Werkzeugauswertung (Tab „Werkzeugauswertung“)
 
 - **Werkzeuge werden automatisch angelegt**, sobald ein Werkzeug an einer Maschine zum ersten Mal in
@@ -613,7 +682,8 @@ andere Werte liefert, wird nur dort angepasst.
 - **`data.db`:** echte Daten. **`demo.db`:** nur für die Simulation; die beiden werden nie gemischt.
 - In der Datenbank stehen die Maschinen (`machines`), Zustandsabschnitte (`state_intervals`),
   Programmdurchläufe (`program_runs`), Ereignisse (`events`: Werkzeugwechsel, NC-Fehlermeldungen,
-  Verbindung auf/ab, Konfigurationsänderungen) und die CAM-Planzeiten (`program_plans`).
+  Verbindung auf/ab, Konfigurationsänderungen), die CAM-Planzeiten (`program_plans`) sowie Artikel
+  (`articles`) und Materialien (`materials`).
 - **Bilder** liegen als Dateien im Datenordner, nicht in der Datenbank; dort steht nur der
   Dateiname:
   - `images/`: Maschinenbilder
@@ -658,6 +728,10 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET /api/events?machine=&from=&to=` | Ereignisse |
 | `GET /api/machines/{id}/errors?days=30` | Fehlersammler: Meldungen der Steuerung, neueste zuerst, und die häufigsten |
 | `GET/PUT /api/config/orders` | Frist bis zum automatischen Abschließen: `{"close_days": 7}`, 0 = nie |
+| `GET /api/articles?status=`, `POST /api/articles` | Artikel mit Kosten und Preisen; anlegen mit `{"key": "21060V1"}` |
+| `PUT/DELETE /api/articles/{key}` | Rohling (Material, Form, Maße), EK, VK, Notiz bzw. diese Angaben entfernen |
+| `GET /api/articles/export.xlsx?status=` | Excel-Export der Artikel |
+| `GET/POST/PUT/DELETE /api/config/materials` | Materialliste: `{"name", "density" (g/cm³), "price_per_kg"}` |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |

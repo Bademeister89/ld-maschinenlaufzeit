@@ -39,6 +39,7 @@ class MachineConfig:
     image: str | None = None
     check_host: str = ""  # Prüfadresse am Standort (z. B. Router vor Ort), optional
     tool_slots: int | None = None  # Werkzeugplätze im Magazin (Top-Werkzeuge nach Aufrufen), optional
+    hourly_rate: float | None = None  # Stundensatz in €/h (Preis Fräsen der Artikel), optional
 
     @property
     def image_url(self) -> str | None:
@@ -56,6 +57,7 @@ class MachineConfig:
             "image_url": self.image_url,
             "check_host": self.check_host,
             "tool_slots": self.tool_slots,
+            "hourly_rate": self.hourly_rate,
         }
 
 

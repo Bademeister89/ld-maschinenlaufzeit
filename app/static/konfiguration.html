@@ -19,6 +19,7 @@
         <a href="./">Live</a>
         <a href="auswertung.html">Auswertung</a>
         <a href="auftraege.html">Aufträge</a>
+        <a href="artikel.html">Artikel</a>
         <a href="werkzeuge.html">Werkzeugauswertung</a>
         <a href="konfiguration.html" aria-current="page">Konfiguration</a>
       </nav>
@@ -100,6 +101,22 @@
         <div id="close-msg" class="form-msg" role="status" hidden></div>
       </section>
 
+      <section class="card section" id="materialien">
+        <div class="section-head">
+          <h2>Materialien</h2>
+          <p class="muted">Für den Rohling der Artikel: Gewicht = Volumen × Dichte, Materialpreis = Gewicht × Preis je kg.
+            Dichte in g/cm³, z. B. Aluminium 2,7–2,85 (7075: 2,81), Stahl 7,85, Messing 8,5.</p>
+        </div>
+        <form id="mt-form" class="mf-add" novalidate>
+          <input type="text" id="mt-name" maxlength="60" autocomplete="off" placeholder="z. B. Alu 7075" aria-label="Neues Material">
+          <input type="text" id="mt-density" class="mt-price" inputmode="decimal" autocomplete="off" placeholder="Dichte g/cm³" aria-label="Dichte in g/cm³">
+          <input type="text" id="mt-price" class="mt-price" inputmode="decimal" autocomplete="off" placeholder="€ je kg" aria-label="Preis je kg in Euro">
+          <button type="submit" class="btn primary">Hinzufügen</button>
+        </form>
+        <div id="mt-error" class="form-error" role="alert" hidden></div>
+        <ul id="mt-list" class="mf-list"></ul>
+      </section>
+
       <section class="card section" id="felgen">
         <div class="section-head">
           <h2>Felgen-Designs</h2>
@@ -178,6 +195,10 @@
         </div>
         <label class="form-field">Standort / Notiz
           <input type="text" id="f-note" maxlength="200" autocomplete="off" placeholder="z. B. Halle 2, Baujahr 2016">
+        </label>
+        <label class="form-field">Stundensatz in €/h (optional)
+          <input type="text" id="f-rate" inputmode="decimal" autocomplete="off" placeholder="z. B. 85 oder 92,50" class="slots-input">
+          <span class="field-hint">Für den Preis Fräsen im Tab Artikel: Laufzeit je Teil × Stundensatz der Maschine.</span>
         </label>
         <label class="form-field">Werkzeugplätze im Magazin (optional)
           <input type="number" id="f-slots" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off" placeholder="z. B. 30" class="slots-input">

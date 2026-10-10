@@ -64,7 +64,13 @@ function renderList() {
           el("div", { class: "name" }, m.name, status?.state ? stateBadge(status.state) : null),
           el("div", {
             class: "sub",
-            text: [`${m.host}:${m.port}`, m.note, m.check_host && `Prüfadresse ${m.check_host}`, m.tool_slots && `${m.tool_slots} Werkzeugplätze`]
+            text: [
+              `${m.host}:${m.port}`,
+              m.note,
+              m.check_host && `Prüfadresse ${m.check_host}`,
+              m.tool_slots && `${m.tool_slots} Werkzeugplätze`,
+              m.hourly_rate != null ? `${eur.format(m.hourly_rate)}/h` : "kein Stundensatz",
+            ]
               .filter(Boolean)
               .join(" · "),
           }),
@@ -103,6 +109,115 @@ function renderSettings(s) {
     item("Oberfläche", `${s.listen_host === "0.0.0.0" ? "im Netzwerk erreichbar" : "nur lokal"}, Port ${s.port}`),
   );
   $("settings-note").textContent = `Diese Werte stehen in ${s.config_path}. Nach einer Änderung die App neu starten.`;
+}
+
+// --- Materialien (Rohling der Artikel) ----------------------------------------------------------
+
+const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const dens = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 });
+let materials = [];
+let editingMaterial = null; // id des Materials, das gerade geändert wird
+
+function setMaterialError(message) {
+  $("mt-error").textContent = message ?? "";
+  $("mt-error").hidden = !message;
+}
+
+async function loadMaterials() {
+  materials = (await api("/api/config/materials")).materials;
+  renderMaterials();
+}
+
+function materialRow(m) {
+  const usage = m.articles === 1 ? "1 Artikel" : m.articles ? `${m.articles} Artikel` : "noch kein Artikel";
+  if (editingMaterial === m.id) {
+    const name = el("input", { type: "text", maxlength: "60", value: m.name, "aria-label": "Name des Materials" });
+    const decimal = (v) => (v != null ? String(v).replace(".", ",") : "");
+    const density = el("input", {
+      type: "text",
+      class: "mt-price",
+      inputmode: "decimal",
+      value: decimal(m.density),
+      placeholder: "g/cm³",
+      "aria-label": "Dichte in g/cm³",
+    });
+    const price = el("input", {
+      type: "text",
+      class: "mt-price",
+      inputmode: "decimal",
+      value: decimal(m.price_per_kg),
+      placeholder: "€ je kg",
+      "aria-label": "Preis je kg",
+    });
+    queueMicrotask(() => density.focus());
+    return el(
+      "li",
+      {},
+      el(
+        "form",
+        { class: "mf-rename", onsubmit: (e) => (e.preventDefault(), saveMaterial(m.id, name.value, density.value, price.value)) },
+        name,
+        density,
+        price,
+        el("button", { type: "submit", class: "btn primary", text: "Speichern" }),
+        el("button", { type: "button", class: "btn", onclick: () => ((editingMaterial = null), renderMaterials()), text: "Abbrechen" }),
+      ),
+    );
+  }
+  return el(
+    "li",
+    {},
+    el("span", { class: "mf-name", text: m.name }),
+    el("span", { class: "num mt-price-label", text: m.density != null ? `${dens.format(m.density)} g/cm³` : "keine Dichte" }),
+    el("span", { class: "num mt-price-label", text: m.price_per_kg != null ? `${eur.format(m.price_per_kg)} je kg` : "kein Preis" }),
+    el("span", { class: "muted mf-usage", text: usage }),
+    el(
+      "span",
+      { class: "mf-actions" },
+      el("button", { type: "button", class: "btn", onclick: () => ((editingMaterial = m.id), setMaterialError(null), renderMaterials()), text: "Ändern" }),
+      el("button", { type: "button", class: "btn danger", onclick: () => removeMaterial(m), text: "Entfernen" }),
+    ),
+  );
+}
+
+function renderMaterials() {
+  $("mt-list").replaceChildren(
+    ...(materials.length ? materials.map(materialRow) : [el("li", { class: "empty", text: "Noch keine Materialien – oben Name, Dichte und Preis je kg eintragen." })]),
+  );
+}
+
+async function addMaterial(e) {
+  e.preventDefault();
+  try {
+    await send("POST", "/api/config/materials", { name: $("mt-name").value, density: $("mt-density").value, price_per_kg: $("mt-price").value });
+    $("mt-name").value = $("mt-density").value = $("mt-price").value = "";
+    setMaterialError(null);
+    await loadMaterials();
+  } catch (err) {
+    setMaterialError(err.message);
+  }
+}
+
+async function saveMaterial(id, name, density, price) {
+  try {
+    await send("PUT", `/api/config/materials/${id}`, { name, density, price_per_kg: price });
+    editingMaterial = null;
+    setMaterialError(null);
+    await loadMaterials();
+  } catch (err) {
+    setMaterialError(err.message);
+  }
+}
+
+async function removeMaterial(m) {
+  const used = m.articles ? `\n\n${m.articles} Artikel verlieren damit ihr Material (die Maße bleiben).` : "";
+  if (!confirm(`Material „${m.name}“ entfernen?${used}`)) return;
+  try {
+    await send("DELETE", `/api/config/materials/${m.id}`);
+    await loadMaterials();
+  } catch (err) {
+    setMaterialError(err.message);
+  }
 }
 
 // --- Felgen-Designs (Ziffern 3–4 der Felgennummer) ----------------------------------------
@@ -449,6 +564,7 @@ function openEditor(m = null) {
   $("f-note").value = m?.note ?? "";
   $("f-check").value = m?.check_host ?? "";
   $("f-slots").value = m?.tool_slots ?? "";
+  $("f-rate").value = m?.hourly_rate != null ? String(m.hourly_rate).replace(".", ",") : "";
   $("img-input").value = "";
   $("f-probe").replaceChildren();
   setError(null);
@@ -467,6 +583,7 @@ async function save(event) {
     note: $("f-note").value.trim(),
     check_host: $("f-check").value.trim(),
     tool_slots: $("f-slots").value.trim() || null,
+    hourly_rate: $("f-rate").value.trim() || null,
   };
   const button = $("f-save");
   button.disabled = true;
@@ -495,7 +612,7 @@ async function save(event) {
 
 const TABS = ["maschinen", "werkzeuge", "artikel", "system", "versionen"];
 // Ältere Links (#hersteller, #felgen …) führen zum passenden Reiter und Abschnitt
-const ANCHORS = { hersteller: "werkzeuge", felgen: "artikel", allgemein: "system", diagnose: "system", fehler: "maschinen" };
+const ANCHORS = { hersteller: "werkzeuge", felgen: "artikel", materialien: "artikel", allgemein: "system", diagnose: "system", fehler: "maschinen" };
 
 function tabFromHash() {
   const id = location.hash.slice(1);
@@ -715,11 +832,12 @@ async function main() {
   $("mf-form").addEventListener("submit", addManufacturer);
   $("rd-form").addEventListener("submit", addDesign);
   $("close-form").addEventListener("submit", saveCloseDays);
+  $("mt-form").addEventListener("submit", addMaterial);
   setupTabs();
   setupErrors();
   const { tab, anchor } = tabFromHash();
   showTab(tab);
-  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns(), loadCloseDays()]);
+  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns(), loadCloseDays(), loadMaterials()]);
   renderErrorMachines();
   // Erst nach dem Laden springen, die Liste darüber wächst noch
   showTab(tab, { anchor });

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Artikel</title>
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1a1a19">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner wide">
+      <div class="brand"><img class="brand-icon" src="icons/icon.svg" alt="" width="24" height="24">LD-Machine-Viewer</div>
+      <nav class="nav" aria-label="Seiten">
+        <a href="./">Live</a>
+        <a href="auswertung.html">Auswertung</a>
+        <a href="auftraege.html">Aufträge</a>
+        <a href="artikel.html" aria-current="page">Artikel</a>
+        <a href="werkzeuge.html">Werkzeugauswertung</a>
+        <a href="konfiguration.html">Konfiguration</a>
+      </nav>
+      <div class="topbar-status">
+        <span id="sim" class="sim-badge" hidden>Simulation – keine echten Maschinendaten</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wide">
+    <div id="banner" class="banner error" hidden></div>
+    <div id="notice" class="banner info" role="status" hidden></div>
+
+    <div class="card filters" role="group" aria-label="Filter">
+      <div class="segmented" id="status" role="group" aria-label="Status">
+        <button type="button" data-status="open">Offen</button>
+        <button type="button" data-status="closed">Abgeschlossen</button>
+        <button type="button" data-status="all">Alle</button>
+      </div>
+      <div class="segmented" id="kind" role="group" aria-label="Art">
+        <button type="button" data-kind="all">Alle</button>
+        <button type="button" data-kind="order">Aufträge</button>
+        <button type="button" data-kind="rim">Felgen</button>
+      </div>
+      <label class="field">Suche
+        <input type="search" id="search" placeholder="Artikel, Bezeichnung oder Material" autocomplete="off">
+      </label>
+      <span class="spacer"></span>
+      <span class="muted" id="count"></span>
+      <button type="button" class="btn" id="add">+ Artikel anlegen</button>
+      <a class="btn primary" id="export" href="/api/articles/export.xlsx" download>Excel-Export</a>
+    </div>
+
+    <section class="section card">
+      <div class="section-head">
+        <h2>Artikel</h2>
+        <p class="muted">Je Auftrag und Version ein Artikel (21053, 21053V1 …), je Felge einer – automatisch aus
+          den erfassten Programmen. Rohling, EK, VK und Notiz über „Bearbeiten“. Laufzeit je Teil = Summe der
+          Ø-Laufzeiten aller Aufspannungen; Fräsen = Laufzeit × Stundensatz der Maschine.</p>
+      </div>
+      <div id="articles"></div>
+    </section>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="editor-form" novalidate>
+      <header><h2 id="editor-title">Artikel bearbeiten</h2></header>
+      <div class="form-body">
+        <p class="muted" id="f-info" style="margin: 0"></p>
+        <fieldset class="form-group">
+          <legend>Rohling</legend>
+          <div class="form-row two">
+            <label class="form-field">Material
+              <select id="f-material"></select>
+              <a class="field-hint" href="konfiguration.html#materialien">Materialien verwalten</a>
+            </label>
+            <label class="form-field">Form
+              <select id="f-shape">
+                <option value="">—</option>
+                <option value="block">Block (L × B × H)</option>
+                <option value="round">Rund (Ø × L)</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row three" id="f-dims">
+            <label class="form-field"><span id="l-a">Länge (mm)</span>
+              <input type="text" id="f-a" inputmode="decimal" autocomplete="off">
+            </label>
+            <label class="form-field"><span id="l-b">Breite (mm)</span>
+              <input type="text" id="f-b" inputmode="decimal" autocomplete="off">
+            </label>
+            <label class="form-field" id="w-c"><span id="l-c">Höhe (mm)</span>
+              <input type="text" id="f-c" inputmode="decimal" autocomplete="off">
+            </label>
+          </div>
+          <span class="field-hint" id="f-preview" aria-live="polite"></span>
+        </fieldset>
+        <fieldset class="form-group">
+          <legend>Preise</legend>
+          <div class="form-row two">
+            <label class="form-field">Preis EK (€)
+              <input type="text" id="f-ek" inputmode="decimal" autocomplete="off" placeholder="z. B. 120,00">
+            </label>
+            <label class="form-field">Preis VK (€)
+              <input type="text" id="f-vk" inputmode="decimal" autocomplete="off" placeholder="z. B. 249,00">
+            </label>
+          </div>
+          <span class="field-hint" id="f-costs"></span>
+        </fieldset>
+        <label class="form-field">Notiz (optional)
+          <input type="text" id="f-note" maxlength="500" autocomplete="off" placeholder="z. B. Kunde, Zeichnungsstand">
+        </label>
+        <div id="f-error" class="form-error" role="alert" hidden></div>
+      </div>
+      <footer>
+        <button type="button" class="btn danger" id="f-delete">Entfernen</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="f-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary" id="f-save">Speichern</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="adder" aria-labelledby="adder-title">
+    <form id="adder-form" novalidate>
+      <header><h2 id="adder-title">Artikel anlegen</h2></header>
+      <div class="form-body">
+        <label class="form-field">Artikelnummer
+          <input type="text" id="a-key" maxlength="12" autocomplete="off" placeholder="z. B. 21060, 21060V1 oder 10101018" required>
+          <span class="field-hint">Version mit V dahinter (21060V1), Felgen mit der achtstelligen Nummer. Gibt es den Auftrag
+            noch nicht, wird er mit angelegt.</span>
+        </label>
+        <div id="a-error" class="form-error" role="alert" hidden></div>
+      </div>
+      <footer>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="a-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary">Anlegen</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script type="module" src="artikel.js"></script>
+</body>
+</html>

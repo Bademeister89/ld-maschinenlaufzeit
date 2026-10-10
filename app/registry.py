@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 TOOL_SLOTS_MAX = 1000  # wie der Nummernkreis der Werkzeuge
+HOURLY_RATE_MAX = 10_000.0  # €/h
 _HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 AdapterFactory = Callable[[MachineConfig], MachineAdapter]
@@ -81,7 +82,21 @@ def validate_machine(data: dict[str, Any]) -> dict[str, Any]:
         "note": note,
         "check_host": check_host,
         "tool_slots": _tool_slots(data.get("tool_slots")),
+        "hourly_rate": _hourly_rate(data.get("hourly_rate")),
     }
+
+
+def _hourly_rate(value: Any) -> float | None:
+    """Stundensatz in €/h mit Dezimalkomma, leer = keine Angabe."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        rate = float(str(value).strip().replace(".", "").replace(",", ".") if "," in str(value) else str(value).strip())
+    except ValueError:
+        rate = -1.0
+    if not 0 <= rate <= HOURLY_RATE_MAX:
+        raise ConfigError("Stundensatz: bitte einen Betrag in €/h eintragen, z. B. 85 oder 92,50, oder leer lassen.")
+    return round(rate, 2)
 
 
 def _tool_slots(value: Any) -> int | None:
@@ -137,6 +152,7 @@ class MachineManager:
             image=row["image"],
             check_host=row["check_host"],
             tool_slots=row["tool_slots"],
+            hourly_rate=row["hourly_rate"],
         )
 
     def machines(self) -> list[MachineConfig]:

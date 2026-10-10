@@ -10,6 +10,53 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.24.0] – 2026-10-10
+
+### Neu
+- **Tab „Artikel“:** Je Auftrag und Version gibt es einen Artikel (21053, 21053V1, 21053V2 …), je
+  Felge einen.
+  - Die Artikel entstehen automatisch aus den erfassten Programmen und Planzeiten.
+  - Umgekehrt legt „+ Artikel anlegen“ (z. B. `21060V1`) den Auftrag mit an.
+  - **Spalten:**
+    - Bild, Artikel, Bezeichnung
+    - Material, Rohling (Maße mit Gewicht), Preis je kg, Materialpreis
+    - Laufzeit je Teil, Preis Fräsen, Herstellkosten
+    - EK, VK, Marge
+    - Stück produziert, Gesamtlaufzeit, letzte Produktion
+  - **Rohling:** Material aus einer Liste und Maße, als Block L × B × H oder Rund Ø × L in mm.
+    - Gewicht = Volumen × Dichte des Materials, Materialpreis = Gewicht × Preis je kg.
+  - **Preis Fräsen:** Laufzeit je Teil (alle Aufspannungen, ohne Vorrichtung) × Stundensatz der
+    Maschine.
+    - Lief ein Programm auf mehreren Maschinen, wird der Stundensatz nach Laufzeit gewichtet.
+    - Hat ein Programm noch keine Ø-Zeit, gilt die CAM-Planzeit. Der Wert ist dann mit „≈“ markiert.
+  - **Herstellkosten** = Material + Fräsen, **Marge** = VK − Herstellkosten.
+    - EK, VK und eine Notiz trägst du im Dialog „Bearbeiten“ ein.
+  - **Excel-Export** als echte .xlsx-Datei:
+    - Kopfzeile fixiert, mit Filter
+    - €-, Zeit- und Datumsformate
+    - Summenzeile
+    - zweites Blatt mit der Materialliste
+  - **Alle Spalten ohne Scrollbalken:** Die Seite nutzt die volle Bildschirmbreite. Die
+    Bezeichnung steht unter der Artikelnummer, Maße und Marge in % stehen zweizeilig.
+  - **Direkt in der Zelle bearbeiten wie in Excel:**
+    - Material öffnet eine Auswahl. Rohling öffnet ein kleines Fenster mit Form und Maßen, das
+      Volumen und Materialpreis beim Tippen mitrechnet. EK und VK sind Eingabefelder.
+    - Enter oder Verlassen speichert, Esc verwirft, Tab springt zur nächsten Zelle der Zeile.
+    - Die Notiz und alles auf einmal gibt es weiter über ✎.
+  - Unter 1280 px Breite (Tablet, Handy) wird jede Zeile eine Karte, ebenfalls ohne Scrollbalken.
+- **Stundensatz je Maschine** (Konfiguration → Maschinen → Bearbeiten).
+- **Spaltenköpfe kräftiger:** In allen Tabellen der App sind die Spaltenbezeichnungen jetzt fett,
+  dunkler und leicht hinterlegt.
+- **Materialliste mit Dichte (g/cm³) und Preis je kg** (Konfiguration → Artikel).
+
+### Behoben
+- Ein ausgeblendeter Hinweisbalken erschien als leerer Streifen, z. B. im Tab Aufträge.
+
+### Geändert
+- **Neue Bibliothek `openpyxl`** für den Excel-Export. Docker-Image und portable Version bringen sie mit.
+- **Datenbank-Schema 17:** neue Tabellen `articles` und `materials` sowie die Spalte
+  `machines.hourly_rate`. Alles wird beim Start automatisch angelegt.
+
 ## [1.23.0] – 2026-10-10
 
 ### Neu

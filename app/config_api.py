@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
-from . import BUILD, __version__, orders
+from . import BUILD, __version__, articles, orders
 from .config import DEFAULT_CONFIG, IS_PORTABLE
 from .probe import run_probe
 from .registry import MAX_IMAGE_BYTES, ConfigError, MachineManager, MachineNotFound, validate_machine
@@ -178,6 +178,49 @@ def delete_manufacturer(request: Request, manufacturer_id: int) -> Response:
 # Ziffern 3–4 der Felgennummer (z. B. 10 in 10101018) → Name des Designs (999, Z06 …)
 
 RIM_DESIGN_MAX = 40
+
+
+# --- Materialien (Rohling der Artikel: Dichte und Preis je kg) -------------------------------------
+
+
+@router.get("/materials")
+def list_materials(request: Request) -> dict[str, Any]:
+    return {"materials": _ctx(request).db.materials()}
+
+
+@router.post("/materials", status_code=201)
+def add_material(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    db = _ctx(request).db
+    try:
+        name, density, price = articles.validate_material(payload)
+    except articles.ArticleError as exc:
+        raise HTTPException(400, str(exc)) from None
+    if any(m["name"].lower() == name.lower() for m in db.materials()):
+        raise HTTPException(409, f"„{name}“ steht schon in der Liste.")
+    material_id = db.add_material(name, density, price, time.time())
+    return {"id": material_id, "name": name, "density": density, "price_per_kg": price}
+
+
+@router.put("/materials/{material_id}")
+def update_material(request: Request, material_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    db = _ctx(request).db
+    if db.material(material_id) is None:
+        raise HTTPException(404, "Unbekanntes Material")
+    try:
+        name, density, price = articles.validate_material(payload)
+    except articles.ArticleError as exc:
+        raise HTTPException(400, str(exc)) from None
+    if any(m["name"].lower() == name.lower() and m["id"] != material_id for m in db.materials()):
+        raise HTTPException(409, f"„{name}“ steht schon in der Liste.")
+    db.update_material(material_id, name, density, price)
+    return {"id": material_id, "name": name, "density": density, "price_per_kg": price}
+
+
+@router.delete("/materials/{material_id}", status_code=204)
+def delete_material(request: Request, material_id: int) -> Response:
+    if not _ctx(request).db.delete_material(material_id):
+        raise HTTPException(404, "Unbekanntes Material")
+    return Response(status_code=204)
 
 
 @router.get("/orders")

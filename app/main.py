@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import BUILD, __version__, api, config_api, orders, orders_api, tools_api
+from . import BUILD, __version__, api, articles, articles_api, config_api, orders, orders_api, tools_api
 from .adapters.base import MachineAdapter
 from .adapters.lsv2_adapter import Lsv2Adapter
 from .adapters.sim_adapter import SimAdapter, SimulatedMachine
@@ -119,10 +119,12 @@ def setup_file_logging(settings: Settings) -> None:
 
 
 async def _housekeeping(db: Database) -> None:
-    """Stündlich: Aufträge ohne Programmlauf seit 7 Tagen abschließen."""
+    """Stündlich: Aufträge ohne Programmlauf abschließen (Frist aus der Konfiguration) und neue
+    Versionen als Artikel anlegen."""
     while True:
         try:
             await asyncio.to_thread(orders.close_idle, db, time.time())
+            await asyncio.to_thread(articles.sync, db)  # neue Versionen → Artikel
         except Exception:
             log.exception("Aufträge automatisch abschließen fehlgeschlagen")
         await asyncio.sleep(HOUSEKEEPING_S)
@@ -159,6 +161,7 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
     app.include_router(api.router)
     app.include_router(config_api.router)
     app.include_router(orders_api.router)
+    app.include_router(articles_api.router)
     app.include_router(tools_api.router)
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

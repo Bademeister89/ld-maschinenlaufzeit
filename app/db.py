@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS machines (
     image      TEXT,
     removed    INTEGER NOT NULL DEFAULT 0,
     check_host TEXT NOT NULL DEFAULT '',
-    tool_slots INTEGER
+    tool_slots INTEGER,
+    hourly_rate REAL
 );
 CREATE TABLE IF NOT EXISTS program_runs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,6 +170,30 @@ CREATE TABLE IF NOT EXISTS setup_images (
     updated_at REAL NOT NULL,
     PRIMARY KEY (order_key, version, setup)
 );
+CREATE TABLE IF NOT EXISTS materials (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    density      REAL,
+    price_per_kg REAL,
+    created_at   REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS articles (
+    key         TEXT PRIMARY KEY,
+    order_key   TEXT NOT NULL,
+    version     TEXT NOT NULL DEFAULT '',
+    material_id INTEGER REFERENCES materials(id) ON DELETE SET NULL,
+    shape       TEXT,
+    dim_a       REAL,
+    dim_b       REAL,
+    dim_c       REAL,
+    price_ek    REAL,
+    price_vk    REAL,
+    note        TEXT NOT NULL DEFAULT '',
+    manual      INTEGER NOT NULL DEFAULT 0,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_articles_order ON articles(order_key);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -205,6 +230,7 @@ class Database:
             ("removed", "INTEGER NOT NULL DEFAULT 0"),
             ("check_host", "TEXT NOT NULL DEFAULT ''"),
             ("tool_slots", "INTEGER"),
+            ("hourly_rate", "REAL"),  # v16 → v17: Stundensatz (Preis Fräsen der Artikel)
         ):
             if name not in columns:
                 self._con.execute(f"ALTER TABLE machines ADD COLUMN {name} {ddl}")
@@ -284,6 +310,13 @@ class Database:
             self._con.execute("UPDATE program_files SET size = NULL, mtime = NULL WHERE UPPER(path) LIKE '%.P'")
             self.set_meta("pallet_tables_reread", "1")
         # v15 → v16: Bild je Aufspannung. Die Tabelle setup_images kommt über SCHEMA.
+        # v16 → v17: Artikel und Materialien (Tabellen über SCHEMA), Stundensatz je Maschine (oben).
+        # Materialien werden je kg eingekauft: Dichte (g/cm³) und Preis je kg (eine frühe Entwicklungs-
+        # fassung hatte nur einen Preis je Liter).
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(materials)")}
+        for name in ("density", "price_per_kg"):
+            if name not in columns:
+                self._con.execute(f"ALTER TABLE materials ADD COLUMN {name} REAL")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def _merge_orders(self, pattern: str) -> None:
@@ -376,7 +409,7 @@ class Database:
 
     # --- Maschinen -----------------------------------------------------------------
 
-    _MACHINE_COLUMNS = "id, name, host, port, note, sort_order, image, removed, check_host, tool_slots"
+    _MACHINE_COLUMNS = "id, name, host, port, note, sort_order, image, removed, check_host, tool_slots, hourly_rate"
 
     def ensure_machine(self, machine_id: str, name: str, host: str, port: int) -> None:
         """Maschine anlegen, falls es sie noch nicht gibt (bestehende Einträge bleiben unverändert)."""
@@ -403,20 +436,22 @@ class Database:
         sort_order: int = 0,
         check_host: str = "",
         tool_slots: int | None = None,
+        hourly_rate: float | None = None,
     ) -> None:
         self._execute(
-            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host, tool_slots) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (machine_id, name, host, port, note, sort_order, check_host, tool_slots),
+            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host, tool_slots, hourly_rate) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (machine_id, name, host, port, note, sort_order, check_host, tool_slots, hourly_rate),
         )
 
     def update_machine(
         self, machine_id: str, name: str, host: str, port: int, note: str, check_host: str = "",
-        tool_slots: int | None = None,
+        tool_slots: int | None = None, hourly_rate: float | None = None,
     ) -> None:
         self._execute(
-            "UPDATE machines SET name = ?, host = ?, port = ?, note = ?, check_host = ?, tool_slots = ? WHERE id = ?",
-            (name, host, port, note, check_host, tool_slots, machine_id),
+            "UPDATE machines SET name = ?, host = ?, port = ?, note = ?, check_host = ?, tool_slots = ?, "
+            "hourly_rate = ? WHERE id = ?",
+            (name, host, port, note, check_host, tool_slots, hourly_rate, machine_id),
         )
 
     def set_machine_order(self, machine_ids: list[str]) -> None:
@@ -632,6 +667,7 @@ class Database:
         with self.transaction():
             self._execute("DELETE FROM program_plans WHERE order_key = ?", (key,))
             self._execute("DELETE FROM setup_images WHERE order_key = ?", (key,))
+            self._execute("DELETE FROM articles WHERE order_key = ?", (key,))
             self._execute("DELETE FROM orders WHERE key = ?", (key,))
 
     def set_order_image(self, key: str, image: str | None) -> None:
@@ -930,6 +966,92 @@ class Database:
 
     def set_order_title_if_empty(self, key: str, title: str) -> bool:
         return self._execute("UPDATE orders SET title = ? WHERE key = ? AND title = ''", (title, key)).rowcount > 0
+
+    # --- Artikel und Materialien ------------------------------------------------------------
+
+    def materials(self) -> list[dict[str, Any]]:
+        """Materialliste mit Dichte, Preis je kg und der Zahl der Artikel, die es verwenden."""
+        return self._query(
+            "SELECT m.id, m.name, m.density, m.price_per_kg, "
+            "(SELECT COUNT(*) FROM articles a WHERE a.material_id = m.id) "
+            "AS articles FROM materials m ORDER BY m.name COLLATE NOCASE"
+        )
+
+    def material(self, material_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT id, name, density, price_per_kg FROM materials WHERE id = ?", (material_id,))
+        return rows[0] if rows else None
+
+    def add_material(self, name: str, density: float | None, price_per_kg: float | None, t: float) -> int:
+        return self._execute(
+            "INSERT INTO materials(name, density, price_per_kg, created_at) VALUES (?, ?, ?, ?)",
+            (name, density, price_per_kg, t),
+        ).lastrowid
+
+    def update_material(self, material_id: int, name: str, density: float | None, price_per_kg: float | None) -> bool:
+        return self._execute(
+            "UPDATE materials SET name = ?, density = ?, price_per_kg = ? WHERE id = ?",
+            (name, density, price_per_kg, material_id),
+        ).rowcount > 0
+
+    def delete_material(self, material_id: int) -> bool:
+        """Material entfernen; Artikel damit behalten ihre Maße, aber kein Material mehr."""
+        with self.transaction():
+            self._execute("UPDATE articles SET material_id = NULL WHERE material_id = ?", (material_id,))
+            return self._execute("DELETE FROM materials WHERE id = ?", (material_id,)).rowcount > 0
+
+    _ARTICLE_COLUMNS = (
+        "key, order_key, version, material_id, shape, dim_a, dim_b, dim_c, price_ek, price_vk, note, manual, "
+        "created_at, updated_at"
+    )
+
+    def articles(self) -> list[dict[str, Any]]:
+        return self._query(f"SELECT {self._ARTICLE_COLUMNS} FROM articles ORDER BY order_key, version")
+
+    def article(self, key: str) -> dict[str, Any] | None:
+        rows = self._query(f"SELECT {self._ARTICLE_COLUMNS} FROM articles WHERE key = ?", (key,))
+        return rows[0] if rows else None
+
+    def ensure_article(self, key: str, order_key: str, version: str, t: float, manual: bool = False) -> bool:
+        """Artikel anlegen, falls neu; True = neu angelegt."""
+        return self._execute(
+            "INSERT INTO articles(key, order_key, version, manual, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(key) DO NOTHING",
+            (key, order_key, version, int(manual), t, t),
+        ).rowcount > 0
+
+    def update_article(self, key: str, fields: dict[str, Any], t: float) -> None:
+        names = ("material_id", "shape", "dim_a", "dim_b", "dim_c", "price_ek", "price_vk", "note")
+        assignments = ", ".join(f"{n} = ?" for n in names)
+        self._execute(
+            f"UPDATE articles SET {assignments}, updated_at = ? WHERE key = ?",
+            (*(fields[n] for n in names), t, key),
+        )
+
+    def delete_article(self, key: str) -> bool:
+        return self._execute("DELETE FROM articles WHERE key = ?", (key,)).rowcount > 0
+
+    def order_versions(self) -> list[dict[str, Any]]:
+        """Programme je Auftrag aus Läufen und Planzeiten (für den Abgleich der Artikel)."""
+        return self._query(
+            "SELECT DISTINCT order_key, program FROM program_runs WHERE order_key IS NOT NULL "
+            "UNION SELECT DISTINCT order_key, program FROM program_plans"
+        )
+
+    def last_finished(self, order_key: str) -> list[dict[str, Any]]:
+        """Ende des letzten fertigen Laufs je Programm eines Auftrags."""
+        return self._query(
+            "SELECT program, MAX(ended_at) AS last FROM program_runs WHERE order_key = ? AND result = 'finished' "
+            "GROUP BY program",
+            (order_key,),
+        )
+
+    def machine_run_time(self, order_key: str) -> list[dict[str, Any]]:
+        """Laufzeit je Programm und Maschine eines Auftrags (für den gewichteten Stundensatz)."""
+        return self._query(
+            f"SELECT i.program, i.machine_id, SUM({_END} - i.started_at) AS seconds FROM state_intervals i "
+            "WHERE i.order_key = ? AND i.run_id IS NOT NULL AND i.state = 'RUNNING' GROUP BY i.program, i.machine_id",
+            (order_key,),
+        )
 
     # --- Felgen-Designs (Namen zu den Ziffern 3–4 der Felgennummer) ------------------------
 
