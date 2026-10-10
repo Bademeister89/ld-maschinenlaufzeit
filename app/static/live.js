@@ -306,8 +306,28 @@ function palletMarker(m, now) {
   );
 }
 
+/** Zeitraum einer Palette: fertig „16:49–17:12 Uhr“, laufend „seit 16:49 · bis ca. 18:05 Uhr“,
+ *  offen „bis ca. 19:30 Uhr“ (bzw. „frühestens“, wenn davor die Zeit eines Auftragsprogramms fehlt). */
+function palletWhen(g, cur, entries, now) {
+  if (g.status === "skipped") return null;
+  const own = g.entries.filter((e) => e.status !== "skipped");
+  const last = own.at(-1);
+  const start = own.find((e) => e.started_at != null)?.started_at ?? null;
+  if (g.status === "done") {
+    if (last?.until == null) return null;
+    return start != null ? `${fmtTime(start)}–${fmtTime(last.until)} Uhr` : `fertig ${fmtTime(last.until)} Uhr`;
+  }
+  const parts = [];
+  if (g === cur?.group && cur.since != null) parts.push(`seit ${fmtTime(cur.since)}`);
+  if (last?.until != null) {
+    const before = entries.slice(0, entries.indexOf(last) + 1).filter((e) => e.status === "current" || e.status === "pending");
+    parts.push(`bis ${lacksOrderTime(before) ? "frühestens" : "ca."} ${fmtEta(last.until, now)}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /** Welche Programme das Palettenprogramm nacheinander abarbeitet, mit erwarteter Zeit und Restzeit. */
-function palletBlock(m) {
+function palletBlock(m, now) {
   const p = m.pallet;
   if (!p) return null;
   const groups = palletGroups(p.entries);
@@ -364,7 +384,7 @@ function palletBlock(m) {
             "span",
             { class: "pal-time num" },
             g.status === "skipped" ? "gesperrt" : expectedText(g.entries),
-            g === cur?.group && cur.since != null ? el("span", { class: "pal-since", text: `seit ${fmtTime(cur.since)} Uhr` }) : null,
+            ((when) => (when ? el("span", { class: "pal-since", text: when }) : null))(palletWhen(g, cur, p.entries, now)),
           ),
         ),
       ),
@@ -373,17 +393,22 @@ function palletBlock(m) {
   );
 }
 
-/** Großer Statusbalken: Symbol + Zustand, rechts wie lange schon. */
+const STREAK_KIND = { run: "Lauf", stop: "Stopp", idle: "Pause" };
+
+/** Großer Statusbalken: Symbol + Zustand, rechts wie lange schon. Läuft die Produktion (auch über
+ *  NC-Stopps, Palettenwechsel und kurze Pausen hinweg), steht dort die Produktionszeit – und unten
+ *  ein Zeitstreifen: hell = Lauf, gelb = Stopp, Lücke = Pause. Erst 15 min Pause beginnen von vorn. */
 function statusBand(m, now) {
   if (!m.state) {
     return el("div", { class: "mc-status pending" }, el("span", { class: "mc-status-label", text: "Verbinde …" }));
   }
+  const s = m.streak;
   return el(
     "div",
-    { class: `mc-status st-${m.state}` },
+    { class: `mc-status st-${m.state}${s ? " has-streak" : ""}` },
     el("span", { class: "mc-status-icon", "aria-hidden": "true", text: stateIcon(m.state) }),
     el("span", { class: "mc-status-label", text: stateLabel(m.state) }),
-    m.state_since != null
+    s ? streakTime(m, s, now) : m.state_since != null
       ? el(
           "span",
           { class: "mc-status-time" },
@@ -391,6 +416,48 @@ function statusBand(m, now) {
           el("span", { class: "mc-status-since num", text: `seit ${fmtTime(m.state_since)} Uhr` }),
         )
       : null,
+    s ? streakBar(s, now) : null,
+  );
+}
+
+function streakTime(m, s, now) {
+  const breaks = s.stop_s + s.idle_s;
+  // Gerade nicht im Lauf (Stopp, kurze Pause): wie lange schon – der Rest bleibt stehen
+  const pause = m.state !== "RUNNING" && m.state_since != null
+    ? `${stateLabel(m.state)} seit ${fmtDuration(now - m.state_since)}`
+    : breaks >= 60 ? `davon ${fmtDuration(breaks)} Stopps/Pausen` : null;
+  return el(
+    "span",
+    { class: "mc-status-time" },
+    el("span", { class: "mc-status-duration num", text: fmtDuration(now - s.since) }),
+    el("span", { class: "mc-status-since num", text: `in Produktion seit ${fmtEta(s.since, now)}` }),
+    pause ? el("span", { class: "mc-status-pause num", text: pause }) : null,
+  );
+}
+
+function streakBar(s, now) {
+  const total = Math.max(now - s.since, 1);
+  const summary = [
+    `Produktion seit ${fmtEta(s.since, now)}`,
+    `Lauf ${fmtDuration(s.run_s)}`,
+    s.stop_s >= 1 ? `Stopps ${fmtDuration(s.stop_s)}` : null,
+    s.idle_s >= 1 ? `Pausen ${fmtDuration(s.idle_s)}` : null,
+  ].filter(Boolean).join(" · ");
+  return el(
+    "div",
+    { class: "streak-bar", role: "img", "aria-label": summary, title: summary },
+    s.segments
+      .filter((seg) => seg.kind !== "idle")
+      .map((seg) =>
+        el("span", {
+          class: `streak-seg ${seg.kind}`,
+          title: `${STREAK_KIND[seg.kind]} ${fmtTime(seg.start)}–${fmtTime(Math.min(seg.end, now))} Uhr (${fmtDuration(Math.min(seg.end, now) - seg.start)})`,
+          style: {
+            left: `${((seg.start - s.since) / total) * 100}%`,
+            width: `max(2px, ${((Math.min(seg.end, now) - seg.start) / total) * 100}%)`,
+          },
+        }),
+      ),
   );
 }
 
@@ -495,7 +562,7 @@ function renderLive(m, now) {
     if (m.errors.length) {
       parts.push(el("ul", { class: "errors" }, m.errors.map((text) => el("li", { text }))));
     }
-    parts.push(palletBlock(m));
+    parts.push(palletBlock(m, now));
   }
   // Leere Bausteine (z. B. kein Fortschritt ohne laufendes Programm) auslassen – sonst stünde „null“ da
   c.live.replaceChildren(...parts.filter(Boolean));

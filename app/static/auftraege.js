@@ -58,6 +58,7 @@ const orderTitle = (o) => (isRim(o) ? `Felge ${o.rim?.design_name ?? o.number}` 
 const orderSub = (o) => (isRim(o) ? `${o.rim?.kind_name ?? ""} · ${o.rim?.size ?? o.key}` : (o.versions ?? []).join(", "));
 const partWord = (o) => (isRim(o) ? "Felge" : "Teil");
 const setupWord = (o) => (isRim(o) ? "Spannung" : "Aufspannung");
+const partsWord = (o, n) => (isRim(o) ? (n === 1 ? "Felge" : "Felgen") : n === 1 ? "Teil" : "Teile");
 const COUNT_WORDS = { all: ["Eintrag", "Einträge"], order: ["Auftrag", "Aufträge"], rim: ["Felge", "Felgen"] };
 
 function statusBadge(o, active) {
@@ -162,7 +163,7 @@ function renderList() {
     { label: "Programme", value: (o) => String(o.programs), cls: "r" },
     { label: "Laufzeit", value: (o) => fmtHours(o.running_s), cls: "r" },
     { label: "Gestoppt / Fehler", value: (o) => fmtHours(o.stopped_s), cls: "r" },
-    { label: "Fertige Läufe", value: (o) => String(o.finished), cls: "r" },
+    { label: "Fertige Teile", value: (o) => String(o.parts), title: () => "Fertige Läufe des letzten Programms der letzten Aufspannung", cls: "r" },
     { label: "Maschinen", value: (o) => o.machines.map(machineName).join(", ") || "—" },
     { label: "Letzte Aktivität", value: (o) => fmtDateTime(o.last_activity ?? o.created_at), cls: "r" },
   ];
@@ -224,7 +225,7 @@ function versionBlocks(d, o) {
             class: "muted",
             text: [
               `${fmtHours(v.running_s)} Laufzeit`,
-              `${v.finished} fertige Läufe`,
+              `${v.parts} ${partsWord(o, v.parts)} fertig`,
               `Ø je ${partWord(o)} ${v.part_complete ? fmtDuration(v.part_run_s) : "noch offen"}`,
               v.plan_part_s ? `Plan ${fmtDuration(v.plan_part_s)}` : null,
             ].filter(Boolean).join(" · "),
@@ -787,7 +788,7 @@ function renderDetail(d) {
               "div",
               { style: { flex: "1 1 260px", minWidth: "0" } },
               el("h1", { style: { margin: 0 } }, orderTitle(o), orderSub(o) ? el("span", { class: "muted", text: ` · ${orderSub(o)}` }) : null),
-              el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}${o.closed_auto ? " (automatisch, 7 Tage ohne Programmlauf)" : ""}` : ""}` }),
+              el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}${o.closed_auto ? " (automatisch, ohne Programmlauf)" : ""}` : ""}` }),
             ),
             statusBadge(o, d.active),
             el(
@@ -828,7 +829,11 @@ function renderDetail(d) {
         { class: "kpi-tiles", style: { marginTop: "16px" } },
         tile("Laufzeit", fmtHours(t.running_s), t.fixture_s > 0 ? `davon Vorrichtung ${fmtHours(t.fixture_s)}` : "reine Bearbeitungszeit"),
         tile("Gestoppt / Fehler", fmtHours(t.stopped_s), "innerhalb der Läufe"),
-        tile("Fertige Läufe", String(t.finished), `${t.runs} Läufe gestartet`),
+        tile(
+          `Fertige ${isRim(o) ? "Felgen" : "Teile"}`,
+          String(t.parts),
+          `letztes Programm der letzten ${setupWord(o)} · ${t.finished} von ${t.runs} Läufen fertig`,
+        ),
         d.versions.length > 1
           ? tile(
               `Ø Bearbeitungszeit je ${partWord(o)}`,

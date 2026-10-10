@@ -1,9 +1,11 @@
 """API für den Konfigurations-Tab: Maschinen anlegen, ändern, entfernen, sortieren,
-Bild hochladen und Verbindung testen; Werkzeughersteller pflegen."""
+Bild hochladen und Verbindung testen; Werkzeughersteller, Felgen-Designs und Aufträge (Tage bis zum
+automatischen Abschließen) pflegen."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from collections.abc import Iterator
@@ -12,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
-from . import BUILD, __version__
+from . import BUILD, __version__, orders
 from .config import DEFAULT_CONFIG, IS_PORTABLE
 from .probe import run_probe
 from .registry import MAX_IMAGE_BYTES, ConfigError, MachineManager, MachineNotFound, validate_machine
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
     from .main import AppContext
 
 router = APIRouter(prefix="/api/config")
+log = logging.getLogger(__name__)
 
 MANUFACTURER_MAX = 80  # wie das Feld „Hersteller“ am Werkzeug
 
@@ -175,6 +178,26 @@ def delete_manufacturer(request: Request, manufacturer_id: int) -> Response:
 # Ziffern 3–4 der Felgennummer (z. B. 10 in 10101018) → Name des Designs (999, Z06 …)
 
 RIM_DESIGN_MAX = 40
+
+
+@router.get("/orders")
+def order_settings(request: Request) -> dict[str, Any]:
+    """Einstellungen für Aufträge/Felgen: nach wie vielen Tagen ohne Programmlauf abgeschlossen."""
+    return {"close_days": orders.close_days(_ctx(request).db), "max": orders.CLOSE_DAYS_MAX}
+
+
+@router.put("/orders")
+def set_order_settings(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    ctx = _ctx(request)
+    try:
+        days = int(str(payload.get("close_days", "")).strip())
+        orders.set_close_days(ctx.db, days)
+    except ValueError as exc:
+        message = str(exc) if "Tage" in str(exc) else "Bitte eine ganze Zahl von Tagen eintragen."
+        raise HTTPException(400, message) from None
+    closed = orders.close_idle(ctx.db, time.time())  # neue Frist gilt sofort
+    log.info("Aufträge: automatisch abschließen nach %s Tagen", days or "nie –")
+    return {"close_days": days, "max": orders.CLOSE_DAYS_MAX, "closed": closed}
 
 
 @router.get("/rim-designs")

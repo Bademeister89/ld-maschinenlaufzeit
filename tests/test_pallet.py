@@ -126,6 +126,10 @@ def test_pallet_list_follows_the_table_and_learns_times(db, make_collector):
     assert entries[:4] == [("done", 840, "measured"), ("done", 120, "measured"), ("current", 840, "measured"), ("pending", 120, "measured")]
     assert [e["started_at"] for e in info["entries"]] == [1080, 1920, 2040, None, None, None, None]
     assert (info["remaining_s"], info["remaining_unknown"]) == (840 + 120 + 840 + 120, 1)
+    # Bis wann: fertige Zeilen bis zum Beginn der nächsten, offene aufsummiert ab jetzt; nach dem
+    # unbekannten P-Ende nur „frühestens“
+    assert [e["until"] for e in info["entries"]] == [1920, 2040, 2880, 3000, 3840, 3960, 3960]
+    assert [e["until_min"] for e in info["entries"]] == [False] * 6 + [True]
 
     # Störung: Palettenprogramm abgebrochen und per Satzvorlauf an derselben Palette fortgesetzt
     feed(

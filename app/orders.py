@@ -15,8 +15,11 @@ der Programmdurchläufe (Laufzeit sowie Stopps/Fehler innerhalb der Läufe) – 
 in der ein Programm nur angewählt ist, sonst würde ein übers Wochenende angewähltes Programm
 dem Auftrag Tage gutschreiben.
 
-Läuft ``ORDER_IDLE_DAYS`` Tage lang kein Programm des Auftrags, wird er automatisch abgeschlossen
-(``close_idle``). Läuft er wieder an, öffnet er sich wieder.
+Läuft ``close_days`` Tage lang (Konfiguration → Artikel, Standard 7) kein Programm des Auftrags, wird
+er automatisch abgeschlossen (``close_idle``). Läuft er wieder an, öffnet er sich wieder.
+
+Fertige Teile: die fertigen Läufe des letzten Programms der letzten Aufspannung (ohne Vorrichtung) –
+erst dort ist ein Teil fertig. Bei Versionen je Version, der Auftrag ist die Summe.
 
 Felgen haben ein eigenes Schema ``BBDDBBZZ-SS[ Zusatz]``, z. B. ``10101018-01 tasche``:
 
@@ -60,7 +63,9 @@ RUN_TIME_STATES = (MachineState.RUNNING.value, MachineState.STOPPED.value, Machi
 # Spannung 08 und 09 sind Vorrichtungsprogramme (Bau einer Vorrichtung): einmaliger Aufwand des
 # Auftrags, keine Bearbeitung je Teil – zählt zur Laufzeit, aber nicht zur Ø-Zeit je Teil
 FIXTURE_SETUPS = frozenset({8, 9})
-ORDER_IDLE_DAYS = 7  # so lange ohne Programmlauf, dann wird ein Auftrag automatisch abgeschlossen
+ORDER_IDLE_DAYS = 7  # Standard: so lange ohne Programmlauf, dann wird ein Auftrag automatisch abgeschlossen
+CLOSE_DAYS_MAX = 365
+CLOSE_DAYS_KEY = "order_close_days"  # in der Tabelle meta; 0 = nie automatisch
 
 log = logging.getLogger(__name__)
 
@@ -159,14 +164,49 @@ def backfill(db: Database) -> int:
     return assigned
 
 
+def close_days(db: Database) -> int:
+    """Nach wie vielen Tagen ohne Programmlauf ein Auftrag abgeschlossen wird (0 = nie)."""
+    try:
+        return int(db.get_meta(CLOSE_DAYS_KEY) or ORDER_IDLE_DAYS)
+    except ValueError:
+        return ORDER_IDLE_DAYS
+
+
+def set_close_days(db: Database, days: int) -> None:
+    if not 0 <= days <= CLOSE_DAYS_MAX:
+        raise ValueError(f"Bitte 0 bis {CLOSE_DAYS_MAX} Tage eintragen (0 = nie automatisch abschließen).")
+    db.set_meta(CLOSE_DAYS_KEY, str(days))
+
+
 def close_idle(db: Database, now: float) -> list[str]:
-    """Aufträge abschließen, in denen seit ORDER_IDLE_DAYS kein Programm lief (und die auch nicht in
-    dieser Zeit von Hand wieder geöffnet wurden). Ein laufender oder gestoppter Lauf hält ihn offen."""
-    keys = db.idle_orders(now - ORDER_IDLE_DAYS * 86_400)
+    """Aufträge abschließen, in denen seit ``close_days`` Tagen kein Programm lief (und die auch nicht
+    in dieser Zeit von Hand wieder geöffnet wurden). Ein laufender oder gestoppter Lauf hält ihn offen."""
+    days = close_days(db)
+    if days <= 0:
+        return []
+    keys = db.idle_orders(now - days * 86_400)
     if keys:
         db.close_orders_auto(keys, now)
-        log.info("Aufträge automatisch abgeschlossen (%d Tage ohne Programmlauf): %s", ORDER_IDLE_DAYS, ", ".join(keys))
+        log.info("Aufträge automatisch abgeschlossen (%d Tage ohne Programmlauf): %s", days, ", ".join(keys))
     return keys
+
+
+def finished_parts(programs: Any, kind: str) -> dict[str, int]:
+    """Fertige Teile je Version aus ``(Programm, fertige Läufe)``: die fertigen Läufe des letzten
+    Programms der letzten Aufspannung – erst dort ist ein Teil fertig. Vorrichtungsbau (08/09) zählt
+    nicht. Reihenfolge wie im Auftragsdetail (Aufspannung, Programmnummer, Name)."""
+    counts: dict[str, int] = defaultdict(int)
+    last: dict[str, tuple[tuple[int, int, str], str]] = {}
+    for path, finished in programs:
+        code = parse_program(path)
+        if code is None or (kind == "order" and code.setup in FIXTURE_SETUPS):
+            continue
+        name = call_name(path)
+        counts[name] += finished or 0
+        rank = (code.setup, code.program, code.name)
+        if code.version not in last or rank > last[code.version][0]:
+            last[code.version] = (rank, name)
+    return {version: counts[name] for version, (_, name) in last.items()}
 
 
 # --- Auswertung ------------------------------------------------------------------------
@@ -208,6 +248,14 @@ def list_orders(db: Database, status: str = "all") -> list[dict[str, Any]]:
         if r["order_key"] in rows:
             rows[r["order_key"]]["runs"] = r["runs"]
             rows[r["order_key"]]["finished"] = r["finished"]
+    # Fertige Teile: auch Programme mit Planzeit, die noch nie liefen (dann ist noch kein Teil fertig)
+    per_order: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    for r in db.order_program_finished():
+        per_order[r["order_key"]].append((r["program"], r["finished"]))
+    for plan in db.plans():
+        per_order[plan["order_key"]].append((plan["program"], 0))
+    for key, row in rows.items():
+        row["parts"] = sum(finished_parts(per_order.get(key, ()), row["kind"]).values())
     for r in db.order_programs():
         row = rows.get(r["order_key"])
         code = parse_program(r["program"])
@@ -335,6 +383,9 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
         totals["running_s"] += setup["running_s"]
         totals["stopped_s"] += setup["stopped_s"]
     versions = _versions(setups.values())
+    parts = finished_parts(((row["program"], row["finished"]) for row in programs.values()), order["kind"])
+    for block in versions:
+        block["parts"] = parts.get(block["version"], 0)
     # Ø Bearbeitungszeit je Teil: bei einer einzigen Ausführung wie bisher, bei mehreren je Version
     single = versions[0] if len(versions) == 1 else None
 
@@ -349,6 +400,7 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
             **totals,
             "runs": len(runs),
             "finished": sum(1 for r in runs if r["result"] == "finished"),
+            "parts": sum(parts.values()),
             "part_run_s": single["part_run_s"] if single else None,
             "part_complete": single["part_complete"] if single else False,
             "plan_part_s": single["plan_part_s"] if single else None,

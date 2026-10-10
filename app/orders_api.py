@@ -62,7 +62,7 @@ def list_orders(request: Request, status: str = Query("all", pattern="^(all|open
     rows = [ctx.order_images.public(row, files) for row in orders.list_orders(ctx.db, status)]
     for row in rows:
         row["active"] = active.get(row["key"], [])
-    return {"now": time.time(), "orders": rows}
+    return {"now": time.time(), "close_days": orders.close_days(ctx.db), "orders": rows}
 
 
 @router.get("/{key}")

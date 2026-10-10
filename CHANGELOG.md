@@ -10,6 +10,40 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.23.0] – 2026-10-10
+
+### Neu
+- **Produktionszeit im grünen Balken (Live):** Der Balken zeigt, seit wann die Maschine produziert.
+  - NC-Stopps, Palettenwechsel und kurzes „Bereit“ zwischen zwei Programmen setzen ihn nicht mehr
+    zurück. Erst 15 min ohne Programmlauf beginnen von vorn.
+  - Ein Zeitstreifen unten im Balken zeigt den Verlauf seit Beginn: hell = Lauf, gelb = Stopp,
+    Lücke = Pause. Ein Tooltip nennt Lauf, Stopps und Pausen.
+  - Im Stopp oder in einer kurzen Pause bleibt die Produktionszeit stehen, darunter steht
+    „Gestoppt seit 2 min“.
+- **Palettenliste: bis wann je Palette.**
+  - Laufende Palette: „seit 16:49 · bis ca. 18:05 Uhr“, offene Paletten: „bis ca. 19:30 Uhr“.
+  - Fehlt davor die Zeit eines Auftragsprogramms, steht „bis frühestens“.
+  - Fertige Paletten zeigen ihren Zeitraum, z. B. „16:49–17:12 Uhr“.
+- **Konfiguration mit Untertabs:** Maschinen, Werkzeuge, Artikel, System, Versionen. Alte Links wie
+  „v1.23.0“ oben oder „Hersteller verwalten“ führen zum passenden Reiter.
+- **Fehlersammler** (Konfiguration → Maschinen): je Maschine alle Meldungen der Steuerung mit Datum
+  und Uhrzeit, neueste zuerst.
+  - Zeitraum 7 Tage bis 1 Jahr, dazu eine Suche.
+  - Darüber stehen die häufigsten Meldungen mit Anzahl. Ein Klick filtert die Liste.
+- **Frist bis „abgeschlossen“ einstellbar** (Konfiguration → Artikel): Nach wie vielen Tagen ohne
+  Programmlauf Aufträge und Felgen abgeschlossen werden.
+  - Standard bleibt 7 Tage, 0 = nie automatisch.
+  - Die neue Frist gilt sofort.
+
+### Geändert
+- **Fertige Teile statt fertiger Läufe:** Gezählt werden die fertigen Läufe des letzten Programms
+  der letzten Aufspannung. Erst dort ist ein Teil fertig. Bisher wurden die fertigen Läufe aller
+  Aufspannungen addiert.
+  - Vorrichtungsbau zählt nicht. Bei Versionen zählt jede Version für sich, der Auftrag ist die Summe.
+  - Gilt für die Liste („Fertige Teile“), die Kachel im Auftrag und die Köpfe der Versionen. Bei
+    Felgen heißt es „Fertige Felgen“.
+  - Die Karten der Aufspannungen zeigen weiter ihre fertigen Läufe.
+
 ## [1.22.0] – 2026-10-10
 
 Grundlage ist die Diagnose vom 10.10., eine Woche Vollbetrieb an beiden Maschinen.

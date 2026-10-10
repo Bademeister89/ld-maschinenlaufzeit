@@ -1,6 +1,7 @@
-// Konfigurations-Tab: Maschinen anlegen, bearbeiten, sortieren, entfernen, Verbindung testen.
+// Konfigurations-Tab mit Untertabs: Maschinen (Liste, Fehlersammler), Werkzeuge (Hersteller),
+// Artikel (Aufträge/Felgen), System (Allgemein, Diagnose), Versionen.
 
-import { api, el, loadMeta, machineThumb, send, shrinkImage, stateBadge } from "./common.js";
+import { api, baseName, el, fmtDateTime, loadMeta, machineThumb, send, shrinkImage, stateBadge } from "./common.js";
 
 const STATUS_MS = 5000;
 const MACHINE_IMAGE = { maxPx: 1024, quality: 0.85 };
@@ -490,6 +491,193 @@ async function save(event) {
   }
 }
 
+// --- Untertabs ------------------------------------------------------------------
+
+const TABS = ["maschinen", "werkzeuge", "artikel", "system", "versionen"];
+// Ältere Links (#hersteller, #felgen …) führen zum passenden Reiter und Abschnitt
+const ANCHORS = { hersteller: "werkzeuge", felgen: "artikel", allgemein: "system", diagnose: "system", fehler: "maschinen" };
+
+function tabFromHash() {
+  const id = location.hash.slice(1);
+  if (TABS.includes(id)) return { tab: id, anchor: null };
+  if (ANCHORS[id]) return { tab: ANCHORS[id], anchor: id };
+  return { tab: "maschinen", anchor: null };
+}
+
+function showTab(tab, { anchor = null, push = false } = {}) {
+  for (const button of document.querySelectorAll(".subtabs [role=tab]")) {
+    const active = button.dataset.tab === tab;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  }
+  for (const panel of document.querySelectorAll(".tab-panel")) panel.hidden = panel.dataset.tab !== tab;
+  if (push) history.replaceState(null, "", `#${tab}`);
+  if (anchor) $(anchor)?.scrollIntoView();
+  if (tab === "maschinen") loadErrors();
+}
+
+function setupTabs() {
+  const buttons = [...document.querySelectorAll(".subtabs [role=tab]")];
+  for (const button of buttons) {
+    button.addEventListener("click", () => showTab(button.dataset.tab, { push: true }));
+    // Pfeiltasten wechseln den Reiter (Tablist-Muster)
+    button.addEventListener("keydown", (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!step) return;
+      const next = buttons[(buttons.indexOf(button) + step + buttons.length) % buttons.length];
+      next.focus();
+      showTab(next.dataset.tab, { push: true });
+    });
+  }
+  window.addEventListener("hashchange", () => {
+    const { tab, anchor } = tabFromHash();
+    showTab(tab, { anchor });
+  });
+}
+
+// --- Artikel: Aufträge automatisch abschließen ------------------------------------
+
+async function loadCloseDays() {
+  const data = await api("/api/config/orders");
+  $("close-days").value = data.close_days;
+}
+
+async function saveCloseDays(e) {
+  e.preventDefault();
+  const msg = $("close-msg");
+  try {
+    const data = await send("PUT", "/api/config/orders", { close_days: $("close-days").value });
+    $("close-days").value = data.close_days;
+    const closed = data.closed.length ? ` Gerade abgeschlossen: ${data.closed.join(", ")}.` : "";
+    msg.textContent = (data.close_days
+      ? `Gespeichert: abgeschlossen nach ${data.close_days} ${data.close_days === 1 ? "Tag" : "Tagen"} ohne Programmlauf.`
+      : "Gespeichert: Aufträge werden nicht mehr automatisch abgeschlossen.") + closed;
+    msg.classList.remove("error");
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add("error");
+  }
+  msg.hidden = false;
+}
+
+// --- Fehlersammler ----------------------------------------------------------------
+
+const errState = { machine: null, days: 30, search: "", data: null };
+const ERR_SHOW = 500;
+
+function renderErrorMachines() {
+  const box = $("err-machine");
+  if (!machines.length) {
+    box.replaceChildren();
+    return;
+  }
+  if (!machines.some((m) => m.id === errState.machine)) errState.machine = machines[0].id;
+  box.replaceChildren(
+    ...machines.map((m) =>
+      el("button", {
+        type: "button",
+        "aria-pressed": String(m.id === errState.machine),
+        onclick: () => {
+          errState.machine = m.id;
+          renderErrorMachines();
+          loadErrors();
+        },
+        text: m.name,
+      }),
+    ),
+  );
+}
+
+async function loadErrors() {
+  if (!errState.machine) return;
+  try {
+    errState.data = await api(`/api/machines/${encodeURIComponent(errState.machine)}/errors?days=${errState.days}`);
+  } catch (err) {
+    errState.data = null;
+    $("err-list").replaceChildren(el("p", { class: "empty", text: err.message }));
+    return;
+  }
+  renderErrors();
+}
+
+function renderErrors() {
+  const data = errState.data;
+  if (!data) return;
+  const needle = errState.search.trim().toLowerCase();
+  const match = (e) => !needle || `${e.text} ${e.program ?? ""}`.toLowerCase().includes(needle);
+  const rows = data.errors.filter(match);
+  // Häufigste Meldungen: Klick filtert die Liste
+  $("err-top").replaceChildren(
+    ...data.top.slice(0, 8).map((t) =>
+      el(
+        "button",
+        {
+          type: "button",
+          class: "err-chip",
+          "aria-pressed": String(needle === t.text.toLowerCase()),
+          title: `zuletzt ${fmtDateTime(t.last)}`,
+          onclick: () => {
+            errState.search = needle === t.text.toLowerCase() ? "" : t.text;
+            $("err-search").value = errState.search;
+            renderErrors();
+          },
+        },
+        el("span", { class: "err-chip-text", text: t.text }),
+        el("span", { class: "err-chip-count num", text: `${t.count}×` }),
+      ),
+    ),
+  );
+  if (!rows.length) {
+    $("err-list").replaceChildren(
+      el("p", { class: "empty", text: data.errors.length ? "Keine Meldung passt zur Suche." : `Keine Meldungen in den letzten ${data.days} Tagen.` }),
+    );
+    return;
+  }
+  const shown = rows.slice(0, ERR_SHOW);
+  $("err-list").replaceChildren(
+    el(
+      "div",
+      { class: "table-wrap" },
+      el(
+        "table",
+        { class: "err-table" },
+        el("thead", {}, el("tr", {}, ["Datum und Uhrzeit", "Meldung", "Programm"].map((h) => el("th", { text: h })))),
+        el(
+          "tbody",
+          {},
+          shown.map((e) =>
+            el(
+              "tr",
+              {},
+              el("td", { class: "num nowrap", text: fmtDateTime(e.ts) }),
+              el("td", { class: "wrap", text: e.text }),
+              el("td", { class: "wrap muted", title: e.program ?? null, text: e.program ? baseName(e.program) : "—" }),
+            ),
+          ),
+        ),
+      ),
+    ),
+    el("p", {
+      class: "muted err-count",
+      text: `${rows.length} ${rows.length === 1 ? "Meldung" : "Meldungen"}${rows.length > ERR_SHOW ? `, die neuesten ${ERR_SHOW} angezeigt` : ""}`,
+    }),
+  );
+}
+
+function setupErrors() {
+  for (const button of $("err-days").querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      errState.days = Number(button.dataset.days);
+      for (const b of $("err-days").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b === button));
+      loadErrors();
+    });
+  }
+  $("err-search").addEventListener("input", (e) => {
+    errState.search = e.target.value;
+    renderErrors();
+  });
+}
+
 // --- Start -----------------------------------------------------------------------
 
 async function main() {
@@ -526,9 +714,15 @@ async function main() {
 
   $("mf-form").addEventListener("submit", addManufacturer);
   $("rd-form").addEventListener("submit", addDesign);
-  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns()]);
-  // Link „v1.2.0“ aus der Kopfzeile: erst nach dem Laden springen, die Liste darüber wächst noch
-  if (["#versionen", "#hersteller", "#felgen"].includes(location.hash)) $(location.hash.slice(1)).scrollIntoView();
+  $("close-form").addEventListener("submit", saveCloseDays);
+  setupTabs();
+  setupErrors();
+  const { tab, anchor } = tabFromHash();
+  showTab(tab);
+  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns(), loadCloseDays()]);
+  renderErrorMachines();
+  // Erst nach dem Laden springen, die Liste darüber wächst noch
+  showTab(tab, { anchor });
   setInterval(refreshStatus, STATUS_MS);
 }
 

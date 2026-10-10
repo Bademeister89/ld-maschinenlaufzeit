@@ -71,6 +71,69 @@ SHORT_GAP_S = 30.0
 # Steuerung). Ein Start fällt dann höchstens IDLE_POLL_S später auf.
 IDLE_AFTER_S = 300.0
 IDLE_POLL_S = 5.0
+# Produktionszeit im Statusbalken: NC-Stopps, Palettenwechsel und kurzes "Bereit" zwischen zwei
+# Programmen zählen mit. Erst eine Pause ohne Programmlauf von STREAK_BREAK_S beginnt von vorn.
+STREAK_BREAK_S = 15 * 60
+STREAK_LOOKBACK_S = 24 * 3600
+STREAK_REFRESH_S = 60.0
+
+
+def production_streak(
+    states: list[tuple[str, int | None, float, float]], now: float, break_s: float = STREAK_BREAK_S
+) -> dict[str, Any] | None:
+    """Zusammenhängende Produktion bis jetzt aus (Zustand, Lauf, Beginn, Ende), älteste zuerst.
+
+    Abschnitte: ``run`` Programmlauf, ``stop`` Stopp/Fehler im Lauf, ``idle`` alles andere (Bereit,
+    Handbetrieb/MDI, keine Verbindung, Lücken). Eine Pause ab ``break_s`` beendet die Produktion.
+    None, wenn gerade keine läuft (noch nie oder die Pause dauert schon länger)."""
+    segments: list[list[Any]] = []
+
+    def extend(kind: str, start: float, end: float) -> None:
+        if segments and segments[-1][0] == kind:
+            segments[-1][2] = max(segments[-1][2], end)
+        else:
+            segments.append([kind, start, end])
+
+    def add(kind: str, start: float, end: float) -> None:
+        if end <= start:
+            return
+        if segments and start > segments[-1][2] + 1:
+            extend("idle", segments[-1][2], start)  # Lücke ohne Daten (App aus): wie eine Pause
+        extend(kind, start, end)
+
+    for state, run_id, start, end in states:
+        if run_id is not None and state == MachineState.RUNNING.value:
+            kind = "run"
+        elif run_id is not None and state in (MachineState.STOPPED.value, MachineState.ERROR.value):
+            kind = "stop"
+        else:
+            kind = "idle"
+        add(kind, start, min(end, now))
+    if not segments:
+        return None
+    segments[-1][2] = max(segments[-1][2], now)  # bis jetzt (auch wenn die letzte Abfrage etwas zurückliegt)
+    first = None
+    for i in range(len(segments) - 1, -1, -1):
+        kind, start, end = segments[i]
+        if kind == "idle":
+            if end - start >= break_s:
+                break
+            continue
+        first = i
+    if first is None:
+        return None
+    streak = segments[first:]
+    totals = {"run": 0.0, "stop": 0.0, "idle": 0.0}
+    for kind, start, end in streak:
+        totals[kind] += end - start
+    return {
+        "since": streak[0][1],
+        "run_s": totals["run"],
+        "stop_s": totals["stop"],
+        "idle_s": totals["idle"],
+        "break_s": break_s,
+        "segments": [{"kind": k, "start": s, "end": e} for k, s, e in streak],
+    }
 # Palettenprogramm nach einem Neustart der App: so weit zurück nach Läufen des Durchgangs suchen; ein
 # längeres Bereit trennt zwei Durchgänge (zwischen den Paletten meldet die Steuerung nur Sekunden)
 PALLET_LOOKBACK_S = 7 * 86_400
@@ -166,6 +229,8 @@ class MachineCollector:
         self._tool_use: tuple[int, int] | None = None  # offener Einsatzabschnitt: (id, T-Nummer)
         self._last_update: float | None = None
         self._online_at: float | None = None  # letzte erfolgreiche Abfrage
+        self._streak_states: list[tuple[str, int | None, float, float]] | None = None
+        self._streak_key: tuple[int | None, int] | None = None  # (Abschnitt, Minute) beim Laden
         self._activity_at: float | None = None  # letzte Änderung dessen, was die Steuerung meldet
         self._connected = False
         self._control: dict[str, str] = {}
@@ -879,6 +944,7 @@ class MachineCollector:
             items.append({
                 "program": entry.program, "pallet": entry.pallet, "status": status,
                 "expected_s": expected, "source": source,
+                "until": None, "until_min": False,  # voraussichtliches Ende bzw. Ende (fertige Zeile)
                 # Auftragsprogramm (lange Laufzeit) oder Hilfsprogramm wie Drehen/P-Ende (kurz)
                 "order": parse_program(entry.program) is not None,
                 "started_at": started[0] if started else None,  # Beginn in diesem Durchgang
@@ -903,6 +969,16 @@ class MachineCollector:
                     remaining_unknown += 1
                 else:
                     remaining += rest
+                if self._last_update is not None:
+                    # Ende dieser Zeile, wenn alles davor wie erwartet läuft; fehlt davor eine Zeit, frühestens
+                    it["until"] = self._last_update + remaining
+                    it["until_min"] = remaining_unknown > 0
+        # Fertige Zeilen: Ende = Beginn der nächsten begonnenen Zeile dieses Durchgangs
+        begun = sorted(i for i in p.started if items[i]["status"] in ("done", "current"))
+        for i, it in enumerate(items):
+            if it["status"] == "done":
+                nxt = next((j for j in begun if j > i), None)
+                it["until"] = p.started[nxt][0] if nxt is not None else None
         return {
             "table": p.table,
             "entries": items,
@@ -915,6 +991,19 @@ class MachineCollector:
         }
 
     # --- Live-Status ---------------------------------------------------------------
+
+    def _streak(self) -> dict[str, Any] | None:
+        """Produktionszeit für den Statusbalken. Die Abschnitte kommen aus der Datenbank, neu geladen
+        bei jedem neuen Zustandsabschnitt und sonst höchstens einmal je Minute."""
+        now = self._last_update
+        if now is None or self._prev_state in (None, MachineState.OFFLINE, MachineState.NETWORK):
+            return None
+        cur = self._interval
+        key = (cur.id if cur else None, int(now // STREAK_REFRESH_S))
+        if key != self._streak_key or self._streak_states is None:
+            self._streak_states = self._db.machine_states_since(self.machine.id, now - STREAK_LOOKBACK_S)
+            self._streak_key = key
+        return production_streak(self._streak_states, now)
 
     def live(self) -> dict[str, Any]:
         snap = self._snapshot
@@ -936,6 +1025,7 @@ class MachineCollector:
             **self.machine.public(),
             "state": self._prev_state.value if self._prev_state else None,
             "state_since": self._state_since,
+            "streak": self._streak(),
             "last_update": self._last_update,
             "connected": self._connected,
             "connection_error": self._last_error,

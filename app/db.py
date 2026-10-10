@@ -465,6 +465,16 @@ class Database:
         )
         return cur.rowcount
 
+    def machine_states_since(self, machine_id: str, t0: float) -> list[tuple[str, int | None, float, float]]:
+        """(Zustand, Lauf, Beginn, Ende) einer Maschine seit ``t0``, älteste zuerst – für die
+        Produktionszeit im Statusbalken."""
+        with self._lock:
+            return self._con.execute(
+                f"SELECT i.state, i.run_id, i.started_at, {_END} FROM state_intervals i "
+                f"WHERE i.machine_id = ? AND {_END} > ? ORDER BY i.started_at, i.id",
+                (machine_id, t0),
+            ).fetchall()
+
     def intervals(self, t0: float, t1: float, machine_id: str | None = None) -> list[dict[str, Any]]:
         """Alle Intervalle, die [t0, t1) überlappen; ``end`` ist das effektive Ende."""
         sql = (
@@ -684,6 +694,13 @@ class Database:
             # COALESCE: Läuft nur ein Lauf (result noch NULL), wäre die Summe sonst NULL statt 0
             "SELECT order_key, COUNT(*) AS runs, COALESCE(SUM(result = 'finished'), 0) AS finished FROM program_runs "
             "WHERE order_key IS NOT NULL GROUP BY order_key"
+        )
+
+    def order_program_finished(self) -> list[dict[str, Any]]:
+        """Fertige Läufe je Auftrag und Programm (für die fertigen Teile in der Liste)."""
+        return self._query(
+            "SELECT order_key, program, COALESCE(SUM(result = 'finished'), 0) AS finished FROM program_runs "
+            "WHERE order_key IS NOT NULL GROUP BY order_key, program"
         )
 
     def order_programs(self) -> list[dict[str, Any]]:
@@ -1034,6 +1051,19 @@ class Database:
         for row in rows:
             row["payload"] = json.loads(row["payload"])
         return rows
+
+    def nc_errors(self, machine_id: str, t0: float, limit: int = 5000) -> list[dict[str, Any]]:
+        """Meldungen der Steuerung (Ereignis ``nc_error``) seit ``t0``, neueste zuerst."""
+        rows = self._query(
+            "SELECT ts, payload FROM events WHERE machine_id = ? AND type = 'nc_error' AND ts >= ? "
+            "ORDER BY ts DESC, id DESC LIMIT ?",
+            (machine_id, t0, limit),
+        )
+        result = []
+        for row in rows:
+            payload = json.loads(row["payload"])
+            result.append({"ts": row["ts"], "text": payload.get("text", ""), "program": payload.get("program")})
+        return result
 
     def events(self, t0: float, t1: float, machine_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         sql = "SELECT id, machine_id, ts, type, payload FROM events WHERE ts >= ? AND ts < ?"

@@ -150,6 +150,21 @@ def timeline(request: Request, machine_id: str, from_: str | None = FromQuery, t
     return {"from": t0, "to": t1, "intervals": [{k: iv[k] for k in keys} for iv in intervals]}
 
 
+@router.get("/machines/{machine_id}/errors")
+def machine_errors(request: Request, machine_id: str, days: int = Query(30, ge=1, le=3650)) -> dict[str, Any]:
+    """Fehlersammler: Meldungen der Steuerung mit Zeitpunkt (neueste zuerst) und die häufigsten."""
+    ctx = _ctx(request)
+    if ctx.db.machine(machine_id) is None:
+        raise HTTPException(404, f"Unbekannte Maschine: {machine_id}")
+    errors = ctx.db.nc_errors(machine_id, time.time() - days * 86_400)
+    counts: dict[str, dict[str, Any]] = {}
+    for e in errors:  # neueste zuerst: das erste Vorkommen ist das letzte
+        c = counts.setdefault(e["text"], {"text": e["text"], "count": 0, "last": e["ts"]})
+        c["count"] += 1
+    top = sorted(counts.values(), key=lambda c: (-c["count"], c["text"]))
+    return {"machine": machine_id, "days": days, "errors": errors, "top": top}
+
+
 @router.get("/stats")
 def get_stats(request: Request, from_: str | None = FromQuery, to: str | None = ToQuery) -> dict[str, Any]:
     ctx = _ctx(request)

@@ -148,6 +148,65 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 .section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .section-head p { margin: 0; }
 
+/* Untertabs (Konfiguration) */
+.subtabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.subtabs [role="tab"] {
+  flex: none;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.subtabs [role="tab"]:hover { color: var(--ink); background: var(--accent-wash); border-radius: 8px 8px 0 0; }
+.subtabs [role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.subtabs [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Artikel: Frist bis zum automatischen Abschließen */
+.close-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.close-form .field { margin: 0; }
+.close-input { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); white-space: nowrap; }
+.close-input input { width: 80px; }
+.form-msg { margin-top: 10px; font-size: 14px; color: var(--ink-2); }
+.form-msg.error { color: var(--critical-text); }
+
+/* Fehlersammler */
+.err-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+.err-filters input[type="search"] { flex: 1 1 220px; max-width: 360px; }
+.err-top { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.err-top:empty { display: none; }
+.err-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.err-chip:hover { background: var(--accent-wash); }
+.err-chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.err-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.err-chip-count { color: var(--muted); font-weight: 600; }
+.err-table td.nowrap { white-space: nowrap; }
+.err-count { margin: 8px 0 0; font-size: 13px; }
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -275,6 +334,23 @@ h2 { font-size: 16px; margin: 0; font-weight: 650; }
 .mc-status-time { margin-left: auto; display: grid; justify-items: end; line-height: 1.15; }
 .mc-status-duration { font-size: 22px; font-weight: 700; }
 .mc-status-since { font-size: 13px; font-weight: 600; opacity: 0.92; }
+.mc-status-pause { font-size: 12px; font-weight: 600; opacity: 0.85; }
+/* Zeitstreifen der Produktion: über die ganze Breite unten im Statusbalken */
+.mc-status.has-streak { padding-bottom: 12px; }
+.streak-bar {
+  flex-basis: 100%;
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.streak-seg { position: absolute; top: 0; bottom: 0; }
+.streak-seg.run { background: rgba(255, 255, 255, 0.9); }
+.streak-seg.stop { background: var(--st-stopped); }
+.mc-status.st-STOPPED .streak-bar { background: rgba(0, 0, 0, 0.16); }
+.mc-status.st-STOPPED .streak-seg.run { background: color-mix(in srgb, var(--st-running) 85%, #000); }
+.mc-status.st-STOPPED .streak-seg.stop { background: rgba(26, 26, 25, 0.75); }
 
 .mc-message { margin: 0; color: var(--ink-2); }
 

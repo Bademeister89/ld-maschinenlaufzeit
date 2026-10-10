@@ -8,6 +8,13 @@ Erfasst laufend den Zustand der Heidenhain-Steuerungen (iTNC 530) der DMG-Fräse
 spätere Laufzeitauswertungen:
 
 - **Live:** Läuft die Maschine? Welches Programm, seit wann, welcher Satz, welches Werkzeug?
+  - Der große Balken oben zeigt den Zustand und, solange produziert wird, die **Produktionszeit**:
+    „5 h 12 min · in Produktion seit 04:52 Uhr“.
+    - NC-Stopps, Palettenwechsel und kurzes „Bereit“ zwischen zwei Programmen zählen mit. Erst eine
+      Pause von 15 min ohne Programmlauf beginnt von vorn.
+    - Unten im Balken liegt ein Zeitstreifen seit Beginn: hell = Lauf, gelb = Stopp, Lücke = Pause.
+      Der Tooltip nennt die Summen.
+    - Im Stopp steht darunter, wie lange schon („Gestoppt seit 2 min“).
   - Die Poti-Stellung für Vorschub, Spindel und Eilgang (unter dem Vorschub) steht als Balken auf
     der Karte: Skala 0–150 %, ein Strich markiert 100 %.
   - Farben: unter 50 % rot, unter 100 % gelb, 100–120 % grün, über 120 % orange. Im Hintergrund des
@@ -85,6 +92,22 @@ Das Ergebnis liegt in `C:\Users\<Name>\ld-mainmachine\dist\`: der Ordner (ca. 45
 (ca. 20 MB).
 
 ## Maschinen einrichten (Tab „Konfiguration“)
+
+Die Konfiguration hat fünf Untertabs:
+
+- **Maschinen:** die Maschinen (siehe unten) und der Fehlersammler
+- **Werkzeuge:** die Werkzeughersteller
+- **Artikel:** die Frist, nach der Aufträge und Felgen abgeschlossen werden, und die Felgen-Designs
+- **System:** Allgemeines (Version, Build, Einstellungen) und die Diagnose-Datei
+- **Versionen:** das Änderungsprotokoll
+
+**Fehlersammler** (Maschinen): je Maschine alle Meldungen der Steuerung mit Datum und Uhrzeit,
+neueste zuerst. Dazu gehören NC-Fehler und Meldungen der Maschine wie „Puffer-Batterie wechseln“.
+- Zeitraum 7 Tage, 30 Tage, 90 Tage oder 1 Jahr, dazu eine Suche nach Meldung oder Programm.
+- Darüber stehen die häufigsten Meldungen mit Anzahl. Ein Klick filtert die Liste darauf.
+- Erfasst wird jede Meldung, sobald sie erscheint. Nach einem Verbindungsabbruch erscheinen noch
+  aktive Meldungen erneut.
+
 
 - **+ Maschine hinzufügen:** Name, IP-Adresse der Steuerung, Port (Standard 19000), Standort/Notiz und
   Bild. Große Fotos werden beim Hochladen automatisch verkleinert.
@@ -181,6 +204,10 @@ abarbeitet:
       womöglich Stunden.
     - Hilfsprogramme ohne Auftragsnummer wie Drehen oder P-Ende dauern Sekunden bis wenige Minuten.
       Ohne ihre Zeit bleibt es bei „ca.“ und einer festen Uhrzeit.
+- **Je Palette bis wann:** Die laufende Palette zeigt „seit 16:49 · bis ca. 18:05 Uhr“, offene
+  Paletten zeigen „bis ca. 19:30 Uhr“ und fertige ihren Zeitraum („16:49–17:12 Uhr“).
+  - Gerechnet wird ab jetzt mit den Zeiten der Zeilen davor.
+  - Fehlt davor die Zeit eines Auftragsprogramms, steht „bis frühestens“.
 - Liegt das Ende nicht mehr am selben Tag, steht „morgen“ bzw. der Wochentag davor.
 - **Kopf:** „noch ca. 1 h 11 min · fertig ca. 18:08 Uhr“, also die Restzeit des laufenden Programms
   plus die Zeiten der offenen Zeilen. Im Stopp steht „(pausiert)“. **Fuß:** Gesamtzeit aller
@@ -227,8 +254,8 @@ zugeordnet, z. B. `26-21055-01-01`:
 - Programme mit Zusatz (`-01`, `-01 tasche`, `-01 einarm`) stehen als eigene Zeilen unter
   „Spannung 1“. Sie laufen nacheinander für dieselbe Felge, deshalb ist die **Ø Bearbeitungszeit je
   Felge** die Summe aller Programme aller Spannungen.
-- Felgen haben kein Jahr. Wie Aufträge schließen sie sich nach 7 Tagen ohne Lauf und öffnen sich
-  beim nächsten Lauf wieder.
+- Felgen haben kein Jahr. Wie Aufträge schließen sie sich nach einigen Tagen ohne Lauf (Standard 7)
+  und öffnen sich beim nächsten Lauf wieder.
 - Spannung 08/09 ist bei Felgen kein Vorrichtungsbau.
 - Programmnamen ohne eines der beiden Schemata (z. B. `1301201.h`) zählen zu keinem Auftrag.
 
@@ -285,7 +312,13 @@ zugeordnet, z. B. `26-21055-01-01`:
   Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
   angewähltes Programm dem Auftrag Tage gutschreiben.
 - **Liste:** Status (läuft gerade / offen / abgeschlossen), Aufspannungen, Programme, Laufzeit,
-  Stopps, fertige Läufe, Maschinen, letzte Aktivität. Suche nach Nummer oder Bezeichnung.
+  Stopps, fertige Teile, Maschinen, letzte Aktivität. Suche nach Nummer oder Bezeichnung.
+- **Fertige Teile:** die fertigen Läufe des **letzten Programms der letzten Aufspannung**. Erst dort
+  ist ein Teil fertig.
+  - Beispiel: Bei 02-01, 02-02 und 02-03 zählen die fertigen Läufe von 02-03.
+  - Vorrichtungsbau zählt nicht. Bei Versionen zählt jede Version für sich, der Auftrag ist die Summe.
+  - Hat das letzte Programm nur eine Planzeit und lief noch nie, ist noch kein Teil fertig.
+  - Die Karten der Aufspannungen zeigen weiter ihre fertigen Läufe.
 - **Detail:**
   - Bezeichnung (z. B. Kunde, Bauteil), Abschließen / Wieder öffnen.
   - Welche Maschine den Auftrag gerade fährt, mit Restlaufzeit.
@@ -360,12 +393,14 @@ zugeordnet, z. B. `26-21055-01-01`:
     am Handy 96 × 72 px). Ohne Bild der Aufspannung erscheint dort das Bild des Auftrags. Normale
     Bildschirme laden das Vorschaubild, Bildschirme mit hoher Pixeldichte das große Bild.
   - Löschen der Aufspannung oder des Auftrags löscht auch ihre Bilder.
-- **Automatisch abgeschlossen:** Läuft 7 Tage lang kein Programm eines Auftrags, schließt die App
-  ihn selbst ab. Im Detail steht dann „abgeschlossen … (automatisch, 7 Tage ohne Programmlauf)“.
+- **Automatisch abgeschlossen:** Läuft eine bestimmte Zeit lang kein Programm eines Auftrags, schließt
+  die App ihn selbst ab. Im Detail steht dann „abgeschlossen … (automatisch, ohne Programmlauf)“.
+  - Die Frist steht unter **Konfiguration → Artikel**. Standard sind 7 Tage, 0 = nie automatisch.
+    Eine geänderte Frist gilt sofort.
   - Gezählt wird ab dem Ende des letzten Laufs. Hat ein Auftrag noch nie ein Programm laufen
     lassen, zählt das Anlegen.
   - Ein laufender oder gestoppter Lauf hält den Auftrag offen, ein nur angewähltes Programm nicht.
-  - Von Hand wieder geöffnet: Die 7 Tage beginnen neu.
+  - Von Hand wieder geöffnet: Die Frist beginnt neu.
   - Die App prüft das beim Start und dann stündlich.
 - Läuft ein abgeschlossener Auftrag wieder an, wird er automatisch wieder geöffnet.
 - Daten, die vor der Auftragsauswertung erfasst wurden, werden beim Start einmalig nachgetragen.
@@ -391,7 +426,7 @@ Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die 
   - War die Doku falsch benannt, lassen sich die angelegten Programme, Aufspannungen oder der ganze
     Auftrag im Detail wieder löschen.
   - Die PDF selbst speichert die App nicht, nur den Dateinamen als Herkunft. Höchstens 10 MB je Datei.
-  - Läuft ein vorab angelegter Auftrag 7 Tage nicht an, schließt die App ihn wie gewohnt. Beim ersten
+  - Läuft ein vorab angelegter Auftrag innerhalb der Frist nicht an, schließt die App ihn wie gewohnt. Beim ersten
     Lauf öffnet er sich wieder, die Planzeiten bleiben.
 - **Von Hand:** Im Auftrag hat jede Programmzeile die Spalte **Plan (CAM)** mit „ändern“.
   - Eingabe in Stunden (`4,5`), als `h:mm` (`4:30`) oder `h:mm:ss`. Leer lassen entfernt die
@@ -592,7 +627,7 @@ andere Werte liefert, wird nur dort angepasst.
 
 ## Fehler melden (Diagnose-Datei)
 
-Unter **Konfiguration → Diagnose** lädt „Diagnose-Datei herunterladen“ eine ZIP-Datei
+Unter **Konfiguration → System → Diagnose** lädt „Diagnose-Datei herunterladen“ eine ZIP-Datei
 `ld-diagnose_<Datum>_<Uhrzeit>.zip` herunter. Sie gehört zu jeder Fehlermeldung. Zeitraum: 1, 7
 oder 30 Tage, auf Wunsch mit der ganzen Datenbank. Inhalt:
 
@@ -621,6 +656,8 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET /api/machines/{id}/timeline?from=&to=` | Zustandsabschnitte für die Zeitleiste |
 | `GET /api/runs?machine=&from=&to=` | Programmdurchläufe |
 | `GET /api/events?machine=&from=&to=` | Ereignisse |
+| `GET /api/machines/{id}/errors?days=30` | Fehlersammler: Meldungen der Steuerung, neueste zuerst, und die häufigsten |
+| `GET/PUT /api/config/orders` | Frist bis zum automatischen Abschließen: `{"close_days": 7}`, 0 = nie |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
@@ -746,7 +783,7 @@ Die Versionsnummer folgt dem Schema `MAJOR.MINOR.PATCH`: MINOR für neue Funktio
 Fehlerbehebungen, MAJOR für Umstellungen, bei denen man selbst etwas anpassen muss.
 
 - **Anzeige:** auf jeder Seite oben neben dem Namen (`v1.2.0`). Ein Klick darauf öffnet im Tab
-  Konfiguration den Abschnitt **Versionen** mit allen Änderungen. Unter **Allgemein** steht dort
+  Konfiguration den Reiter **Versionen** mit allen Änderungen. Unter **System → Allgemein** steht
   zusätzlich die **Build-Kennung** (Build-Datum und Commit, z. B. `2026-09-28-1a2b3c4`). Sie ändert
   sich mit jedem Image, auch ohne neue Versionsnummer.
 - **Änderungsprotokoll:** [`CHANGELOG.md`](CHANGELOG.md).

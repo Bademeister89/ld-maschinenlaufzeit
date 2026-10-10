@@ -31,73 +31,125 @@
   <main>
     <div id="banner" class="banner error" hidden></div>
 
-    <section class="card">
-      <div class="section-head">
-        <h2>Maschinen</h2>
-        <p class="muted">Änderungen gelten sofort, ein Neustart ist nicht nötig.</p>
-        <span class="spacer" style="flex: 1"></span>
-        <button type="button" class="btn primary" id="add">+ Maschine hinzufügen</button>
-      </div>
-      <div id="machine-list" class="config-list"></div>
-    </section>
+    <nav class="subtabs" role="tablist" aria-label="Bereiche der Konfiguration">
+      <button type="button" role="tab" id="tab-maschinen" data-tab="maschinen" aria-controls="panel-maschinen">Maschinen</button>
+      <button type="button" role="tab" id="tab-werkzeuge" data-tab="werkzeuge" aria-controls="panel-werkzeuge">Werkzeuge</button>
+      <button type="button" role="tab" id="tab-artikel" data-tab="artikel" aria-controls="panel-artikel">Artikel</button>
+      <button type="button" role="tab" id="tab-system" data-tab="system" aria-controls="panel-system">System</button>
+      <button type="button" role="tab" id="tab-versionen" data-tab="versionen" aria-controls="panel-versionen">Versionen</button>
+    </nav>
 
-    <section class="card section" id="hersteller">
-      <div class="section-head">
-        <h2>Werkzeughersteller</h2>
-        <p class="muted">Auswahl für das Feld „Hersteller“ in der Werkzeugauswertung.</p>
-      </div>
-      <form id="mf-form" class="mf-add" novalidate>
-        <input type="text" id="mf-name" maxlength="80" autocomplete="off" placeholder="z. B. Garant" aria-label="Neuer Hersteller">
-        <button type="submit" class="btn primary">Hinzufügen</button>
-      </form>
-      <div id="mf-error" class="form-error" role="alert" hidden></div>
-      <ul id="mf-list" class="mf-list"></ul>
-    </section>
+    <div class="tab-panel" id="panel-maschinen" role="tabpanel" aria-labelledby="tab-maschinen" data-tab="maschinen" hidden>
+      <section class="card" id="maschinen-liste">
+        <div class="section-head">
+          <h2>Maschinen</h2>
+          <p class="muted">Änderungen gelten sofort, ein Neustart ist nicht nötig.</p>
+          <span class="spacer" style="flex: 1"></span>
+          <button type="button" class="btn primary" id="add">+ Maschine hinzufügen</button>
+        </div>
+        <div id="machine-list" class="config-list"></div>
+      </section>
 
-    <section class="card section" id="felgen">
-      <div class="section-head">
-        <h2>Felgen-Designs</h2>
-        <p class="muted">Ziffern 3–4 der Felgennummer, z. B. <span class="num">10</span> in
-          <span class="num">10101018-01</span> = Design 999. Der Name erscheint im Tab Aufträge und auf der Live-Karte.</p>
-      </div>
-      <form id="rd-form" class="mf-add" novalidate>
-        <input type="text" id="rd-code" class="rd-code" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="Nr." aria-label="Design-Nummer (zwei Ziffern)">
-        <input type="text" id="rd-name" maxlength="40" autocomplete="off" placeholder="Name, z. B. Hooligan" aria-label="Name des Designs">
-        <button type="submit" class="btn primary">Hinzufügen</button>
-      </form>
-      <div id="rd-error" class="form-error" role="alert" hidden></div>
-      <ul id="rd-list" class="mf-list"></ul>
-    </section>
+      <section class="card section" id="fehler">
+        <div class="section-head">
+          <h2>Fehlersammler</h2>
+          <p class="muted">Meldungen der Steuerung (NC-Fehler und Meldungen der Maschine) mit Datum und Uhrzeit, neueste zuerst.</p>
+        </div>
+        <div class="err-filters">
+          <div class="segmented" id="err-machine" role="group" aria-label="Maschine"></div>
+          <div class="segmented" id="err-days" role="group" aria-label="Zeitraum">
+            <button type="button" data-days="7">7 Tage</button>
+            <button type="button" data-days="30" aria-pressed="true">30 Tage</button>
+            <button type="button" data-days="90">90 Tage</button>
+            <button type="button" data-days="365">1 Jahr</button>
+          </div>
+          <input type="search" id="err-search" placeholder="Meldung oder Programm suchen" aria-label="Meldungen durchsuchen">
+        </div>
+        <div id="err-top" class="err-top"></div>
+        <div id="err-list"></div>
+      </section>
+    </div>
 
-    <section class="card section">
-      <h2 style="margin-bottom: 12px">Allgemein</h2>
-      <dl class="settings-list" id="settings"></dl>
-      <p class="muted" id="settings-note" style="margin: 0"></p>
-    </section>
+    <div class="tab-panel" id="panel-werkzeuge" role="tabpanel" aria-labelledby="tab-werkzeuge" data-tab="werkzeuge" hidden>
+      <section class="card" id="hersteller">
+        <div class="section-head">
+          <h2>Werkzeughersteller</h2>
+          <p class="muted">Auswahl für das Feld „Hersteller“ in der Werkzeugauswertung.</p>
+        </div>
+        <form id="mf-form" class="mf-add" novalidate>
+          <input type="text" id="mf-name" maxlength="80" autocomplete="off" placeholder="z. B. Garant" aria-label="Neuer Hersteller">
+          <button type="submit" class="btn primary">Hinzufügen</button>
+        </form>
+        <div id="mf-error" class="form-error" role="alert" hidden></div>
+        <ul id="mf-list" class="mf-list"></ul>
+      </section>
+    </div>
 
-    <section class="card section" id="diagnose">
-      <div class="section-head">
-        <h2>Diagnose</h2>
-        <p class="muted">Für Fehlermeldungen: Logs, Mitschnitt der Steuerungsdaten seit dem Start und die Auswertungsdaten des Zeitraums in einer ZIP-Datei.</p>
-      </div>
-      <form class="diag-form" action="/api/diagnose.zip" method="get">
-        <label>Zeitraum
-          <select name="days">
-            <option value="1">1 Tag</option>
-            <option value="7" selected>7 Tage</option>
-            <option value="30">30 Tage</option>
-          </select>
-        </label>
-        <label class="diag-check"><input type="checkbox" name="db" value="true"> Datenbank beifügen (größer)</label>
-        <button type="submit" class="btn primary">Diagnose-Datei herunterladen</button>
-      </form>
-      <p class="muted" style="margin: 8px 0 0">Das Erstellen dauert einige Sekunden. Die Datei enthält Maschinenadressen und Programmnamen, aber keine Passwörter.</p>
-    </section>
+    <div class="tab-panel" id="panel-artikel" role="tabpanel" aria-labelledby="tab-artikel" data-tab="artikel" hidden>
+      <section class="card" id="artikel">
+        <div class="section-head">
+          <h2>Aufträge und Felgen</h2>
+          <p class="muted">Läuft so lange kein Programm eines Auftrags oder einer Felge, gilt er als abgeschlossen. Läuft er wieder an, öffnet er sich von selbst.</p>
+        </div>
+        <form id="close-form" class="close-form" novalidate>
+          <label class="field" for="close-days">Automatisch abschließen nach</label>
+          <span class="close-input"><input type="number" id="close-days" min="0" max="365" step="1" inputmode="numeric" class="num"> Tagen ohne Programmlauf</span>
+          <button type="submit" class="btn primary">Speichern</button>
+        </form>
+        <p class="muted" style="margin: 8px 0 0">0 = nie automatisch abschließen. Die neue Frist gilt sofort, auch für bestehende Aufträge.</p>
+        <div id="close-msg" class="form-msg" role="status" hidden></div>
+      </section>
 
-    <section class="card section" id="versionen">
-      <h2 style="margin-bottom: 12px">Versionen</h2>
-      <div id="changelog" class="changelog"></div>
-    </section>
+      <section class="card section" id="felgen">
+        <div class="section-head">
+          <h2>Felgen-Designs</h2>
+          <p class="muted">Ziffern 3–4 der Felgennummer, z. B. <span class="num">10</span> in
+            <span class="num">10101018-01</span> = Design 999. Der Name erscheint im Tab Aufträge und auf der Live-Karte.</p>
+        </div>
+        <form id="rd-form" class="mf-add" novalidate>
+          <input type="text" id="rd-code" class="rd-code" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="Nr." aria-label="Design-Nummer (zwei Ziffern)">
+          <input type="text" id="rd-name" maxlength="40" autocomplete="off" placeholder="Name, z. B. Hooligan" aria-label="Name des Designs">
+          <button type="submit" class="btn primary">Hinzufügen</button>
+        </form>
+        <div id="rd-error" class="form-error" role="alert" hidden></div>
+        <ul id="rd-list" class="mf-list"></ul>
+      </section>
+    </div>
+
+    <div class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" data-tab="system" hidden>
+      <section class="card" id="allgemein">
+        <h2 style="margin-bottom: 12px">Allgemein</h2>
+        <dl class="settings-list" id="settings"></dl>
+        <p class="muted" id="settings-note" style="margin: 0"></p>
+      </section>
+
+      <section class="card section" id="diagnose">
+        <div class="section-head">
+          <h2>Diagnose</h2>
+          <p class="muted">Für Fehlermeldungen: Logs, Mitschnitt der Steuerungsdaten seit dem Start und die Auswertungsdaten des Zeitraums in einer ZIP-Datei.</p>
+        </div>
+        <form class="diag-form" action="/api/diagnose.zip" method="get">
+          <label>Zeitraum
+            <select name="days">
+              <option value="1">1 Tag</option>
+              <option value="7" selected>7 Tage</option>
+              <option value="30">30 Tage</option>
+            </select>
+          </label>
+          <label class="diag-check"><input type="checkbox" name="db" value="true"> Datenbank beifügen (größer)</label>
+          <button type="submit" class="btn primary">Diagnose-Datei herunterladen</button>
+        </form>
+        <p class="muted" style="margin: 8px 0 0">Das Erstellen dauert einige Sekunden. Die Datei enthält Maschinenadressen und Programmnamen, aber keine Passwörter.</p>
+      </section>
+    </div>
+
+    <div class="tab-panel" id="panel-versionen" role="tabpanel" aria-labelledby="tab-versionen" data-tab="versionen" hidden>
+      <section class="card" id="versionen">
+        <h2 style="margin-bottom: 12px">Versionen</h2>
+        <div id="changelog" class="changelog"></div>
+      </section>
+    </div>
+
   </main>
 
   <dialog id="editor" aria-labelledby="editor-title">
