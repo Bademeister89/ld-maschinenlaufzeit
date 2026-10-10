@@ -13,8 +13,9 @@ server:
   host: 0.0.0.0           # 0.0.0.0 = auch von anderen PCs im Netz erreichbar, 127.0.0.1 = nur lokal
   port: 8000
 
-poll_interval_s: 2        # wie oft jede Steuerung abgefragt wird
-timeout_s: 5              # Timeout pro LSV2-Anfrage
+poll_interval_s: 2        # wie oft jede Steuerung abgefragt wird (im Leerlauf seltener, alle 5 s)
+timeout_s: 10             # Timeout pro LSV2-Anfrage (die DMU 70 antwortet beim Laden großer
+                          # Programme manchmal erst nach über 5 s)
 # timezone: Europe/Berlin # Zeitzone für die Tagesauswertung; ohne Angabe gilt die
                           # Umgebungsvariable TZ (z. B. aus der Unraid-Vorlage), sonst Europe/Berlin
 

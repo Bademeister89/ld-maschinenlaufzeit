@@ -47,6 +47,7 @@ class FakeControl:
     """Nachgebaute iTNC 530 auf Telegrammebene; merkt sich jedes angekommene Telegramm."""
 
     instances: list["FakeControl"] = []
+    pgm_code = 0  # Programmstatus: 0 = gestartet, 7 = inaktiv
 
     def __init__(self, hostname, port=19000, timeout=15.0):
         self.received: list[tuple[object, bytes]] = []
@@ -118,7 +119,7 @@ class FakeControl:
 
     def _status(self, code):
         if code == ParRRI.PGM_STATE:
-            return self._ok(RSP.S_RI, struct.pack("!H", 0))  # gestartet
+            return self._ok(RSP.S_RI, struct.pack("!H", self.pgm_code))
         if code == ParRRI.EXEC_STATE:
             return self._ok(RSP.S_RI, struct.pack("!H", 4))  # Automatik
         if code == ParRRI.SELECTED_PGM:
@@ -152,6 +153,46 @@ def assert_only_reads(control):
 
 
 # --- Normalbetrieb läuft durch den Schutz ----------------------------------------------------------
+
+
+def status_reads(control):
+    """Abgefragte Statuswerte (R_RI) seit dem letzten Aufruf, ohne Wiederholung."""
+    codes = {ParRRI.PGM_STATE: "status", ParRRI.EXEC_STATE: "mode", ParRRI.SELECTED_PGM: "program",
+             ParRRI.OVERRIDE: "override", ParRRI.CURRENT_TOOL: "tool", ParRRI.FIRST_ERROR: "errors"}
+    inst = control.instances[0]
+    names = [codes[struct.unpack("!H", data[:2])[0]] for cmd, data in inst.received if cmd == CMD.R_RI]
+    inst.received.clear()
+    return names
+
+
+def test_rare_values_are_read_only_when_needed(control):
+    """Weniger Last für die Steuerung: Status, Betriebsart und Programm bei jeder Abfrage, Werkzeug bei
+    laufendem Programm auch – Override alle 6 s, Fehlermeldungen alle 10 s, im Leerlauf noch seltener.
+    Ändert sich der Status, wird sofort alles gelesen; dazwischen gilt der letzte Wert."""
+    now = [0.0]
+    adapter = Lsv2Adapter("10.0.0.1", clock=lambda: now[0])
+    adapter.connect()
+    status_reads(control)
+    everything = ["status", "mode", "program", "tool", "override", "errors"]
+    assert status_reads(control) == [] and adapter.read().tool == "T12"
+    assert status_reads(control) == everything
+    reads = []
+    for t in (2.2, 4.4, 6.6, 8.8, 11.0):
+        now[0] = t
+        snap = adapter.read()
+        reads.append(status_reads(control)[3:])
+    assert reads == [["tool"], ["tool"], ["tool", "override"], ["tool"], ["tool", "errors"]]
+    assert (snap.tool, snap.override_feed, snap.errors) == ("T12", 100.0, ())  # letzte Werte bleiben
+
+    control.instances[0].pgm_code = 7  # Programm zu Ende: alles sofort lesen …
+    now[0] = 13.2
+    adapter.read()
+    assert status_reads(control) == everything
+    now[0] = 15.4
+    assert adapter.read().tool == "T12"
+    assert status_reads(control) == ["status", "mode", "program"]  # … danach im Leerlauf nur das Nötigste
+    adapter.close()
+    assert_only_reads(control)
 
 
 def test_normal_operation_passes_guard(control):

@@ -279,8 +279,8 @@ zugeordnet, z. B. `26-21055-01-01`:
     Der Verbindungstest zeigt es
     unter „Hauptprogramm lesen“, das Log beim Einlesen („ruft auf: …“).
   - Ruft das Oberprogramm dasselbe Auftragsprogramm mehrmals direkt hintereinander auf, ohne
-    Zwischenprogramm, kann daraus ein einziger Lauf werden. Die Steuerung wird alle 2 s abgefragt,
-    und die Zeilen dazwischen laufen meist schneller ab.
+    Zwischenprogramm, kann daraus ein einziger Lauf werden. Die Steuerung wird bei laufendem
+    Programm alle 2 s abgefragt, und die Zeilen dazwischen laufen meist schneller ab.
 - **Gezählt wird die Zeit der Programmdurchläufe:** Laufzeit sowie Stopps und Fehler innerhalb der
   Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
   angewähltes Programm dem Auftrag Tage gutschreiben.
@@ -492,6 +492,20 @@ Die App verändert oder löscht nichts an der Maschine. Sie liest nur:
 
 Programm und Werkzeugtabelle werden auf den Rechner kopiert und nur dort ausgewertet.
 
+**So wenig Last wie möglich:**
+- **Statusverbindung:** Die App hält je Maschine eine einzige Statusverbindung offen und fragt
+  darüber alle 2 s.
+  - Jedes Mal liest sie Programmstatus, Betriebsart und Programm mit Satznummer. Das Werkzeug in der
+    Spindel liest sie ebenfalls jedes Mal, wenn ein Programm läuft.
+  - Seltener liest sie den Override (alle 6 s, im Leerlauf alle 30 s), die Meldungen der Steuerung
+    (alle 10 s) und das Werkzeug ohne laufendes Programm (alle 20 s). Ändern sich Status,
+    Betriebsart oder Programm, liest sie sofort alles.
+- **Leerlauf:** Ist die Maschine seit 5 min bereit und nichts ändert sich, fragt die App nur alle 5 s.
+- **Maschine aus:** Die App versucht es nach 5, 10, 20 und 40 s, danach jede Minute.
+- **NC-Programm:** Es wird nur gelesen, wenn es neu oder geändert ist. Vorher fragt die App
+  Größe und Datum ab. Programme über 20 MB werden nie übertragen.
+- **Werkzeugtabelle:** Die App prüft alle 10 min, ob sie sich geändert hat, und liest sie nur dann.
+
 **Technischer Schutz:** Jede Verbindung zur Steuerung läuft über einen Schreibschutz
 (`app/adapters/lsv2_guard.py`). Er prüft jeden einzelnen LSV2-Befehl vor dem Senden gegen eine
 Positivliste:
@@ -524,7 +538,9 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
 
 - **Programmdurchlauf:** beginnt bei „Läuft“ im Programmlauf und bleibt über Stopps und Fehler offen.
   Er endet, wenn die Maschine „Bereit“ meldet oder ein anderes Programm läuft. Kurze
-  Verbindungsabbrüche beenden keinen Lauf. Ergebnis: fertig, abgebrochen, Fehler oder unterbrochen.
+  Verbindungsabbrüche beenden keinen Lauf. Beginnt ein Programm während eines kurzen Abbruchs
+  (höchstens 30 s, z. B. Zeitüberschreitung), gilt sein Start trotzdem als beobachtet. Ergebnis:
+  fertig, abgebrochen, Fehler oder unterbrochen.
   - **Handbetrieb und MDI** („Positionieren mit Handeingabe“): Auch hier meldet die Steuerung
     „gestartet“, z. B. für einen MDI-Satz oder ein Makro. Daraus entsteht kein Lauf. Die Zeit zählt
     als Laufzeit der Maschine, aber zu keinem Programm und keinem Auftrag.
@@ -533,10 +549,13 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
     Programmlauf lief. Gestoppt und dann abgebrochen bleibt „unterbrochen“.
   - Ein Abbruch gleich nach dem Start geht bei der iTNC 530 ebenfalls direkt auf „inaktiv“. Kam das
     Programm nicht über seine ersten Sätze hinaus (5 %, höchstens die Hälfte), ist der Lauf
-    „unterbrochen“, nicht fertig.
+    „unterbrochen“, nicht fertig. Ist die Satzanzahl unbekannt, weil das Programm zu groß zum
+    Einlesen ist, gelten die ersten 100 Sätze.
   - **Satzvorlauf:** Wird ein Programm dort per Satzvorlauf wieder gestartet, wo ein beendeter Lauf
     endete (z. B. nach einer Störung), läuft dieser Lauf weiter. Ein Teil ergibt so einen Lauf.
     - Das gilt bis zu 12 Stunden später und für einen der letzten 10 Läufe.
+    - Das Programm darf aus einem anderen Ordner kommen (gleicher Name), z. B. die Kopie im Ordner
+      der Palettentabelle.
     - Dazwischen darf ein anderes Programm (z. B. die Vorrichtung) oder ein Fehlstart desselben
       Programms liegen.
     Beginnt ein Lauf sonst mitten im Programm (jenseits von 5 % der Sätze), ist er ein Teillauf und

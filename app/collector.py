@@ -64,6 +64,13 @@ ENDED_KEEP = 10  # so viele beendete Läufe für einen späteren Satzvorlauf mer
 MID_START_SHARE = 0.05
 MID_START_LINES = 100
 RESUME_MAX_GAP_S = 12 * 3600  # so lange nach dem Ende kann ein Satzvorlauf den Lauf noch fortsetzen
+# Kurzer Verbindungsabbruch (Zeitüberschreitung, gleich wieder verbunden): Ein Start in der Lücke gilt
+# noch als beobachtet – es fehlen höchstens diese Sekunden (DMU 70, 9.10. 16:19: 14 s)
+SHORT_GAP_S = 30.0
+# Seit IDLE_AFTER_S nichts geändert und die Maschine bereit: seltener fragen (weniger Last für die
+# Steuerung). Ein Start fällt dann höchstens IDLE_POLL_S später auf.
+IDLE_AFTER_S = 300.0
+IDLE_POLL_S = 5.0
 # Palettenprogramm nach einem Neustart der App: so weit zurück nach Läufen des Durchgangs suchen; ein
 # längeres Bereit trennt zwei Durchgänge (zwischen den Paletten meldet die Steuerung nur Sekunden)
 PALLET_LOOKBACK_S = 7 * 86_400
@@ -158,6 +165,8 @@ class MachineCollector:
         self._spindle: int | None = None  # T-Nummer in der Spindel (0 = leer, None = unbekannt) – Aufrufe
         self._tool_use: tuple[int, int] | None = None  # offener Einsatzabschnitt: (id, T-Nummer)
         self._last_update: float | None = None
+        self._online_at: float | None = None  # letzte erfolgreiche Abfrage
+        self._activity_at: float | None = None  # letzte Änderung dessen, was die Steuerung meldet
         self._connected = False
         self._control: dict[str, str] = {}
         self._last_error: str | None = None
@@ -218,6 +227,8 @@ class MachineCollector:
         self._prev_state = state
         self._snapshot = snap
         self._last_update = now
+        if snap is not None:
+            self._online_at = now
 
     def _record_raw(
         self, raw: Snapshot | None, snap: Snapshot | None, state: MachineState, now: float, reason: str | None
@@ -230,6 +241,7 @@ class MachineCollector:
             else (raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors)
         )
         if key != self._raw_key:
+            self._activity_at = now
             run = self._run
             self._raw.append({
                 "t": now,
@@ -311,10 +323,23 @@ class MachineCollector:
         prev = self._snapshot
         if self._prev_state is not MachineState.RUNNING or prev is None or prev.exec_mode in MANUAL_MODES:
             return False
-        blocks = self._blocks(run.program)
-        if not blocks or run.max_line is None:
+        first_lines = self._first_lines(run.program)
+        if first_lines is None or run.max_line is None:
             return True
-        return run.max_line > min(self._start_margin(blocks), blocks / 2)
+        return run.max_line > first_lines
+
+    def _first_lines(self, program: str | None) -> float | None:
+        """Bis zu welcher Satznummer ein Programm gerade erst begonnen hat (5 %, mindestens 100,
+        höchstens die Hälfte). Ohne Satzanzahl nur, wenn das Programm zu groß zum Einlesen war
+        (DMU 70, 8.10. 16:21: 26-21048-02-01 mit 25,9 MB, Fehlstart nach 18 s bis Satz 33) – es hat
+        sicher mehr als 100 Sätze. Sonst None (unbekannt)."""
+        blocks = self._blocks(program)
+        if blocks:
+            return min(self._start_margin(blocks), blocks / 2)
+        row = self._program_row(program) if program else None
+        if row is not None and row["size"] and row["size"] > self._program_max_bytes:
+            return MID_START_LINES
+        return None
 
     @staticmethod
     def _start_margin(blocks: int | None) -> float:
@@ -333,10 +358,13 @@ class MachineCollector:
         line = self._position(snap)
         margin = self._start_margin(self._blocks(snap.program))
         mid_start = line is not None and line > margin
+        name = call_name(snap.program or "")
         ended = next(
             (
+                # Ein Programm ist sein Name: Kopie im Ordner der Palettentabelle zählt mit
+                # (DMU 70, 8.10.: 26-21048-02-01 aus 21048 bis Satz 50.364, weiter ab 50.367 aus 21051)
                 e for e in reversed(self._ended)
-                if e.program == snap.program
+                if call_name(e.program or "") == name
                 and now - e.ended_at <= RESUME_MAX_GAP_S
                 and e.last_line is not None
                 and abs(line - e.last_line) <= margin
@@ -350,12 +378,31 @@ class MachineCollector:
             log.info("%s: Lauf %d fortgesetzt (Satzvorlauf bis Satz %d)", self.machine.name, ended.id, line)
             self._ended.remove(ended)
             return
-        # Ohne beobachteten Start (Neustart der Erfassung) oder mitten im Programm begonnen: kein
-        # vollständiger Lauf, zählt nicht in Ø-Stückzeiten und Prognose
-        start_observed = self._prev_state not in (None, MachineState.OFFLINE) and not mid_start
+        # Ohne beobachteten Start (Neustart der Erfassung, Maschine war aus) oder mitten im Programm
+        # begonnen: kein vollständiger Lauf, zählt nicht in Ø-Stückzeiten und Prognose
+        start_observed = self._start_seen(now) and not mid_start
         code = parse_program(snap.program)
         run_id = self._db.start_run(self.machine.id, snap.program, now, start_observed, code.key if code else None)
         self._run = _Run(run_id, snap.program, now, False, start_observed, now)
+
+    def _start_seen(self, now: float) -> bool:
+        """Hat die Erfassung gesehen, was davor war? Nach einer normalen Abfrage ja, nach einem kurzen
+        Verbindungsabbruch auch (höchstens ``SHORT_GAP_S`` verpasst), nach einem Neustart der App, einer
+        ausgeschalteten Maschine oder ohne Netz zum Standort nicht."""
+        if self._prev_state in (None, MachineState.NETWORK):
+            return False
+        if self._prev_state is MachineState.OFFLINE:
+            return self._online_at is not None and now - self._online_at <= SHORT_GAP_S
+        return True
+
+    def next_poll_s(self, now: float) -> float:
+        """Pause bis zur nächsten Abfrage: im Leerlauf (bereit, seit 5 min keine Änderung) länger."""
+        idle = (
+            self._prev_state is MachineState.READY
+            and self._activity_at is not None
+            and now - self._activity_at >= IDLE_AFTER_S
+        )
+        return max(self.poll_interval_s, IDLE_POLL_S) if idle else self.poll_interval_s
 
     def _update_run(self, snap: Snapshot, state: MachineState, now: float) -> None:
         run = self._run
@@ -714,7 +761,7 @@ class MachineCollector:
             p.durations.setdefault(call_name(entries[p.pos].program), []).append(p.entry_run_s)
         if p.pos is None or index < p.pos:
             p.started.clear()  # neuer Durchgang
-        observed = self._prev_state not in (None, MachineState.OFFLINE, MachineState.NETWORK)
+        observed = self._start_seen(now)
         p.pos, p.entry_run_s, p.entry_observed = index, 0.0, observed
         p.started[index] = (now, observed)
 
@@ -964,7 +1011,7 @@ class MachineCollector:
                     self._maybe_fetch_tool_table()
                 except Exception:
                     log.exception("%s: Verbuchen fehlgeschlagen", self.machine.name)
-                await asyncio.sleep(self.poll_interval_s)
+                await asyncio.sleep(self.next_poll_s(self._clock()))
         finally:
             if self._fetch_task is not None:
                 self._fetch_task.cancel()

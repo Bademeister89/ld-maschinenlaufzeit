@@ -10,6 +10,37 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.22.0] – 2026-10-10
+
+Grundlage ist die Diagnose vom 10.10., eine Woche Vollbetrieb an beiden Maschinen.
+
+### Geändert
+- **Weniger Last für die Steuerungen.** Bisher gingen bei jeder Abfrage (alle 2 s) sechs Lesebefehle
+  an die Maschine, jetzt sind es im Mittel rund ein Drittel weniger.
+  - Programmstatus, Betriebsart und Programm mit Satznummer werden weiter jedes Mal gelesen. Das
+    Werkzeug in der Spindel wird bei laufendem Programm ebenfalls jedes Mal gelesen.
+  - Seltener gelesen werden der Override (alle 6 s, im Leerlauf alle 30 s), die Meldungen der
+    Steuerung (alle 10 s) und das Werkzeug, wenn kein Programm läuft (alle 20 s).
+  - Ändern sich Status, Betriebsart oder Programm, liest die App sofort alles.
+  - **Leerlauf:** Ist die Maschine seit 5 min bereit und nichts ändert sich, fragt die App nur noch
+    alle 5 s. Ein Start fällt dann höchstens 5 s später auf.
+- **Timeout 10 s statt 5 s:** Die DMU 70 antwortete beim Laden großer Programme mehrmals am Tag erst
+  nach über 5 s. Jedes Mal baute die App die Verbindung neu auf, was zusätzliche Last bedeutet.
+
+### Behoben
+- **Kurzer Verbindungsabbruch beim Start:** Startete ein Programm genau in einer solchen Lücke
+  (höchstens 30 s), galt der Start bisher als nicht beobachtet. Der Lauf fehlte dann in der Ø-Zeit
+  und der Prognose.
+  - Beispiel: DMU 70, 9.10. 16:19, ein Lauf von 6,5 h mit `26-21048-02-01`.
+- **Fehlstart bei sehr großen Programmen war „fertig“:** Bei Programmen, die zu groß zum Einlesen
+  sind (über 20 MB, Satzanzahl unbekannt), zählt jetzt ein Lauf, der nicht über Satz 100 hinauskam,
+  als unterbrochen.
+  - Beispiel: `26-21048-02-01` (25,9 MB) am 8.10. zweimal 18 s „fertig“.
+- **Satzvorlauf aus dem Ordner der Palettentabelle:** Ein Satzvorlauf setzt den Lauf jetzt auch fort,
+  wenn das Programm aus einem anderen Ordner gestartet wird (gleicher Name).
+  - Beispiel: DMU 70, 8.10.: bis Satz 50.364 aus 21048, nach 8 min ab Satz 50.367 über die
+    Palettentabelle von 21051. Bisher entstanden daraus zwei Läufe.
+
 ## [1.21.1] – 2026-10-08
 
 ### Geändert

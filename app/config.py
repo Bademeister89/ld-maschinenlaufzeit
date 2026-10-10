@@ -63,7 +63,7 @@ class MachineConfig:
 class Settings:
     machines: tuple[MachineConfig, ...] = ()
     poll_interval_s: float = 2.0
-    timeout_s: float = 5.0
+    timeout_s: float = 10.0
     timezone: str = "Europe/Berlin"
     db_path: Path = Path("data.db")
     simulate: bool = False
@@ -131,7 +131,7 @@ def load_settings(path: Path | str | None = None) -> Settings:
     return Settings(
         machines=machines,
         poll_interval_s=float(os.environ.get("POLL_INTERVAL_S") or raw.get("poll_interval_s", 2.0)),
-        timeout_s=float(raw.get("timeout_s", 5.0)),
+        timeout_s=float(raw.get("timeout_s", 10.0)),
         timezone=_timezone(raw),
         db_path=Path(os.environ.get("DB_PATH") or raw.get("db_path") or default_db),
         simulate=simulate,

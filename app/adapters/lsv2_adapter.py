@@ -4,12 +4,18 @@ Es werden ausschließlich lesende Abfragen verwendet. Jede Verbindung entsteht �
 ``open_lsv2`` (lsv2_guard.py): Ein Schreibschutz lässt nur Lesetelegramme zur Steuerung durch.
 ``safe_mode=False`` (nur Statusverbindung) ist nötig, weil pyLSV2 sonst den DNC-Login
 (Option 18) verweigert – ohne ihn gibt es keinen Programmstatus.
+
+So wenig Last wie möglich: Programmstatus, Betriebsart und Programm (mit Satznummer) werden bei
+jeder Abfrage gelesen. Werkzeug, Override und Fehlermeldungen nur so oft wie nötig (``EVERY_S``)
+und sofort, sobald sich Status, Betriebsart oder Programm ändern; dazwischen gilt der letzte Wert.
 """
 
 from __future__ import annotations
 
 import logging
 import tempfile
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pyLSV2
@@ -22,6 +28,14 @@ from .lsv2_guard import open_lsv2
 
 log = logging.getLogger(__name__)
 
+# Abstand in Sekunden, in dem die selteneren Werte gelesen werden: (Programm läuft, sonst).
+# Werkzeug bei laufendem Programm jedes Mal – daran hängen Einsatzzeit und Werkzeugaufrufe.
+EVERY_S = {
+    "tool": (0.0, 20.0),
+    "override": (6.0, 30.0),  # Balken auf der Live-Karte
+    "errors": (10.0, 10.0),  # Meldungen der Steuerung
+}
+
 
 def _text(value: str | None) -> str | None:
     value = (value or "").strip()
@@ -33,12 +47,32 @@ def _percent(value: float | None) -> float | None:
 
 
 class Lsv2Adapter:
-    def __init__(self, host: str, port: int = 19000, timeout: float = 5.0):
+    def __init__(
+        self, host: str, port: int = 19000, timeout: float = 5.0, clock: Callable[[], float] = time.monotonic
+    ):
         self.host = host
         self.port = port
         self.timeout = timeout
         self._con: pyLSV2.LSV2 | None = None
         self._tool_supported = True
+        self._clock = clock
+        self._reset_cache()
+
+    def _reset_cache(self) -> None:
+        """Nach (Neu-)Verbindung alles frisch lesen."""
+        self._key: tuple | None = None  # Status, Betriebsart, Programme der letzten Abfrage
+        self._read_at: dict[str, float] = {}
+        self._tool: str | None = None
+        self._override = None
+        self._errors: tuple[str, ...] = ()
+
+    def _due(self, name: str, now: float, running: bool, changed: bool) -> bool:
+        last = self._read_at.get(name)
+        period = EVERY_S[name][0 if running else 1]
+        if changed or last is None or now - last >= period - 0.1:
+            self._read_at[name] = now
+            return True
+        return False
 
     def connect(self) -> dict[str, str]:
         self.close()
@@ -64,12 +98,20 @@ class Lsv2Adapter:
         if con is None:
             raise AdapterError("nicht verbunden")
         try:
+            now = self._clock()
             pgm_state = con.program_status()
             exec_mode = con.execution_state()
             stack = con.program_stack()
-            override = con.override_state()
-            tool = self._read_tool(con)
-            errors = tuple(t for t in (_text(m.e_text) for m in con.get_error_messages()) if t)
+            key = (pgm_state, exec_mode, stack.main if stack else None, stack.current if stack else None)
+            changed, self._key = key != self._key, key
+            running = pgm_state is pyLSV2.PgmState.STARTED
+            if self._due("tool", now, running, changed):
+                self._tool = self._read_tool(con)
+            if self._due("override", now, running, changed):
+                self._override = con.override_state()
+            if self._due("errors", now, running, changed):
+                self._errors = tuple(t for t in (_text(m.e_text) for m in con.get_error_messages()) if t)
+            tool, override, errors = self._tool, self._override, self._errors
         except Exception as exc:
             self.close()
             raise AdapterError(f"Abfrage an {self.host} fehlgeschlagen ({exc})") from exc
@@ -94,6 +136,7 @@ class Lsv2Adapter:
         )
 
     def close(self) -> None:
+        self._reset_cache()
         con, self._con = self._con, None
         if con is not None:
             self._disconnect(con)
