@@ -30,6 +30,9 @@ spätere Laufzeitauswertungen:
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
 - **Artikel:** je Auftrag und Version ein Artikel mit Rohling, Material- und Fräskosten, EK, VK, Marge
   und Excel-Export, siehe [Artikel](#artikel-tab-artikel).
+- **Planung:** Board mit Aufgaben je Meilenstein (Design, CAD, CAM, Fräsen …), Bearbeiter, Priorität,
+  Termin. Dazu eine Änderungsliste A01, A02 … je Artikel mit Bildern und einem Alarm auf der
+  Live-Karte, solange eine Änderung offen ist, siehe [Planung](#planung-und-änderungen-tab-planung).
 - **Werkzeugauswertung:** Einsatzzeit je Werkzeug (T1–T1000) und Maschine, Werkzeugdaten, Maximallaufzeit mit
   Vorwarnung und roter Meldung, Zurücksetzen beim Werkzeugwechsel, Standzeit-Historie.
 - **Konfiguration:** Maschinen mit Name, IP, Bild, Standort/Notiz und Reihenfolge anlegen, Verbindung
@@ -554,10 +557,11 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
 - **Materialien:** Die Liste mit Dichte (g/cm³) und Preis je kg pflegst du unter Konfiguration →
   Artikel, z. B. Alu 7075 mit 2,81 g/cm³. Ein neuer Preis gilt sofort für alle Artikel mit diesem
   Material. Ohne Dichte gibt es kein Gewicht und keinen Materialpreis.
-- **Excel-Export:** eine Arbeitsmappe zum Weiterrechnen mit den gefilterten Artikeln (Status).
-  - **Auswahl:** Nach „Excel-Export“ fragt ein Fenster: **Nur Artikel** (ohne Felgen), **Artikel und
-    Felgen** oder **Nur Felgen**, jeweils mit der Zahl der Zeilen. Vorausgewählt ist der Art-Filter
-    der Seite; die Suche gilt nicht. Dateiname `artikel_ohne_felgen_…`, `artikel_…` bzw. `felgen_…`.
+- **Excel-Export:** eine Arbeitsmappe zum Weiterrechnen.
+  - **Auswahl per Haken:** Jede Zeile hat links ein Kästchen, die Kopfzeile eines für alle angezeigten.
+    Mit Haken exportiert „Excel-Export (n angehakt)“ genau diese Artikel. Ohne Haken exportiert er
+    alles, was die Liste zeigt, mit Status, Art (Aufträge/Felgen) und Suche. Die Haken bleiben beim
+    Filtern erhalten, „Auswahl aufheben“ entfernt sie. Dateiname `artikel_<Datum>.xlsx`.
   - **Aufbau:**
     - Bild des Artikels in jeder Zeile
     - farbige Spaltengruppen (Artikel, Rohling und Material, Fertigung mit Maschine, Kosten und
@@ -575,6 +579,55 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
   - **Stundensatz:** Lief ein Artikel auf mehreren Maschinen, steht dort der nach Laufzeit gewichtete
     Satz.
   - **Weitere Blätter:** „Materialien“ und „Erläuterung“ mit den Formeln in Worten.
+
+## Planung und Änderungen (Tab „Planung“)
+
+**Board:** Je Meilenstein eine Spalte, von links nach rechts Offen, Design, CAD, CAM, Fräsen und
+Fertig. Die Spalten und die Bearbeiter pflegt man unter Konfiguration → Planung.
+
+- **Aufgabe:** Titel, optional Artikel, Bearbeiter, Priorität (hoch/normal/niedrig), Termin und
+  Notiz. Ist der Termin vorbei und die Aufgabe nicht fertig, ist sie rot als überfällig markiert.
+- **Neue Auftragsnummer:** Auftragsnummern werden fortlaufend vergeben. Trägt man an einer Aufgabe oder
+  Änderung eine Nummer ein, die es noch nicht gibt (z. B. `14025` oder die Version `21053V3`), legt die
+  App beim Speichern den Auftrag samt Artikel an. Der Dialog zeigt das schon beim Eintippen an.
+  Laufen später Programme wie `26-14025-01-01`, buchen sie auf diesen Auftrag. Wie jeder Auftrag
+  schließt er sich nach einigen Tagen ohne Programmlauf (Standard 7) und öffnet sich beim ersten
+  Lauf wieder.
+- **Verschieben:** Karte mit der Maus in eine andere Spalte oder an eine andere Stelle ziehen. Oben in
+  der Spalte steht das Wichtigste. Am Tablet geht das über „Bearbeiten“: Meilenstein wählen,
+  „↑ höher“ / „↓ tiefer“.
+- **Filter:** Bearbeiter, Suche (Aufgabe, Artikel, Bezeichnung) und „nur überfällig“.
+- **Automatisch nach „Fräsen“:** Startet an einer Maschine ein Programm eines Auftrags, rücken seine
+  Aufgaben aus den Spalten davor in die Spalte „Fräsen“, jeweils oben. Das passiert beim Start eines
+  Laufs, nicht schon beim Anwählen.
+  - Aufgaben der Grundversion (`21053`) rücken bei jeder Version mit, Aufgaben einer Version
+    (`21053V1`) nur bei Programmen dieser Version. Aufgaben ohne Artikel bleiben stehen.
+  - Aufgaben in späteren Spalten und in „Fertig“ bleiben, wo sie sind. Ein späterer Lauf holt
+    erledigte Aufgaben also nicht zurück.
+  - Die Zielspalte ist unter Konfiguration → Planung als „▶ Programmlauf“ markiert. Man kann eine
+    andere wählen („Als Programmlauf“) oder die Funktion abschalten („Programmlauf aus“).
+- Die Spalte „Fertig“ zeigt die letzten 14 Tage. Ältere Aufgaben blendet „+ ältere zeigen“ ein.
+
+**Änderungsliste:** Je Artikel gibt es eigene Änderungsstände A01, A02 … Die Version 21053V1 hat eine
+eigene Liste neben 21053.
+
+- Öffnen über „+ Änderung“ im Tab Planung, über den Knopf „+ Änderung“ im Auftrag (Tab Aufträge; bei
+  Versionen je Version), über die Spalte „Änderung“ in der Artikelliste oder über die Marke
+  „Änderung A03“ auf einer Karte.
+- Jede Änderung hat einen Text, einen Bearbeiter und beliebig viele Bilder. Die Bilder verkleinert der
+  Browser wie das Auftragsbild.
+- **Bilder einfügen:** „+ Bild“ (Datei), „Foto“ (Handy/Tablet), Strg+V oder „Aus Zwischenablage“.
+  Strg+V fügt in die Änderung ein, die zuletzt angeklickt wurde (blau umrandet). Sonst landet das
+  Bild in der neuen Änderung und wird mit ihr gespeichert.
+- **Neue Änderung = Aufgabe:** Eine neue Änderung legt oben in der ersten Spalte eine Aufgabe
+  „Änderung A03: …“ an, mit Priorität hoch. Beide Seiten bleiben gleich:
+  - Ist die Karte in „Fertig“, gilt die Änderung als umgesetzt.
+  - Zieht man die Karte wieder heraus, ist die Änderung wieder offen.
+  - „Als umgesetzt markieren“ in der Liste schiebt die Karte nach „Fertig“.
+- **Alarm:** Ist ein Programm eines Artikels mit offener Änderung angewählt oder läuft es, zeigt die
+  Live-Karte einen roten Hinweis, z. B. „Achtung: 21053V1 hat eine offene Änderung A03“, mit Link zur
+  Liste. Der Alarm gilt genau für diese Version, eine Änderung an 21053 meldet sich nicht bei 21053V1.
+  Altprogramme (`1323801.h`) zählen wie neue Programme.
 
 ## Werkzeugauswertung (Tab „Werkzeugauswertung“)
 
@@ -794,7 +847,16 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET /api/articles?status=`, `POST /api/articles` | Artikel mit Kosten und Preisen; anlegen mit `{"key": "21060V1"}` |
 | `PUT/DELETE /api/articles/{key}` | Rohling (Material, Form, Maße), EK, VK, Notiz bzw. diese Angaben entfernen |
 | `GET /api/articles/export.xlsx?status=&kind=` | Excel-Export der Artikel (`kind`: `all`, `order` = ohne Felgen, `rim` = nur Felgen) |
+| `POST /api/articles/export.xlsx` | Excel-Export genau dieser Artikel: `{"keys": ["21053", "10101018"], "selection": "2 angehakte Artikel"}` |
 | `GET/POST/PUT/DELETE /api/config/materials` | Materialliste: `{"name", "density" (g/cm³), "price_per_kg"}` |
+| `GET/POST/PUT/DELETE /api/config/milestones`, `POST …/milestones/order` | Meilensteine (Spalten der Planung): `{"name", "done", "milling"}` (`milling` = Spalte für laufende Programme), Reihenfolge `{"ids": […]}` |
+| `GET/POST/PUT/DELETE /api/config/workers` | Bearbeiter: `{"name"}` |
+| `GET /api/planning/board` | Spalten mit Aufgaben, Bearbeiter |
+| `POST /api/planning/tasks`, `PUT/DELETE /api/planning/tasks/{id}` | Aufgabe: `{"title", "note", "article_key", "worker_id", "priority" (1–3), "due_date", "milestone_id"}` |
+| `POST /api/planning/tasks/{id}/move` | Aufgabe verschieben: `{"milestone_id", "index"}` (0 = oben) |
+| `GET /api/planning/changes?article=&status=`, `POST /api/planning/changes` | Änderungen; anlegen mit `{"article_key", "description", "worker_id"}` |
+| `PUT/DELETE /api/planning/changes/{id}` | Text, Bearbeiter, `status` (`open`/`done`) bzw. entfernen |
+| `PUT /api/planning/changes/{id}/images`, `GET/DELETE /api/planning/images/{id}` | Bild zur Änderung (Upload wie beim Auftragsbild) |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
@@ -970,6 +1032,7 @@ Demo-Historie (drei Wochen, Schichtbetrieb) und Tests:
 | `app/probe.py` | Verbindungstest |
 | `app/stats.py` | Auswertung |
 | `app/orders.py`, `app/orders_api.py` | Aufträge aus Programmnamen |
+| `app/planning.py`, `app/planning_api.py` | Planung (Board) und Änderungsliste |
 | `app/tools.py`, `app/tools_api.py` | Werkzeugauswertung |
 | `app/api.py`, `app/config_api.py`, `app/main.py` | Web-API und Start (`python -m app`) |
 | `app/__init__.py`, `CHANGELOG.md` | Versionsnummer und Änderungsprotokoll |

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planung</title>
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1a1a19">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner wide">
+      <div class="brand"><img class="brand-icon" src="icons/icon.svg" alt="" width="24" height="24">LD-Machine-Viewer</div>
+      <nav class="nav" aria-label="Seiten">
+        <a href="./">Live</a>
+        <a href="auswertung.html">Auswertung</a>
+        <a href="auftraege.html">Aufträge</a>
+        <a href="artikel.html">Artikel</a>
+        <a href="planung.html" aria-current="page">Planung</a>
+        <a href="werkzeuge.html">Werkzeugauswertung</a>
+        <a href="konfiguration.html">Konfiguration</a>
+      </nav>
+      <div class="topbar-status">
+        <span id="sim" class="sim-badge" hidden>Simulation – keine echten Maschinendaten</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wide">
+    <div id="banner" class="banner error" hidden></div>
+
+    <div class="card filters" role="group" aria-label="Filter">
+      <label class="field">Bearbeiter
+        <select id="worker"></select>
+      </label>
+      <label class="field">Suche
+        <input type="search" id="search" placeholder="Aufgabe oder Artikel" autocomplete="off">
+      </label>
+      <label class="field"><input type="checkbox" id="overdue"> nur überfällig</label>
+      <span class="spacer"></span>
+      <span class="muted" id="count"></span>
+      <button type="button" class="btn" id="add-change">+ Änderung</button>
+      <button type="button" class="btn primary" id="add-task">+ Aufgabe</button>
+    </div>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>Board</h2>
+        <p class="muted">Karten ziehen, um Meilenstein oder Reihenfolge zu ändern – oben ist das Wichtigste. Am Tablet über
+          „Bearbeiten“. Spalten und Bearbeiter: <a href="konfiguration.html#meilensteine">Konfiguration → Planung</a>.</p>
+      </div>
+      <div id="board" class="board"></div>
+    </section>
+
+    <section class="section card">
+      <div class="section-head">
+        <h2>Offene Änderungen</h2>
+        <p class="muted">Läuft ein Programm eines dieser Artikel, zeigt die Live-Ansicht einen Alarm.</p>
+      </div>
+      <div id="open-changes"></div>
+    </section>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="editor-form" novalidate>
+      <header><h2 id="editor-title">Aufgabe</h2></header>
+      <div class="form-body">
+        <label class="form-field">Titel
+          <input type="text" id="t-title" maxlength="120" autocomplete="off" required placeholder="z. B. Schwinge Gen 3 konstruieren">
+        </label>
+        <div class="form-row two">
+          <label class="form-field">Artikel / Auftrag (optional)
+            <input type="text" id="t-article" list="article-list" maxlength="12" autocomplete="off" placeholder="z. B. 13238 oder 21053V1">
+            <span class="field-hint" id="t-article-hint" aria-live="polite"></span>
+          </label>
+          <label class="form-field">Bearbeiter
+            <select id="t-worker"></select>
+          </label>
+        </div>
+        <div class="form-row three">
+          <label class="form-field">Meilenstein
+            <select id="t-milestone"></select>
+          </label>
+          <label class="form-field">Priorität
+            <select id="t-priority">
+              <option value="1">hoch</option>
+              <option value="2">normal</option>
+              <option value="3">niedrig</option>
+            </select>
+          </label>
+          <label class="form-field">Termin
+            <input type="date" id="t-due">
+          </label>
+        </div>
+        <div class="task-move" id="t-move">
+          <span class="field-hint">Reihenfolge in der Spalte:</span>
+          <button type="button" class="btn small" id="t-up">↑ höher</button>
+          <button type="button" class="btn small" id="t-down">↓ tiefer</button>
+        </div>
+        <label class="form-field">Notiz (optional)
+          <textarea id="t-note" rows="3" maxlength="1000"></textarea>
+        </label>
+        <p class="field-hint" id="t-change" hidden></p>
+        <div id="t-error" class="form-error" role="alert" hidden></div>
+      </div>
+      <footer>
+        <button type="button" class="btn danger" id="t-delete">Entfernen</button>
+        <button type="button" class="btn" id="t-changes">Änderungsliste</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="t-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="change-picker" aria-labelledby="picker-title">
+    <form id="picker-form" novalidate>
+      <header><h2 id="picker-title">Änderung zu welchem Artikel?</h2></header>
+      <div class="form-body">
+        <label class="form-field">Artikel
+          <input type="text" id="p-article" list="article-list" maxlength="12" autocomplete="off" required placeholder="z. B. 14022 oder 21053V1">
+          <span class="field-hint" id="p-article-hint" aria-live="polite">Jede Version hat ihre eigene Liste (21053V1 neben 21053).
+            Eine neue Nummer wird mit der ersten Änderung als Auftrag angelegt.</span>
+        </label>
+        <div id="p-error" class="form-error" role="alert" hidden></div>
+      </div>
+      <footer>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="p-cancel">Abbrechen</button>
+        <button type="submit" class="btn primary">Weiter</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <datalist id="article-list"></datalist>
+
+  <script type="module" src="planung.js"></script>
+</body>
+</html>

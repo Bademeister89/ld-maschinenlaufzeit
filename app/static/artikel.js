@@ -1,6 +1,7 @@
 // Tab „Artikel“: je Auftrag und Version (bzw. Felge) ein Artikel mit Rohling, Kosten, Preisen und
 // Produktionsdaten. Bearbeiten im Dialog, Export als Excel-Datei.
 
+import { openChanges } from "./aenderungen.js";
 import { api, el, fmtDuration, fmtHours, loadMeta, send } from "./common.js";
 
 const $ = (id) => document.getElementById(id);
@@ -22,6 +23,7 @@ const parseNum = (text) => {
 const state = loadFilter();
 let data = { articles: [], materials: [] };
 let editing = null;
+const selected = new Set(); // angehakte Artikel für den Excel-Export
 
 function loadFilter() {
   try {
@@ -65,6 +67,32 @@ function dimsCell(a) {
 }
 
 const COLUMNS = [
+  {
+    label: "",
+    cls: "art-select-cell",
+    header: () =>
+      el("input", {
+        type: "checkbox",
+        id: "select-all",
+        title: "Alle angezeigten anhaken",
+        "aria-label": "Alle angezeigten Artikel für den Export anhaken",
+        onchange: (e) => selectAll(e.target.checked),
+      }),
+    value: (a) =>
+      el("input", {
+        type: "checkbox",
+        class: "art-select",
+        checked: selected.has(a.key),
+        title: "Für den Excel-Export anhaken",
+        "aria-label": `${a.key} für den Export anhaken`,
+        onclick: (e) => e.stopPropagation(),
+        onchange: (e) => {
+          if (e.target.checked) selected.add(a.key);
+          else selected.delete(a.key);
+          syncSelection();
+        },
+      }),
+  },
   {
     label: "",
     cls: "art-thumb-cell",
@@ -171,6 +199,19 @@ const COLUMNS = [
   { label: "Stück", cls: "r", value: (a) => String(a.parts) },
   { label: "Gesamtlaufzeit", cls: "r", value: (a) => fmtHours(a.running_s) },
   { label: "Letzte Produktion", cls: "r", value: (a) => fmtDate(a.last_production) },
+  {
+    label: "Änderung",
+    cls: "art-change-cell",
+    value: (a) =>
+      el("button", {
+        type: "button",
+        class: `art-change ${a.change?.open ? "open" : ""}`,
+        title: "Änderungsliste öffnen",
+        "aria-label": `Änderungsliste ${a.key}`,
+        onclick: (e) => (e.stopPropagation(), openChanges(a.key, { onChanged: load })),
+        text: !a.change ? "+" : a.change.open ? `${a.change.label} · ${a.change.open} offen` : `${a.change.label} ✓`,
+      }),
+  },
   {
     label: "",
     cls: "r art-actions",
@@ -397,6 +438,7 @@ function render() {
   $("count").textContent = `${rows.length} ${rows.length === 1 ? "Artikel" : "Artikel"}`;
   if (!rows.length) {
     $("articles").replaceChildren(el("p", { class: "empty", text: data.articles.length ? "Kein Artikel passt zum Filter." : "Noch keine Artikel." }));
+    syncSelection();
     return;
   }
   const sum = (f) => rows.reduce((s, a) => s + (a[f] ?? 0), 0);
@@ -404,7 +446,7 @@ function render() {
     el(
       "table",
       { class: "art-table" },
-      el("thead", {}, el("tr", {}, COLUMNS.map((c) => el("th", { class: c.cls, text: c.label })))),
+      el("thead", {}, el("tr", {}, COLUMNS.map((c) => el("th", { class: c.cls, text: c.label }, c.header?.())))),
       el("tbody", {}, rows.map(rowOf)),
       el(
         "tfoot",
@@ -423,6 +465,39 @@ function render() {
       ),
     ),
   );
+  syncSelection();
+}
+
+// --- Auswahl für den Excel-Export -----------------------------------------------------------------
+// Angehakte Artikel bleiben über Filter und Neuladen hinweg gewählt. Ohne Haken exportiert der Knopf
+// alles, was die Liste gerade zeigt.
+
+function selectAll(on) {
+  for (const a of visible()) {
+    if (on) selected.add(a.key);
+    else selected.delete(a.key);
+  }
+  for (const box of document.querySelectorAll(".art-select")) box.checked = selected.has(box.closest("tr").dataset.key);
+  syncSelection();
+}
+
+function syncSelection() {
+  const known = new Set(data.articles.map((a) => a.key));
+  for (const key of selected) if (!known.has(key)) selected.delete(key); // Artikel entfernt
+  const rows = visible();
+  const shown = rows.filter((a) => selected.has(a.key)).length;
+  const all = $("select-all");
+  if (all) {
+    all.checked = rows.length > 0 && shown === rows.length;
+    all.indeterminate = shown > 0 && shown < rows.length;
+  }
+  const n = selected.size;
+  $("export").textContent = n ? `Excel-Export (${n} angehakt)` : "Excel-Export";
+  $("export").title = n ? "Nur die angehakten Artikel exportieren" : "Alle angezeigten Artikel exportieren (oder links Artikel anhaken)";
+  $("clear-selection").hidden = !n;
+  const hidden = n - shown;
+  $("selection-note").hidden = !hidden;
+  $("selection-note").textContent = hidden ? `davon ${hidden} gerade ausgeblendet (Filter)` : "";
 }
 
 function syncFilters() {
@@ -564,28 +639,45 @@ async function addArticle(e) {
   }
 }
 
-// --- Excel-Export: erst fragen, ob mit oder ohne Felgen ---------------------------------------------
+// --- Excel-Export: angehakte Artikel, sonst alle angezeigten -----------------------------------------
 
-function openExporter() {
-  const count = { all: data.articles.length, order: 0, rim: 0 };
-  for (const a of data.articles) count[a.kind] = (count[a.kind] ?? 0) + 1;
-  for (const input of document.querySelectorAll('input[name="x-kind"]')) {
-    input.checked = input.value === state.kind;
-    $(`x-count-${input.value}`).textContent = `${count[input.value]} ${count[input.value] === 1 ? "Zeile" : "Zeilen"}`;
+async function startExport() {
+  const keys = selected.size ? data.articles.filter((a) => selected.has(a.key)).map((a) => a.key) : visible().map((a) => a.key);
+  if (!keys.length) {
+    showError(new Error("Keine Artikel zum Exportieren – Filter prüfen oder Artikel anhaken."));
+    return;
   }
-  const status = { open: "nur offene", closed: "nur abgeschlossene", all: "offene und abgeschlossene" }[state.status];
-  $("x-info").textContent = `Wie der Statusfilter oben: ${status} Aufträge. Die Suche gilt nicht für den Export.`;
-  $("exporter").showModal();
-}
-
-function startExport(e) {
-  e.preventDefault();
-  const kind = document.querySelector('input[name="x-kind"]:checked')?.value ?? "all";
-  const link = el("a", { href: `/api/articles/export.xlsx?status=${state.status}&kind=${kind}`, download: "" });
-  document.body.append(link);
-  link.click();
-  link.remove();
-  $("exporter").close();
+  const selection = selected.size ? `${keys.length} angehakte Artikel` : `${keys.length} angezeigte Artikel`;
+  const button = $("export");
+  button.disabled = true;
+  button.textContent = "Export läuft …";
+  try {
+    const res = await fetch("/api/articles/export.xlsx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys, selection }),
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        detail = (await res.json()).detail ?? detail;
+      } catch {}
+      throw new Error(detail);
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "artikel.xlsx";
+    const url = URL.createObjectURL(await res.blob());
+    const link = el("a", { href: url, download: name });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    $("banner").hidden = true;
+  } catch (err) {
+    showError(err);
+  } finally {
+    button.disabled = false;
+    syncSelection();
+  }
 }
 
 // --- Start ---------------------------------------------------------------------------------------
@@ -613,9 +705,12 @@ async function main() {
     render();
   });
   $("add").addEventListener("click", openAdder);
-  $("export").addEventListener("click", openExporter);
-  $("exporter-form").addEventListener("submit", startExport);
-  $("x-cancel").addEventListener("click", () => $("exporter").close());
+  $("export").addEventListener("click", startExport);
+  $("clear-selection").addEventListener("click", () => {
+    selected.clear();
+    for (const box of document.querySelectorAll(".art-select")) box.checked = false;
+    syncSelection();
+  });
   $("adder-form").addEventListener("submit", addArticle);
   $("a-cancel").addEventListener("click", () => $("adder").close());
   $("editor-form").addEventListener("submit", save);

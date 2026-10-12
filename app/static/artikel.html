@@ -20,6 +20,7 @@
         <a href="auswertung.html">Auswertung</a>
         <a href="auftraege.html">Aufträge</a>
         <a href="artikel.html" aria-current="page">Artikel</a>
+        <a href="planung.html">Planung</a>
         <a href="werkzeuge.html">Werkzeugauswertung</a>
         <a href="konfiguration.html">Konfiguration</a>
       </nav>
@@ -50,7 +51,9 @@
       <span class="spacer"></span>
       <span class="muted" id="count"></span>
       <button type="button" class="btn" id="add">+ Artikel anlegen</button>
-      <button type="button" class="btn primary" id="export" aria-haspopup="dialog">Excel-Export</button>
+      <span class="muted" id="selection-note" hidden></span>
+      <button type="button" class="link-button" id="clear-selection" hidden>Auswahl aufheben</button>
+      <button type="button" class="btn primary" id="export" title="Alle angezeigten Artikel exportieren (oder links Artikel anhaken)">Excel-Export</button>
     </div>
 
     <section class="section card">
@@ -143,31 +146,6 @@
     </form>
   </dialog>
 
-  <dialog id="exporter" aria-labelledby="exporter-title">
-    <form id="exporter-form" novalidate>
-      <header><h2 id="exporter-title">Excel-Export</h2></header>
-      <div class="form-body">
-        <fieldset class="form-group">
-          <legend>Was soll in die Datei?</legend>
-          <label class="choice"><input type="radio" name="x-kind" value="order">
-            <span>Nur Artikel<span class="field-hint">Aufträge und ihre Versionen, ohne Felgen · <span id="x-count-order"></span></span></span>
-          </label>
-          <label class="choice"><input type="radio" name="x-kind" value="all">
-            <span>Artikel und Felgen<span class="field-hint">alles · <span id="x-count-all"></span></span></span>
-          </label>
-          <label class="choice"><input type="radio" name="x-kind" value="rim">
-            <span>Nur Felgen<span class="field-hint"><span id="x-count-rim"></span></span></span>
-          </label>
-        </fieldset>
-        <p class="field-hint" id="x-info" style="margin: 0"></p>
-      </div>
-      <footer>
-        <span class="spacer"></span>
-        <button type="button" class="btn" id="x-cancel">Abbrechen</button>
-        <button type="submit" class="btn primary">Exportieren</button>
-      </footer>
-    </form>
-  </dialog>
 
   <script type="module" src="artikel.js"></script>
 </body>

@@ -10,6 +10,44 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.30.0] – 2026-10-12
+
+### Neu
+- **Tab „Planung“: Board mit Aufgaben je Meilenstein.**
+  - Spalten Offen, Design, CAD, CAM, Fräsen und Fertig. Spalten und Bearbeiter sind unter
+    Konfiguration → Planung pflegbar.
+  - Eine Aufgabe hat Titel, Artikel, Bearbeiter, Priorität, Termin und Notiz. Überfällige Aufgaben
+    sind rot markiert.
+  - Eine neue Auftragsnummer (oder Version) an einer Aufgabe oder Änderung legt den Auftrag samt
+    Artikel an. Laufen später seine Programme, buchen sie auf diesen Auftrag. Der Dialog zeigt beim
+    Eintippen, ob die Nummer neu ist.
+  - Karten zieht man in eine andere Spalte oder an eine andere Stelle, oben steht das Wichtigste. Am
+    Tablet geht das über „Bearbeiten“.
+  - Filter nach Bearbeiter, Suche und „nur überfällig“.
+  - **Automatisch nach „Fräsen“:** Startet an einer Maschine ein Programm eines Auftrags, rücken seine
+    Aufgaben aus den Spalten davor in die Spalte „Fräsen“. Aufgaben der Grundversion rücken bei jeder
+    Version mit, Aufgaben einer Version nur bei dieser. Aufgaben in späteren Spalten und in „Fertig“
+    bleiben, wo sie sind. Welche Spalte das ist, stellt man unter Konfiguration → Planung ein
+    („Als Programmlauf“), dort lässt es sich auch abschalten.
+- **Änderungsliste je Artikel: A01, A02 …**
+  - Mit Text, Bearbeiter und Bildern. 21053V1 hat eine eigene Liste neben 21053.
+  - Öffnen aus der Planung, über die neue Spalte „Änderung“ in der Artikelliste, über den Knopf
+    „+ Änderung“ im Auftrag (bei Versionen je Version) oder über den Alarm.
+  - Bilder per Datei, Foto (Handy/Tablet), Strg+V oder „Aus Zwischenablage“. Strg+V fügt in die
+    zuletzt angeklickte Änderung ein, sonst in die neue Änderung, die sie beim Anlegen mitnimmt.
+  - Eine neue Änderung legt auf dem Board eine Aufgabe an. Ist die Karte in „Fertig“, gilt die
+    Änderung als umgesetzt, wird sie herausgezogen, ist sie wieder offen.
+- **Alarm in der Live-Ansicht**, wenn ein Programm eines Artikels mit offener Änderung angewählt ist
+  oder läuft, mit Link zur Änderung.
+
+### Geändert
+- **Excel-Export der Artikel mit Haken je Zeile** statt der Auswahl „Nur Artikel / Artikel und
+  Felgen / Nur Felgen“.
+  - Jede Zeile der Artikelliste hat links ein Kästchen, die Kopfzeile eines für alle angezeigten.
+  - Mit Haken exportiert der Knopf genau die angehakten Artikel. Ohne Haken exportiert er alles, was
+    die Liste gerade zeigt, mit Status-, Art-Filter und Suche.
+  - Die Haken bleiben beim Filtern erhalten. „Auswahl aufheben“ entfernt sie.
+
 ## [1.28.0] – 2026-10-12
 
 ### Neu

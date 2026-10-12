@@ -41,7 +41,9 @@ from dataclasses import dataclass, field, replace
 from statistics import median
 from typing import Any
 
+from . import planning
 from .adapters.base import MachineAdapter, Snapshot
+from .articles import article_key
 from .config import MachineConfig
 from .db import Database
 from .forecast import Forecaster
@@ -453,6 +455,20 @@ class MachineCollector:
         code = parse_program(snap.program)
         run_id = self._db.start_run(self.machine.id, snap.program, now, start_observed, code.key if code else None)
         self._run = _Run(run_id, snap.program, now, False, start_observed, now)
+        if code is not None:
+            self._advance_tasks(code.key, code.version, snap.program, now)
+
+    def _advance_tasks(self, order_key: str, version: str, program: str | None, now: float) -> None:
+        """Planung: Aufgaben des Auftrags rücken in die Spalte „Fräsen“ (Programmlauf). Ein Fehler
+        dabei darf die Erfassung nie stören."""
+        try:
+            moved = planning.on_run_started(self._db, order_key, version, now)
+        except Exception:
+            log.exception("%s: Aufgaben von %s nicht verschoben", self.machine.name, order_key)
+            return
+        if moved:
+            self._db.add_event(self.machine.id, now, "tasks_moved", {"order": order_key, "program": program, "tasks": moved})
+            log.info("%s: %d Aufgabe(n) von %s in die Spalte Programmlauf verschoben", self.machine.name, len(moved), order_key)
 
     def _start_seen(self, now: float) -> bool:
         """Hat die Erfassung gesehen, was davor war? Nach einer normalen Abfrage ja, nach einem kurzen
@@ -1059,7 +1075,7 @@ class MachineCollector:
             "pallet": self._pallet_info(),
             "line_no": snap.line_no if snap else None,
             "blocks": blocks,
-            "order": (code.public() if (code := parse_program(snap.program if snap else None)) else None),
+            "order": self._order_info(snap),
             "tool": snap.tool if snap else None,
             "override": {
                 "feed": snap.override_feed if snap else None,
@@ -1081,6 +1097,14 @@ class MachineCollector:
             ),
             "forecast": forecast,
         }
+
+    def _order_info(self, snap: Snapshot | None) -> dict[str, Any] | None:
+        """Auftrag des Programms; ``changes``: offene Änderungen genau dieses Artikels (Version), die
+        Live-Karte zeigt sie als Alarm."""
+        code = parse_program(snap.program if snap else None)
+        if code is None:
+            return None
+        return {**code.public(), "changes": planning.open_changes(self._db, article_key(code.key, code.version))}
 
     def _caller_file(self, path: str) -> dict[str, Any]:
         """Was über die Datei des Oberprogramms bekannt ist – zur Kontrolle auf der Live-Karte."""

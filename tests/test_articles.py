@@ -364,6 +364,21 @@ def test_excel_export_with_or_without_rims(client):
     assert client.get("/api/articles/export.xlsx", params={"kind": "x"}).status_code == 422
 
 
+def test_excel_export_of_checked_articles(client):
+    """Haken je Artikel in der Liste: Export genau dieser Artikel (POST, die Auswahl kann lang sein)."""
+    run_part(client.app.state.ctx.collectors["m1"], 1000, P11, 60)
+    for key in ("10101018", "21060V1"):
+        client.post("/api/articles", json={"key": key})
+    r = client.post("/api/articles/export.xlsx", json={"keys": ["21060V1", "10101018"], "selection": "2 angehakte Artikel"})
+    assert r.status_code == 200 and 'filename="artikel_' in r.headers["content-disposition"]
+    wb = load_workbook(io.BytesIO(r.content))
+    ws = wb["Artikel"]
+    assert [ws.cell(row=i, column=2).value for i in range(3, ws.max_row)] == ["10101018", "21060V1"]
+    assert wb["Erläuterung"]["A3"].value == "Auswahl: 2 angehakte Artikel · 2 Zeilen"
+    assert client.post("/api/articles/export.xlsx", json={"keys": []}).status_code == 400
+    assert client.post("/api/articles/export.xlsx", json={"keys": ["99999"]}).status_code == 404
+
+
 def test_excel_export_embeds_the_order_image(client):
     ctx = client.app.state.ctx
     run_part(ctx.collectors["m1"], 1000, P11, 60)

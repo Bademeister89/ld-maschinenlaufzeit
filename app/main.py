@@ -22,14 +22,14 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import BUILD, __version__, api, articles, articles_api, config_api, orders, orders_api, tools_api
+from . import BUILD, __version__, api, articles, articles_api, config_api, orders, orders_api, planning_api, tools_api
 from .adapters.base import MachineAdapter
 from .adapters.lsv2_adapter import Lsv2Adapter
 from .adapters.sim_adapter import SimAdapter, SimulatedMachine
 from .collector import MachineCollector
 from .config import MachineConfig, Settings, load_settings
 from .db import Database
-from .order_images import OrderImages
+from .order_images import ChangeImages, OrderImages
 from .registry import MachineManager
 
 log = logging.getLogger(__name__)
@@ -81,10 +81,12 @@ class AppContext:
     manager: MachineManager
     tz: ZoneInfo
     order_images: OrderImages = field(init=False)
+    change_images: ChangeImages = field(init=False)
     started_at: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
         self.order_images = OrderImages(self.db, self.settings.order_images_dir)
+        self.change_images = ChangeImages(self.db, self.settings.change_images_dir)
 
     @property
     def collectors(self) -> dict[str, MachineCollector]:
@@ -162,6 +164,7 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
     app.include_router(config_api.router)
     app.include_router(orders_api.router)
     app.include_router(articles_api.router)
+    app.include_router(planning_api.router)
     app.include_router(tools_api.router)
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

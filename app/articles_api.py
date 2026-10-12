@@ -83,6 +83,34 @@ async def export(request: Request, status: str = STATUS, kind: str = KIND) -> Re
     )
 
 
+EXPORT_KEYS_MAX = 5000
+
+
+@router.post("/export.xlsx")
+async def export_selected(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    """Excel-Datei mit genau den Artikeln aus ``keys`` (angehakt bzw. was die Liste zeigt) – als POST,
+    weil eine lange Auswahl nicht in die Adresse passt. ``selected``: Text für die Erläuterung."""
+    keys = payload.get("keys")
+    if not isinstance(keys, list) or not keys or len(keys) > EXPORT_KEYS_MAX or not all(isinstance(k, str) for k in keys):
+        raise HTTPException(400, "Bitte mindestens einen Artikel wählen.")
+    ctx = _ctx(request)
+    wanted = set(keys)
+    thumbs: dict[str, bytes] = {}
+    rows = [r for r in _rows(ctx, "all", thumbs) if r["key"] in wanted]
+    if not rows:
+        raise HTTPException(404, "Keiner der gewählten Artikel ist (noch) vorhanden. Bitte die Seite neu laden.")
+    thumbs = {k: v for k, v in thumbs.items() if k in wanted}
+    now = time.time()
+    selection = str(payload.get("selection") or f"{len(rows)} gewählte Artikel")[:80]
+    data = await asyncio.to_thread(articles.export_xlsx, rows, ctx.db.materials(), ctx.tz, now, thumbs, "all", selection)
+    name = f"artikel_{datetime.fromtimestamp(now, ctx.tz):%Y-%m-%d}.xlsx"
+    return Response(
+        data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 @router.post("", status_code=201)
 def create_article(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """Artikel von Hand anlegen (``{"key": "21060V1"}``); legt den Auftrag bzw. die Felge mit an."""

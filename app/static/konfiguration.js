@@ -412,6 +412,158 @@ async function removeManufacturer(m) {
   }
 }
 
+// --- Planung: Meilensteine und Bearbeiter ---------------------------------------------------
+
+let milestones = [];
+let workers = [];
+let renamingMs = null;
+let renamingWk = null;
+
+function setListError(id, message) {
+  $(id).textContent = message ?? "";
+  $(id).hidden = !message;
+}
+
+const taskCount = (n) => (n === 1 ? "1 Aufgabe" : n ? `${n} Aufgaben` : "keine Aufgaben");
+
+async function loadMilestones() {
+  milestones = (await api("/api/config/milestones")).milestones;
+  renderMilestones();
+}
+
+async function loadWorkers() {
+  workers = (await api("/api/config/workers")).workers;
+  renderWorkers();
+}
+
+// Zeile zum Umbenennen (Meilenstein oder Bearbeiter)
+function renameForm(item, onSave, onCancel) {
+  const input = el("input", { type: "text", maxlength: "40", value: item.name, "aria-label": `${item.name} umbenennen` });
+  queueMicrotask(() => input.focus());
+  return el(
+    "li",
+    {},
+    el(
+      "form",
+      { class: "mf-rename", onsubmit: (e) => (e.preventDefault(), onSave(input.value)) },
+      input,
+      el("button", { type: "submit", class: "btn primary", text: "Speichern" }),
+      el("button", { type: "button", class: "btn", onclick: onCancel, text: "Abbrechen" }),
+    ),
+  );
+}
+
+async function msRequest(method, path, body) {
+  try {
+    await send(method, path, body);
+    renamingMs = null;
+    setListError("ms-error", null);
+    await loadMilestones();
+  } catch (err) {
+    setListError("ms-error", err.message);
+  }
+}
+
+function moveMilestone(index, step) {
+  const ids = milestones.map((m) => m.id);
+  [ids[index], ids[index + step]] = [ids[index + step], ids[index]];
+  msRequest("POST", "/api/config/milestones/order", { ids });
+}
+
+function milestoneRow(m, index) {
+  if (renamingMs === m.id) {
+    return renameForm(
+      m,
+      (name) => msRequest("PUT", `/api/config/milestones/${m.id}`, { name, done: !!m.done }),
+      () => ((renamingMs = null), renderMilestones()),
+    );
+  }
+  const remove = () => {
+    if (confirm(`Meilenstein „${m.name}“ entfernen?`)) msRequest("DELETE", `/api/config/milestones/${m.id}`);
+  };
+  return el(
+    "li",
+    {},
+    el("span", { class: "mf-name", text: m.name }),
+    m.done ? el("span", { class: "ms-done", text: "✓ Fertig" }) : null,
+    m.milling ? el("span", { class: "ms-done", title: "Startet ein Programm des Auftrags, rücken seine Aufgaben hierher", text: "▶ Programmlauf" }) : null,
+    el("span", { class: "muted mf-usage", text: taskCount(m.tasks) }),
+    el(
+      "span",
+      { class: "mf-actions" },
+      el("button", { type: "button", class: "btn icon", title: "Nach links", "aria-label": `${m.name} nach links`, disabled: index === 0, onclick: () => moveMilestone(index, -1), text: "←" }),
+      el("button", { type: "button", class: "btn icon", title: "Nach rechts", "aria-label": `${m.name} nach rechts`, disabled: index === milestones.length - 1, onclick: () => moveMilestone(index, 1), text: "→" }),
+      m.done ? null : el("button", { type: "button", class: "btn", onclick: () => msRequest("PUT", `/api/config/milestones/${m.id}`, { name: m.name, done: true }), text: "Als „Fertig“" }),
+      m.done
+        ? null
+        : el("button", {
+            type: "button",
+            class: "btn",
+            title: m.milling ? "Aufgaben nicht mehr automatisch verschieben" : "Startet ein Programm des Auftrags, rücken seine Aufgaben in diese Spalte",
+            onclick: () => msRequest("PUT", `/api/config/milestones/${m.id}`, { name: m.name, milling: !m.milling }),
+            text: m.milling ? "Programmlauf aus" : "Als Programmlauf",
+          }),
+      el("button", { type: "button", class: "btn", onclick: () => ((renamingMs = m.id), setListError("ms-error", null), renderMilestones()), text: "Umbenennen" }),
+      m.done ? null : el("button", { type: "button", class: "btn danger", onclick: remove, text: "Entfernen" }),
+    ),
+  );
+}
+
+function renderMilestones() {
+  $("ms-list").replaceChildren(...milestones.map(milestoneRow));
+}
+
+async function wkRequest(method, path, body) {
+  try {
+    await send(method, path, body);
+    renamingWk = null;
+    setListError("wk-error", null);
+    await loadWorkers();
+  } catch (err) {
+    setListError("wk-error", err.message);
+  }
+}
+
+function workerRow(w) {
+  if (renamingWk === w.id) {
+    return renameForm(w, (name) => wkRequest("PUT", `/api/config/workers/${w.id}`, { name }), () => ((renamingWk = null), renderWorkers()));
+  }
+  const remove = () => {
+    const note = w.tasks ? `\n\n${taskCount(w.tasks)} bleiben erhalten, dann ohne Bearbeiter.` : "";
+    if (confirm(`„${w.name}“ aus der Liste entfernen?${note}`)) wkRequest("DELETE", `/api/config/workers/${w.id}`);
+  };
+  return el(
+    "li",
+    {},
+    el("span", { class: "mf-name", text: w.name }),
+    el("span", { class: "muted mf-usage", text: taskCount(w.tasks) }),
+    el(
+      "span",
+      { class: "mf-actions" },
+      el("button", { type: "button", class: "btn", onclick: () => ((renamingWk = w.id), setListError("wk-error", null), renderWorkers()), text: "Umbenennen" }),
+      el("button", { type: "button", class: "btn danger", onclick: remove, text: "Entfernen" }),
+    ),
+  );
+}
+
+function renderWorkers() {
+  $("wk-list").replaceChildren(
+    ...(workers.length ? workers.map(workerRow) : [el("li", { class: "empty", text: "Noch keine Bearbeiter – oben eintragen und „Hinzufügen“." })]),
+  );
+}
+
+async function addListItem(e, input, path, error, reload) {
+  e.preventDefault();
+  try {
+    await send("POST", path, { name: $(input).value });
+    $(input).value = "";
+    setListError(error, null);
+    await reload();
+  } catch (err) {
+    setListError(error, err.message);
+  }
+}
+
 // --- Versionen ----------------------------------------------------------------------
 
 const isoToDe = (iso) => iso?.split("-").reverse().join(".");
@@ -610,9 +762,12 @@ async function save(event) {
 
 // --- Untertabs ------------------------------------------------------------------
 
-const TABS = ["maschinen", "werkzeuge", "artikel", "system", "versionen"];
+const TABS = ["maschinen", "werkzeuge", "artikel", "planung", "system", "versionen"];
 // Ältere Links (#hersteller, #felgen …) führen zum passenden Reiter und Abschnitt
-const ANCHORS = { hersteller: "werkzeuge", felgen: "artikel", materialien: "artikel", allgemein: "system", diagnose: "system", fehler: "maschinen" };
+const ANCHORS = {
+  hersteller: "werkzeuge", felgen: "artikel", materialien: "artikel", allgemein: "system", diagnose: "system", fehler: "maschinen",
+  meilensteine: "planung", bearbeiter: "planung",
+};
 
 function tabFromHash() {
   const id = location.hash.slice(1);
@@ -833,11 +988,13 @@ async function main() {
   $("rd-form").addEventListener("submit", addDesign);
   $("close-form").addEventListener("submit", saveCloseDays);
   $("mt-form").addEventListener("submit", addMaterial);
+  $("ms-form").addEventListener("submit", (e) => addListItem(e, "ms-name", "/api/config/milestones", "ms-error", loadMilestones));
+  $("wk-form").addEventListener("submit", (e) => addListItem(e, "wk-name", "/api/config/workers", "wk-error", loadWorkers));
   setupTabs();
   setupErrors();
   const { tab, anchor } = tabFromHash();
   showTab(tab);
-  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns(), loadCloseDays(), loadMaterials()]);
+  await Promise.all([reload(), loadChangelog(), loadManufacturers(), loadDesigns(), loadCloseDays(), loadMaterials(), loadMilestones(), loadWorkers()]);
   renderErrorMachines();
   // Erst nach dem Laden springen, die Liste darüber wächst noch
   showTab(tab, { anchor });

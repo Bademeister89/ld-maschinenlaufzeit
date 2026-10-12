@@ -16,7 +16,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from . import cam_import, orders
+from . import cam_import, orders, planning
 from .nc_program import call_name
 from .order_images import MAX_UPLOAD_BYTES, ImageError, split_upload, valid_key
 from .state import RUN_RESULT_LABELS
@@ -77,6 +77,7 @@ def order_detail(request: Request, key: str) -> dict[str, Any]:
         image = images.get((setup["version"], setup["setup"]))
         setup.update(ctx.order_images.setup_urls(key, setup["version"], setup["setup"], image, files))
     detail["active"] = _active(ctx).get(key, [])
+    detail["changes"] = planning.order_changes(ctx.db, key)
     detail["now"] = time.time()
     return detail
 

@@ -1,5 +1,6 @@
 // Aufträge: Liste mit Summen, Detail je Auftrag (Bild, Aufspannungen, Programme, Tage, Läufe).
 
+import { openChanges } from "./aenderungen.js";
 import {
   api,
   el,
@@ -205,6 +206,21 @@ function activeBanner(active) {
 
 const versionName = (version) => (version ? `Version ${version}` : "Grundversion");
 
+/** Knopf „+ Änderung“ für einen Artikel des Auftrags (Auftrag und Version) – öffnet die
+ *  Änderungsliste; mit Stand und offenen Änderungen, sobald es welche gibt. */
+function changeButton(d, version) {
+  const key = `${d.order.key}${version}`;
+  const info = d.changes?.[key];
+  return el("button", {
+    type: "button",
+    class: `btn small order-change ${info?.open ? "open" : ""}`,
+    title: `Änderungsliste ${key}: Änderung eintragen, Bilder, umgesetzt`,
+    "aria-label": `Änderungen ${key}`,
+    onclick: () => openChanges(key, { onChanged: loadDetail }),
+    text: !info ? "+ Änderung" : info.open ? `+ Änderung · ${info.label}, ${info.open} offen` : `+ Änderung · ${info.label} ✓`,
+  });
+}
+
 /** Aufspannungen; hat der Auftrag Versionen (andere Ausführungen des Teils), je Version ein Block
  *  mit eigener Ø-Zeit je Teil. */
 function versionBlocks(d, o) {
@@ -221,6 +237,7 @@ function versionBlocks(d, o) {
           "div",
           { class: "version-head" },
           el("h2", { text: `${versionName(v.version)} · ${o.number}${v.version}` }),
+          changeButton(d, v.version),
           el("span", {
             class: "muted",
             text: v.pre_stage
@@ -757,7 +774,8 @@ function uploadImage(e) {
  * der Fokus steht, sonst ins Auftragsbild. Text einfügen, z. B. in die Bezeichnung, bleibt unberührt. */
 function pasteImage(e) {
   const o = current;
-  if (!o || $("detail").hidden || imageState.busy) return;
+  // offener Dialog (z. B. Änderungsliste) behandelt Strg+V selbst
+  if (!o || $("detail").hidden || imageState.busy || document.querySelector("dialog[open]")) return;
   const item = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === "file" && i.type.startsWith("image/"));
   const file = item?.getAsFile();
   if (!file) return;
@@ -846,6 +864,8 @@ function renderDetail(d) {
               el("div", { class: "muted", text: `Schlüssel ${o.key} · angelegt ${fmtDateTime(o.created_at)}${o.closed_at ? ` · abgeschlossen ${fmtDateTime(o.closed_at)}${o.closed_auto ? " (automatisch, ohne Programmlauf)" : ""}` : ""}` }),
             ),
             statusBadge(o, d.active),
+            // mit Versionen hat jede Version ihren eigenen Knopf (eigene Änderungsliste)
+            d.versions.some((v) => v.version) ? null : changeButton(d, ""),
             el(
               "button",
               { type: "button", class: "btn", onclick: () => saveOrder(o.key, { status: o.status === "closed" ? "open" : "closed" }) },

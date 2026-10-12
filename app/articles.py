@@ -29,7 +29,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import orders
+from . import orders, planning
 from .db import Database
 from .nc_program import call_name
 
@@ -316,12 +316,20 @@ def _setup_image(
     return None
 
 
+def _change_info(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Letzter Änderungsstand des Artikels (A03) und Zahl der offenen Änderungen; None ohne Änderung."""
+    if row is None:
+        return None
+    return {"label": planning.change_label(row["number"]), "open": row["open"] or 0}
+
+
 def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[str, Any]]:
     """Alle Artikel mit Rohling, Kosten, Preisen und Produktionsdaten (je Auftrag einmal ausgewertet)."""
     sync(db)
     order_rows = {o["key"]: o for o in db.orders(status)}
     materials = {m["id"]: m for m in db.materials()}
     machines = db.machines(include_removed=True)
+    changes = db.latest_changes()
     by_order: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for art in db.articles():
         if art["order_key"] in order_rows:
@@ -388,6 +396,7 @@ def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[
                 "margin": margin,
                 "margin_pct": round(margin / vk * 100, 1) if margin is not None and vk else None,
                 "note": art["note"],
+                "change": _change_info(changes.get(art["key"])),
             })
     return sorted(rows, key=lambda r: (r["order_key"], orders.version_order(r["version"])))
 
@@ -499,10 +508,12 @@ def export_xlsx(
     now: float,
     images: dict[str, bytes] | None = None,
     kind: str = "all",
+    selection: str | None = None,
 ) -> bytes:
     """Artikelliste als Excel-Arbeitsmappe mit Bildern und Formeln (Blatt „Artikel“), der Materialliste
     (Blatt „Materialien“, Grundlage der Formeln) und einer kurzen Erläuterung. ``kind`` (siehe
-    ``EXPORT_KINDS``) nennt die Auswahl in der Erläuterung; gefiltert sind ``rows`` schon."""
+    ``EXPORT_KINDS``) bzw. ``selection`` (Text, z. B. „3 angehakte Artikel“) nennt die Auswahl in der
+    Erläuterung; gefiltert sind ``rows`` schon."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -659,7 +670,7 @@ def export_xlsx(
     lines = [
         ("Artikelliste – Stand des Exports", True),
         (f"Erstellt am {datetime.fromtimestamp(now, tz):%d.%m.%Y um %H:%M} Uhr mit LD-Machine-Viewer.", False),
-        (f"Auswahl: {EXPORT_KINDS[kind][0]} · {len(rows)} Zeilen", False),
+        (f"Auswahl: {selection or EXPORT_KINDS[kind][0]} · {len(rows)} Zeilen", False),
         ("", False),
         ("Gelbe Zellen sind Eingaben, alle anderen rechnen mit Formeln wie in der Artikelliste:", True),
         ("Volumen (l) = Block: L × B × H / 1.000.000 · Rund: π × (Ø/2)² × L / 1.000.000 (Maße in mm)", False),

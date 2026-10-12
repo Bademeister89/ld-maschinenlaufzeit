@@ -20,6 +20,7 @@
         <a href="auswertung.html">Auswertung</a>
         <a href="auftraege.html">Aufträge</a>
         <a href="artikel.html">Artikel</a>
+        <a href="planung.html">Planung</a>
         <a href="werkzeuge.html">Werkzeugauswertung</a>
         <a href="konfiguration.html" aria-current="page">Konfiguration</a>
       </nav>
@@ -36,6 +37,7 @@
       <button type="button" role="tab" id="tab-maschinen" data-tab="maschinen" aria-controls="panel-maschinen">Maschinen</button>
       <button type="button" role="tab" id="tab-werkzeuge" data-tab="werkzeuge" aria-controls="panel-werkzeuge">Werkzeuge</button>
       <button type="button" role="tab" id="tab-artikel" data-tab="artikel" aria-controls="panel-artikel">Artikel</button>
+      <button type="button" role="tab" id="tab-planung" data-tab="planung" aria-controls="panel-planung">Planung</button>
       <button type="button" role="tab" id="tab-system" data-tab="system" aria-controls="panel-system">System</button>
       <button type="button" role="tab" id="tab-versionen" data-tab="versionen" aria-controls="panel-versionen">Versionen</button>
     </nav>
@@ -130,6 +132,36 @@
         </form>
         <div id="rd-error" class="form-error" role="alert" hidden></div>
         <ul id="rd-list" class="mf-list"></ul>
+      </section>
+    </div>
+
+    <div class="tab-panel" id="panel-planung" role="tabpanel" aria-labelledby="tab-planung" data-tab="planung" hidden>
+      <section class="card" id="meilensteine">
+        <div class="section-head">
+          <h2>Meilensteine</h2>
+          <p class="muted">Die Spalten im Tab Planung, von links nach rechts. Genau einer ist „Fertig“: Eine Aufgabe dort ist
+            erledigt, eine verknüpfte Änderung gilt als umgesetzt. Startet ein Programm eines Auftrags an einer Maschine,
+            rücken seine Aufgaben aus den Spalten davor in die Spalte „Programmlauf“ (Standard: Fräsen).</p>
+        </div>
+        <form id="ms-form" class="mf-add" novalidate>
+          <input type="text" id="ms-name" maxlength="40" autocomplete="off" placeholder="z. B. Messen" aria-label="Neuer Meilenstein">
+          <button type="submit" class="btn primary">Hinzufügen</button>
+        </form>
+        <div id="ms-error" class="form-error" role="alert" hidden></div>
+        <ul id="ms-list" class="mf-list"></ul>
+      </section>
+
+      <section class="card section" id="bearbeiter">
+        <div class="section-head">
+          <h2>Bearbeiter</h2>
+          <p class="muted">Auswahl für Aufgaben und Änderungen.</p>
+        </div>
+        <form id="wk-form" class="mf-add" novalidate>
+          <input type="text" id="wk-name" maxlength="40" autocomplete="off" placeholder="Name" aria-label="Neuer Bearbeiter">
+          <button type="submit" class="btn primary">Hinzufügen</button>
+        </form>
+        <div id="wk-error" class="form-error" role="alert" hidden></div>
+        <ul id="wk-list" class="mf-list"></ul>
       </section>
     </div>
 

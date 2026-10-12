@@ -200,6 +200,22 @@ function toolWarning(m) {
     : el("p", { class: "tool-warning warn" }, `⚠ T${info.number}: Vorwarnzeit erreicht (${values}) · `, link);
 }
 
+/** Alarm, wenn für genau diesen Artikel (Auftrag und Version) noch eine Änderung offen ist. */
+function changeWarning(m) {
+  const changes = m.order?.changes;
+  if (!changes?.length) return null;
+  const article = `${m.order.key}${m.order.version ?? ""}`;
+  const [newest] = changes;
+  const more = changes.length > 1 ? ` und ${changes.length - 1} weitere` : "";
+  const link = el("a", { href: `planung.html?article=${encodeURIComponent(article)}`, text: "Änderung ansehen" });
+  return el(
+    "p",
+    { class: "tool-warning over", role: "alert" },
+    `✕ Achtung: ${article} hat eine offene Änderung ${newest.label} („${newest.description}“)${more} · `,
+    link,
+  );
+}
+
 const pctText = (v) => (v == null ? "—" : `${Math.round(v)} %`);
 const OVR_MAX = 150; // Potis der iTNC 530 gehen bis 150 %
 /** Farbzone eines Werts: [CSS-Klasse, Text]. Rot unter 50 %, Gelb unter 100 %, Grün 100–120 %, Orange darüber. */
@@ -557,6 +573,7 @@ function renderLive(m, now) {
         fact("Lauf-Nr.", m.run ? String(m.run.id) : null),
       ),
     );
+    parts.push(changeWarning(m));
     const warning = toolWarning(m);
     if (warning) parts.push(warning);
     if (m.errors.length) {

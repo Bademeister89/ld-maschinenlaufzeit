@@ -1,6 +1,6 @@
 """API für den Konfigurations-Tab: Maschinen anlegen, ändern, entfernen, sortieren,
-Bild hochladen und Verbindung testen; Werkzeughersteller, Felgen-Designs und Aufträge (Tage bis zum
-automatischen Abschließen) pflegen."""
+Bild hochladen und Verbindung testen; Werkzeughersteller, Felgen-Designs, Meilensteine und Bearbeiter
+(Planung) und Aufträge (Tage bis zum automatischen Abschließen) pflegen."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
-from . import BUILD, __version__, articles, orders
+from . import BUILD, __version__, articles, orders, planning
 from .config import DEFAULT_CONFIG, IS_PORTABLE
 from .probe import run_probe
 from .registry import MAX_IMAGE_BYTES, ConfigError, MachineManager, MachineNotFound, validate_machine
@@ -220,6 +220,88 @@ def update_material(request: Request, material_id: int, payload: dict[str, Any] 
 def delete_material(request: Request, material_id: int) -> Response:
     if not _ctx(request).db.delete_material(material_id):
         raise HTTPException(404, "Unbekanntes Material")
+    return Response(status_code=204)
+
+
+# --- Planung: Meilensteine (Spalten des Boards) und Bearbeiter ---------------------------------
+
+
+@contextmanager
+def _planning_errors() -> Iterator[None]:
+    try:
+        yield
+    except planning.PlanningError as exc:
+        raise HTTPException(exc.status, str(exc)) from None
+
+
+@router.get("/milestones")
+def list_milestones(request: Request) -> dict[str, Any]:
+    return {"milestones": _ctx(request).db.milestones()}
+
+
+@router.post("/milestones", status_code=201)
+def add_milestone(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    with _planning_errors():
+        return planning.add_milestone(_ctx(request).db, payload)
+
+
+@router.put("/milestones/{milestone_id}")
+def update_milestone(request: Request, milestone_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    with _planning_errors():
+        return planning.update_milestone(_ctx(request).db, milestone_id, payload)
+
+
+@router.post("/milestones/order", status_code=204)
+def reorder_milestones(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        raise HTTPException(400, "ids: Liste der Meilensteine erwartet")
+    with _planning_errors():
+        planning.reorder_milestones(_ctx(request).db, ids)
+    return Response(status_code=204)
+
+
+@router.delete("/milestones/{milestone_id}", status_code=204)
+def delete_milestone(request: Request, milestone_id: int) -> Response:
+    with _planning_errors():
+        planning.delete_milestone(_ctx(request).db, milestone_id)
+    return Response(status_code=204)
+
+
+@router.get("/workers")
+def list_workers(request: Request) -> dict[str, Any]:
+    return {"workers": _ctx(request).db.workers()}
+
+
+@router.post("/workers", status_code=201)
+def add_worker(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    db = _ctx(request).db
+    with _planning_errors():
+        name = planning.worker_name(payload)
+    worker_id = db.add_worker(name, time.time())
+    if worker_id is None:
+        raise HTTPException(409, f"„{name}“ ist schon in der Liste.")
+    return db.worker(worker_id)
+
+
+@router.put("/workers/{worker_id}")
+def rename_worker(request: Request, worker_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    db = _ctx(request).db
+    if db.worker(worker_id) is None:
+        raise HTTPException(404, "Unbekannter Bearbeiter")
+    with _planning_errors():
+        name = planning.worker_name(payload)
+    if not db.rename_worker(worker_id, name):
+        raise HTTPException(409, f"„{name}“ ist schon in der Liste.")
+    return db.worker(worker_id)
+
+
+@router.delete("/workers/{worker_id}", status_code=204)
+def delete_worker(request: Request, worker_id: int) -> Response:
+    db = _ctx(request).db
+    if db.worker(worker_id) is None:
+        raise HTTPException(404, "Unbekannter Bearbeiter")
+    db.delete_worker(worker_id)
     return Response(status_code=204)
 
 

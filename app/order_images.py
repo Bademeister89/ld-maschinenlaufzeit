@@ -207,3 +207,37 @@ class OrderImages:
                 (self.dir / name).unlink(missing_ok=True)
             except OSError as exc:  # z. B. unter Windows, während die Datei gerade ausgeliefert wird
                 log.warning("Auftragsbild %s konnte nicht gelöscht werden: %s", name, exc)
+
+
+class ChangeImages(OrderImages):
+    """Bilder der Änderungen (beliebig viele je Änderung) in ``<datenordner>/images/changes/``:
+    ``change-12-<token>.jpg`` und ``…-thumb.jpg``; in der Datenbank steht ``change_images.image``."""
+
+    def add(self, change_id: int, image: bytes, thumb: bytes) -> int:
+        added: list[int] = []
+        with self._lock:
+            if self.db.change(change_id) is None:
+                raise LookupError(change_id)
+            self._store(
+                f"change-{change_id}", image, thumb, None,
+                lambda name: added.append(self.db.add_change_image(change_id, name, time.time())),
+            )
+        return added[0]
+
+    def delete(self, image_id: int) -> None:  # type: ignore[override]
+        with self._lock:
+            row = self.db.change_image(image_id)
+            if row is None:
+                raise LookupError(image_id)
+            self.db.delete_change_image(image_id)
+            self._unlink(row["image"])
+
+    def urls(self, row: dict[str, Any], files: set[str] | None = None) -> dict[str, Any]:
+        """Bild für die API: ``id``, ``image_url`` und ``thumb_url`` (None, wenn die Datei fehlt)."""
+        present = self._present(row["image"], files)
+        base = f"/api/planning/images/{row['id']}"
+        return {
+            "id": row["id"],
+            "image_url": f"{base}?size=full&v={row['image']}" if present else None,
+            "thumb_url": f"{base}?size=thumb&v={row['image']}" if present else None,
+        }

@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -198,6 +198,53 @@ CREATE TABLE IF NOT EXISTS program_resets (
     name       TEXT PRIMARY KEY,
     reset_at   REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS milestones (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    done       INTEGER NOT NULL DEFAULT 0,
+    milling    INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS workers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS article_changes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_key TEXT NOT NULL,
+    number      INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    worker_id   INTEGER REFERENCES workers(id) ON DELETE SET NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    created_at  REAL NOT NULL,
+    done_at     REAL,
+    UNIQUE (article_key, number)
+);
+CREATE INDEX IF NOT EXISTS ix_changes_article ON article_changes(article_key, status);
+CREATE TABLE IF NOT EXISTS change_images (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_id  INTEGER NOT NULL REFERENCES article_changes(id) ON DELETE CASCADE,
+    image      TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    title        TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    article_key  TEXT,
+    milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+    worker_id    INTEGER REFERENCES workers(id) ON DELETE SET NULL,
+    priority     INTEGER NOT NULL DEFAULT 2,
+    due_date     TEXT,
+    position     INTEGER NOT NULL DEFAULT 0,
+    change_id    INTEGER REFERENCES article_changes(id) ON DELETE SET NULL,
+    created_at   REAL NOT NULL,
+    updated_at   REAL NOT NULL,
+    done_at      REAL
+);
+CREATE INDEX IF NOT EXISTS ix_tasks_milestone ON tasks(milestone_id, position);
+CREATE INDEX IF NOT EXISTS ix_tasks_article ON tasks(article_key);
 """
 
 _END = "COALESCE(i.ended_at, i.last_seen)"
@@ -322,6 +369,24 @@ class Database:
         for name in ("density", "price_per_kg"):
             if name not in columns:
                 self._con.execute(f"ALTER TABLE materials ADD COLUMN {name} REAL")
+        # v18 → v19: Planung und Änderungsliste (Tabellen über SCHEMA). Meilensteine einmalig füllen
+        # (danach in der Konfiguration pflegbar; gelöschte kämen sonst beim nächsten Start zurück)
+        # milling: Spalte, in die eine Aufgabe rückt, sobald ein Programm ihres Auftrags läuft
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(milestones)")}
+        if "milling" not in columns:
+            self._con.execute("ALTER TABLE milestones ADD COLUMN milling INTEGER NOT NULL DEFAULT 0")
+        if self.get_meta("milestones_seeded") is None:
+            from .planning import MILESTONES
+
+            self._con.executemany(
+                "INSERT OR IGNORE INTO milestones(name, sort_order, done, milling) VALUES (?, ?, ?, ?)",
+                [(name, index * 10, int(done), int(milling)) for index, (name, done, milling) in enumerate(MILESTONES)],
+            )
+            self.set_meta("milestones_seeded", "1")
+            self.set_meta("milestones_milling_seeded", "1")
+        if self.get_meta("milestones_milling_seeded") is None:  # Entwicklungsstand ohne die Spalte
+            self._con.execute("UPDATE milestones SET milling = 1 WHERE name = 'Fräsen'")
+            self.set_meta("milestones_milling_seeded", "1")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def _merge_orders(self, pattern: str) -> None:
@@ -1218,3 +1283,197 @@ class Database:
         for row in rows:
             row["payload"] = json.loads(row["payload"])
         return rows
+
+    # --- Planung: Meilensteine, Bearbeiter, Aufgaben ---------------------------------------
+    # Meilensteine sind die Spalten des Boards (Reihenfolge sort_order); genau einer ist „fertig“.
+
+    def milestones(self) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT m.id, m.name, m.sort_order, m.done, m.milling, "
+            "(SELECT COUNT(*) FROM tasks t WHERE t.milestone_id = m.id) "
+            "AS tasks FROM milestones m ORDER BY m.sort_order, m.id"
+        )
+
+    def milestone(self, milestone_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT id, name, sort_order, done, milling FROM milestones WHERE id = ?", (milestone_id,))
+        return rows[0] if rows else None
+
+    def add_milestone(self, name: str, done: bool) -> int | None:
+        """Neuer Meilenstein am Ende; None, wenn der Name schon vergeben ist."""
+        cur = self._execute(
+            "INSERT OR IGNORE INTO milestones(name, sort_order, done) "
+            "SELECT ?, COALESCE(MAX(sort_order), -10) + 10, ? FROM milestones",
+            (name, int(done)),
+        )
+        return int(cur.lastrowid) if cur.rowcount else None
+
+    def update_milestone(self, milestone_id: int, name: str, done: bool) -> bool:
+        """False, wenn der neue Name schon vergeben ist."""
+        if self._query("SELECT 1 FROM milestones WHERE name = ? AND id != ?", (name, milestone_id)):
+            return False
+        self._execute("UPDATE milestones SET name = ?, done = ? WHERE id = ?", (name, int(done), milestone_id))
+        return True
+
+    def set_milling_milestone(self, milestone_id: int | None) -> None:
+        """Spalte für laufende Programme (höchstens eine; None = keine)."""
+        with self.transaction():
+            self._execute("UPDATE milestones SET milling = 0")
+            if milestone_id is not None:
+                self._execute("UPDATE milestones SET milling = 1 WHERE id = ?", (milestone_id,))
+
+    def set_milestone_order(self, milestone_ids: list[int]) -> None:
+        with self.transaction():
+            for index, milestone_id in enumerate(milestone_ids):
+                self._execute("UPDATE milestones SET sort_order = ? WHERE id = ?", (index * 10, milestone_id))
+
+    def delete_milestone(self, milestone_id: int) -> None:
+        self._execute("DELETE FROM milestones WHERE id = ?", (milestone_id,))
+
+    def workers(self) -> list[dict[str, Any]]:
+        return self._query(
+            "SELECT w.id, w.name, (SELECT COUNT(*) FROM tasks t WHERE t.worker_id = w.id) AS tasks "
+            "FROM workers w ORDER BY w.name COLLATE NOCASE"
+        )
+
+    def worker(self, worker_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT id, name FROM workers WHERE id = ?", (worker_id,))
+        return rows[0] if rows else None
+
+    def add_worker(self, name: str, t: float) -> int | None:
+        """Neuer Bearbeiter; None, wenn es den Namen schon gibt (Groß-/Kleinschreibung egal)."""
+        cur = self._execute("INSERT OR IGNORE INTO workers(name, created_at) VALUES (?, ?)", (name, t))
+        return int(cur.lastrowid) if cur.rowcount else None
+
+    def rename_worker(self, worker_id: int, name: str) -> bool:
+        if self._query("SELECT 1 FROM workers WHERE name = ? AND id != ?", (name, worker_id)):
+            return False
+        self._execute("UPDATE workers SET name = ? WHERE id = ?", (name, worker_id))
+        return True
+
+    def delete_worker(self, worker_id: int) -> None:
+        """Bearbeiter entfernen; seine Aufgaben und Änderungen bleiben, nur ohne Bearbeiter."""
+        self._execute("DELETE FROM workers WHERE id = ?", (worker_id,))
+
+    _TASK_SELECT = (
+        "SELECT t.id, t.title, t.note, t.article_key, t.milestone_id, t.worker_id, w.name AS worker, "
+        "t.priority, t.due_date, t.position, t.change_id, c.number AS change_number, c.status AS change_status, "
+        "t.created_at, t.updated_at, t.done_at FROM tasks t LEFT JOIN workers w ON w.id = t.worker_id "
+        "LEFT JOIN article_changes c ON c.id = t.change_id "
+    )
+    _TASK_FIELDS = ("title", "note", "article_key", "worker_id", "priority", "due_date")
+
+    def tasks(self) -> list[dict[str, Any]]:
+        return self._query(self._TASK_SELECT + "ORDER BY t.position, t.id")
+
+    def task(self, task_id: int) -> dict[str, Any] | None:
+        rows = self._query(self._TASK_SELECT + "WHERE t.id = ?", (task_id,))
+        return rows[0] if rows else None
+
+    def task_of_change(self, change_id: int) -> dict[str, Any] | None:
+        rows = self._query(self._TASK_SELECT + "WHERE t.change_id = ? ORDER BY t.id LIMIT 1", (change_id,))
+        return rows[0] if rows else None
+
+    def insert_task(
+        self, fields: dict[str, Any], milestone_id: int, position: int, t: float, change_id: int | None = None
+    ) -> int:
+        names = ", ".join(self._TASK_FIELDS)
+        marks = ", ".join("?" for _ in self._TASK_FIELDS)
+        return int(self._execute(
+            f"INSERT INTO tasks({names}, milestone_id, position, change_id, created_at, updated_at) "
+            f"VALUES ({marks}, ?, ?, ?, ?, ?)",
+            (*(fields[n] for n in self._TASK_FIELDS), milestone_id, position, change_id, t, t),
+        ).lastrowid)
+
+    def update_task(self, task_id: int, fields: dict[str, Any], t: float) -> None:
+        assignments = ", ".join(f"{n} = ?" for n in self._TASK_FIELDS)
+        self._execute(
+            f"UPDATE tasks SET {assignments}, updated_at = ? WHERE id = ?",
+            (*(fields[n] for n in self._TASK_FIELDS), t, task_id),
+        )
+
+    def delete_task(self, task_id: int) -> bool:
+        return self._execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount > 0
+
+    def task_ids(self, milestone_id: int) -> list[int]:
+        """Aufgaben einer Spalte in ihrer Reihenfolge (oben = wichtigste)."""
+        rows = self._query("SELECT id FROM tasks WHERE milestone_id = ? ORDER BY position, id", (milestone_id,))
+        return [r["id"] for r in rows]
+
+    def place_tasks(self, milestone_id: int, task_ids: list[int], moved: int, done_at: float | None, t: float) -> None:
+        """Spalte neu durchnummerieren (0, 10, 20 …); die verschobene Aufgabe ``moved`` bekommt dazu
+        ``done_at`` (in der Fertig-Spalte) und ``updated_at``."""
+        for index, task_id in enumerate(task_ids):
+            self._execute(
+                "UPDATE tasks SET milestone_id = ?, position = ? WHERE id = ?", (milestone_id, index * 10, task_id)
+            )
+        self._execute("UPDATE tasks SET done_at = ?, updated_at = ? WHERE id = ?", (done_at, t, moved))
+
+    # --- Änderungsliste (A01, A02 … je Artikel) ----------------------------------------------
+
+    _CHANGE_SELECT = (
+        "SELECT c.id, c.article_key, c.number, c.description, c.worker_id, w.name AS worker, c.status, "
+        "c.created_at, c.done_at FROM article_changes c LEFT JOIN workers w ON w.id = c.worker_id "
+    )
+
+    def changes(self, article_key: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        where, params = [], []
+        if article_key is not None:
+            where.append("c.article_key = ?")
+            params.append(article_key)
+        if status is not None:
+            where.append("c.status = ?")
+            params.append(status)
+        sql = self._CHANGE_SELECT + (f"WHERE {' AND '.join(where)} " if where else "")
+        return self._query(sql + "ORDER BY c.article_key, c.number DESC", params)
+
+    def change(self, change_id: int) -> dict[str, Any] | None:
+        rows = self._query(self._CHANGE_SELECT + "WHERE c.id = ?", (change_id,))
+        return rows[0] if rows else None
+
+    def insert_change(self, article_key: str, description: str, worker_id: int | None, t: float) -> int:
+        """Nächster Änderungsstand des Artikels (höchste Nummer + 1)."""
+        return int(self._execute(
+            "INSERT INTO article_changes(article_key, number, description, worker_id, created_at) "
+            "SELECT ?, COALESCE(MAX(number), 0) + 1, ?, ?, ? FROM article_changes WHERE article_key = ?",
+            (article_key, description, worker_id, t, article_key),
+        ).lastrowid)
+
+    def update_change(self, change_id: int, description: str, worker_id: int | None) -> None:
+        self._execute(
+            "UPDATE article_changes SET description = ?, worker_id = ? WHERE id = ?", (description, worker_id, change_id)
+        )
+
+    def set_change_status(self, change_id: int, status: str, done_at: float | None) -> None:
+        self._execute("UPDATE article_changes SET status = ?, done_at = ? WHERE id = ?", (status, done_at, change_id))
+
+    def delete_change(self, change_id: int) -> None:
+        self._execute("DELETE FROM article_changes WHERE id = ?", (change_id,))
+
+    def latest_changes(self) -> dict[str, dict[str, Any]]:
+        """Je Artikel: letzter Änderungsstand und Zahl der offenen Änderungen (Artikelliste)."""
+        rows = self._query(
+            "SELECT article_key, MAX(number) AS number, SUM(status = 'open') AS open FROM article_changes "
+            "GROUP BY article_key"
+        )
+        return {r["article_key"]: r for r in rows}
+
+    def change_images(self, change_ids: list[int]) -> list[dict[str, Any]]:
+        if not change_ids:
+            return []
+        marks = ", ".join("?" for _ in change_ids)
+        return self._query(
+            f"SELECT id, change_id, image, created_at FROM change_images WHERE change_id IN ({marks}) ORDER BY id",
+            change_ids,
+        )
+
+    def change_image(self, image_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT id, change_id, image, created_at FROM change_images WHERE id = ?", (image_id,))
+        return rows[0] if rows else None
+
+    def add_change_image(self, change_id: int, image: str, t: float) -> int:
+        return int(self._execute(
+            "INSERT INTO change_images(change_id, image, created_at) VALUES (?, ?, ?)", (change_id, image, t)
+        ).lastrowid)
+
+    def delete_change_image(self, image_id: int) -> None:
+        self._execute("DELETE FROM change_images WHERE id = ?", (image_id,))
