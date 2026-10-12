@@ -107,7 +107,17 @@ def list_changes(request: Request, article: str | None = None, status: str = STA
     ctx = _ctx(request)
     key = article.strip().upper() if article else None
     rows = planning.changes(ctx.db, key, None if status == "all" else status)
-    return {"changes": _public_changes(ctx, rows), "workers": ctx.db.workers()}
+    order = None
+    if key:
+        article = ctx.db.article(key)
+        order = ctx.db.order(article["order_key"]) if article else None
+    return {
+        "changes": _public_changes(ctx, rows),
+        "workers": ctx.db.workers(),
+        "milestones": [{"id": m["id"], "name": m["name"], "done": bool(m["done"])} for m in ctx.db.milestones()],
+        "order_title": order["title"] if order else None,
+        "exists": order is not None,  # False: neue Nummer, die erste Änderung legt den Auftrag an
+    }
 
 
 def _change(ctx: AppContext, change_id: int) -> dict[str, Any]:

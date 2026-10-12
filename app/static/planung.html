@@ -77,10 +77,14 @@
             <input type="text" id="t-article" list="article-list" maxlength="12" autocomplete="off" placeholder="z. B. 13238 oder 21053V1">
             <span class="field-hint" id="t-article-hint" aria-live="polite"></span>
           </label>
-          <label class="form-field">Bearbeiter
-            <select id="t-worker"></select>
+          <label class="form-field">Auftragsname
+            <input type="text" id="t-order-title" maxlength="120" autocomplete="off" placeholder="z. B. Gabelbrücke oben">
+            <span class="field-hint">Bezeichnung des Auftrags – erscheint im Board, in Aufträgen, Artikeln und live.</span>
           </label>
         </div>
+        <label class="form-field">Bearbeiter
+          <select id="t-worker"></select>
+        </label>
         <div class="form-row three">
           <label class="form-field">Meilenstein
             <select id="t-milestone"></select>

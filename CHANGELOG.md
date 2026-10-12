@@ -10,6 +10,20 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.31.0] – 2026-10-12
+
+### Neu
+- **Auftragsname in der Planung.**
+  - Der Aufgaben-Dialog hat neben der Nummer das Feld „Auftragsname“. Bei einer bekannten Nummer
+    steht der Name schon drin, bei einer neuen Nummer trägt man ihn gleich mit ein.
+  - Der Name ist die Bezeichnung des Auftrags. Er erscheint auf den Karten im Board, im Tab
+    Aufträge, in der Artikelliste und auf der Live-Karte und gilt für alle Versionen.
+  - Auch „Artikel anlegen“ im Tab Artikel und die erste Änderung zu einer neuen Nummer fragen nach
+    dem Auftragsnamen.
+- **Meilenstein beim Anlegen einer Änderung:** Man wählt, in welche Spalte des Boards die Aufgabe der
+  Änderung kommt (Standard: die erste). In „Fertig“ gilt die Änderung gleich als umgesetzt.
+- Der Änderungsdialog zeigt den Auftragsnamen in der Überschrift.
+
 ## [1.30.0] – 2026-10-12
 
 ### Neu

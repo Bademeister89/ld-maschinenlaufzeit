@@ -621,6 +621,7 @@ async function remove() {
 
 function openAdder() {
   $("a-key").value = "";
+  $("a-title").value = "";
   $("a-error").hidden = true;
   $("adder").showModal();
 }
@@ -628,7 +629,7 @@ function openAdder() {
 async function addArticle(e) {
   e.preventDefault();
   try {
-    const r = await send("POST", "/api/articles", { key: $("a-key").value });
+    const r = await send("POST", "/api/articles", { key: $("a-key").value, title: $("a-title").value || null });
     $("adder").close();
     await load();
     const a = data.articles.find((x) => x.key === r.key);

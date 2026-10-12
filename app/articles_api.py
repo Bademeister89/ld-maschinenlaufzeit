@@ -116,7 +116,7 @@ def create_article(request: Request, payload: dict[str, Any] = Body(...)) -> dic
     """Artikel von Hand anlegen (``{"key": "21060V1"}``); legt den Auftrag bzw. die Felge mit an."""
     ctx = _ctx(request)
     try:
-        result = articles.create(ctx.db, str(payload.get("key") or ""))
+        result = articles.create(ctx.db, str(payload.get("key") or ""), title=payload.get("title"))
     except articles.ArticleError as exc:
         raise HTTPException(400, str(exc)) from None
     log.info("Artikel %s angelegt%s", result["key"], " (mit Auftrag)" if result["order_created"] else "")

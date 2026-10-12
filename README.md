@@ -587,6 +587,10 @@ Fertig. Die Spalten und die Bearbeiter pflegt man unter Konfiguration → Planun
 
 - **Aufgabe:** Titel, optional Artikel, Bearbeiter, Priorität (hoch/normal/niedrig), Termin und
   Notiz. Ist der Termin vorbei und die Aufgabe nicht fertig, ist sie rot als überfällig markiert.
+- **Auftragsname:** Neben der Nummer steht das Feld „Auftragsname“, also die Bezeichnung des
+  Auftrags. Bei bekannter Nummer ist es vorausgefüllt, bei neuer Nummer trägt man den Namen gleich
+  mit ein. Er steht auf der Karte im Board und überall, wo der Auftrag erscheint (Aufträge,
+  Artikel, Live-Karte), und gilt für alle Versionen. Ändert man ihn hier, ändert er sich dort mit.
 - **Neue Auftragsnummer:** Auftragsnummern werden fortlaufend vergeben. Trägt man an einer Aufgabe oder
   Änderung eine Nummer ein, die es noch nicht gibt (z. B. `14025` oder die Version `21053V3`), legt die
   App beim Speichern den Auftrag samt Artikel an. Der Dialog zeigt das schon beim Eintippen an.
@@ -619,8 +623,10 @@ eigene Liste neben 21053.
 - **Bilder einfügen:** „+ Bild“ (Datei), „Foto“ (Handy/Tablet), Strg+V oder „Aus Zwischenablage“.
   Strg+V fügt in die Änderung ein, die zuletzt angeklickt wurde (blau umrandet). Sonst landet das
   Bild in der neuen Änderung und wird mit ihr gespeichert.
-- **Neue Änderung = Aufgabe:** Eine neue Änderung legt oben in der ersten Spalte eine Aufgabe
-  „Änderung A03: …“ an, mit Priorität hoch. Beide Seiten bleiben gleich:
+- **Neue Änderung = Aufgabe:** Eine neue Änderung legt eine Aufgabe „Änderung A03: …“ an, mit
+  Priorität hoch, oben in der Spalte, die man beim Anlegen unter „Meilenstein“ wählt (Standard: die
+  erste). Ist die Nummer neu, fragt der Dialog auch nach dem Auftragsnamen. Beide Seiten bleiben
+  gleich:
   - Ist die Karte in „Fertig“, gilt die Änderung als umgesetzt.
   - Zieht man die Karte wieder heraus, ist die Änderung wieder offen.
   - „Als umgesetzt markieren“ in der Liste schiebt die Karte nach „Fertig“.

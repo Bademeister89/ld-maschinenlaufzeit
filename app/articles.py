@@ -85,17 +85,32 @@ def sync(db: Database, now: float | None = None) -> int:
     return created
 
 
-def create(db: Database, text: str, now: float | None = None) -> dict[str, Any]:
-    """Artikel von Hand anlegen; legt den Auftrag bzw. die Felge mit an, falls es ihn noch nicht gibt."""
+ORDER_TITLE_MAX = 120  # wie die Bezeichnung im Tab Aufträge
+
+
+def order_title(value: Any) -> str:
+    """Bezeichnung (Auftragsname) prüfen."""
+    title = "" if value is None else str(value).strip()
+    if len(title) > ORDER_TITLE_MAX:
+        raise ArticleError(f"Der Auftragsname darf höchstens {ORDER_TITLE_MAX} Zeichen lang sein.")
+    return title
+
+
+def create(db: Database, text: str, now: float | None = None, title: str | None = None) -> dict[str, Any]:
+    """Artikel von Hand anlegen; legt den Auftrag bzw. die Felge mit an, falls es ihn noch nicht gibt.
+    ``title``: Auftragsname (Bezeichnung des Auftrags), falls angegeben."""
     now = time.time() if now is None else now
     order_key, version, kind = parse_key(text)
     key = article_key(order_key, version)
     if db.article(key) is not None:
         raise ArticleError(f"Den Artikel {key} gibt es schon.")
+    title = order_title(title)
     year = 0 if kind == "rim" else datetime.now().year
     with db.transaction():
         order_created = db.ensure_order(order_key, year, order_key, now, kind=kind) == "created"
         db.ensure_article(key, order_key, version, now, manual=True)
+        if title:
+            db.set_order_title(order_key, title)
     return {"key": key, "order_key": order_key, "version": version, "kind": kind, "order_created": order_created}
 
 

@@ -1407,3 +1407,4 @@ dialog.changes-dialog { width: min(760px, calc(100vw - 32px)); }
 @media (max-width: 720px) {
   .art-table td.art-select-cell::before { content: "Export"; }
 }
+.task-order-title { color: var(--ink-2); overflow-wrap: anywhere; }

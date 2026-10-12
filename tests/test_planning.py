@@ -219,6 +219,31 @@ def test_milling_column_can_be_changed_or_switched_off(pdb, make_collector):
     assert pdb.task(task)["milestone_id"] == ids["Offen"]  # ohne Programmlauf-Spalte bleibt alles
 
 
+def test_order_name_from_task_and_change(db):
+    """Auftragsname: bei neuer Nummer gleich übernommen, später änderbar; gilt für alle Versionen."""
+    task = planning.create_task(db, {"title": "konstruieren", "article_key": "14025", "order_title": " Gabelbrücke oben "}, 0)
+    assert (db.order("14025")["title"], db.task(task)["order_title"]) == ("Gabelbrücke oben", "Gabelbrücke oben")
+    planning.update_task(db, task, {"title": "konstruieren", "article_key": "14025"}, 1)  # ohne Feld: bleibt
+    assert db.order("14025")["title"] == "Gabelbrücke oben"
+    planning.create_change(db, {"article_key": "14025V1", "description": "Fase", "order_title": "Gabelbrücke"}, 2)
+    assert db.order("14025")["title"] == "Gabelbrücke"
+    assert {t["article_key"]: t["order_title"] for t in db.tasks()} == {"14025": "Gabelbrücke", "14025V1": "Gabelbrücke"}
+    with pytest.raises(PlanningError, match="höchstens 120"):
+        planning.create_task(db, {"title": "x", "article_key": "14026", "order_title": "x" * 121}, 0)
+    assert db.order("14026") is None
+
+
+def test_change_goes_to_chosen_milestone(pdb):
+    ids = columns(pdb)
+    planning.create_change(pdb, {"article_key": "21053", "description": "CAM anpassen", "milestone_id": ids["CAM"]}, 0)
+    assert titles(pdb, "CAM") == ["Änderung A01: CAM anpassen"]
+    change = planning.create_change(pdb, {"article_key": "21053", "description": "schon erledigt", "milestone_id": ids["Fertig"]}, 5)
+    assert (pdb.change(change)["status"], pdb.change(change)["done_at"]) == ("done", 5)
+    with pytest.raises(PlanningError, match="Meilenstein"):
+        planning.create_change(pdb, {"article_key": "21053", "description": "x", "milestone_id": 999}, 0)
+    assert len(pdb.changes("21053")) == 2
+
+
 def test_failed_task_does_not_create_an_order(db):
     with pytest.raises(PlanningError, match="Termin"):
         planning.create_task(db, {"title": "x", "article_key": "13241", "due_date": "morgen"}, 0)
@@ -304,6 +329,17 @@ def test_order_detail_lists_changes_per_article(app_client):
     assert client.get("/api/orders/21053").json()["changes"] == {
         "21053": {"label": "A01", "open": 1}, "21053V1": {"label": "A01", "open": 1}
     }
+
+
+def test_api_changes_and_new_article_with_name(app_client):
+    _, client = app_client
+    fresh = client.get("/api/planning/changes", params={"article": "14030"}).json()
+    assert (fresh["exists"], fresh["order_title"], [m["name"] for m in fresh["milestones"]][0]) == (False, None, "Offen")
+    client.post("/api/planning/changes", json={"article_key": "14030", "description": "Fase", "order_title": "Hebel lang"})
+    known = client.get("/api/planning/changes", params={"article": "14030"}).json()
+    assert (known["exists"], known["order_title"]) == (True, "Hebel lang")
+    r = client.post("/api/articles", json={"key": "14031", "title": "Hebel kurz"})
+    assert r.status_code == 201 and client.get("/api/orders/14031").json()["order"]["title"] == "Hebel kurz"
 
 
 def test_api_milestone_config(app_client):

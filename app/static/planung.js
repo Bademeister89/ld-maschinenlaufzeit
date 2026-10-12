@@ -58,6 +58,15 @@ function articleHint(text) {
 
 const reloadAll = () => Promise.all([loadArticles(), refresh()]);
 
+/** Bekannter Auftragsname zu einer Nummer (bei neuer Version der Name des Auftrags), sonst "". */
+function orderTitleOf(text) {
+  const key = normKey(text);
+  const match = KEY_RE.exec(key);
+  return articles.get(key)?.title ?? (match?.[2] ? articles.get(match[1])?.title : null) ?? "";
+}
+
+let titleTouched = false; // Auftragsname von Hand geändert: beim Ändern der Nummer nicht überschreiben
+
 const fmtDue = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 const fmtDate = (t) => new Date(t * 1000).toLocaleDateString("de-DE");
 
@@ -194,7 +203,8 @@ function card(t) {
           "div",
           { class: "task-meta" },
           article?.thumb_url ? el("img", { class: "task-thumb", src: article.thumb_url, alt: "", loading: "lazy" }) : null,
-          t.article_key ? el("span", { class: "task-article num", title: article?.title || "", text: t.article_key }) : null,
+          t.article_key ? el("span", { class: "task-article num", text: t.article_key }) : null,
+          t.order_title ? el("span", { class: "task-order-title", text: t.order_title }) : null,
           t.worker ? el("span", { class: "task-worker", text: t.worker }) : null,
         )
       : null,
@@ -302,6 +312,8 @@ function openEditor(task = null) {
   $("editor-title").textContent = task ? "Aufgabe bearbeiten" : "Neue Aufgabe";
   $("t-title").value = task?.title ?? "";
   $("t-article").value = task?.article_key ?? "";
+  $("t-order-title").value = task ? task.order_title ?? orderTitleOf(task.article_key ?? "") : "";
+  titleTouched = false;
   $("t-worker").replaceChildren(
     el("option", { value: "", text: "— kein Bearbeiter —" }),
     ...data.workers.map((w) => el("option", { value: String(w.id), text: w.name })),
@@ -324,6 +336,11 @@ function openEditor(task = null) {
   if (!task) $("t-title").focus();
 }
 
+function onArticleInput() {
+  if (!titleTouched) $("t-order-title").value = orderTitleOf($("t-article").value);
+  updateChangesButton();
+}
+
 function updateChangesButton() {
   const hint = articleHint($("t-article").value);
   $("t-article-hint").textContent = hint.text;
@@ -332,9 +349,13 @@ function updateChangesButton() {
 }
 
 function payload() {
+  const key = normKey($("t-article").value);
+  const title = $("t-order-title").value.trim();
   return {
     title: $("t-title").value,
-    article_key: normKey($("t-article").value) || null,
+    article_key: key || null,
+    // Auftragsname nur mitschicken, wenn er sich ändert (neuer Auftrag: wenn einer eingetragen ist)
+    ...(key && title !== orderTitleOf(key) ? { order_title: title } : {}),
     worker_id: $("t-worker").value || null,
     priority: Number($("t-priority").value),
     due_date: $("t-due").value || null,
@@ -356,7 +377,7 @@ async function saveEditor(e) {
       await send("POST", "/api/planning/tasks", body);
     }
     $("editor").close();
-    await (body.article_key && !articles.has(body.article_key) ? reloadAll() : refresh());
+    await ((body.article_key && !articles.has(body.article_key)) || "order_title" in body ? reloadAll() : refresh());
   } catch (err) {
     setEditorError(err.message);
   }
@@ -424,7 +445,8 @@ async function main() {
   $("t-delete").addEventListener("click", removeTask);
   $("t-up").addEventListener("click", () => step(-1));
   $("t-down").addEventListener("click", () => step(1));
-  $("t-article").addEventListener("input", updateChangesButton);
+  $("t-article").addEventListener("input", onArticleInput);
+  $("t-order-title").addEventListener("input", () => (titleTouched = true));
   $("t-changes").addEventListener("click", () => openChanges(normKey($("t-article").value), { onChanged: reloadAll }));
   $("p-article").addEventListener("input", () => {
     $("p-error").hidden = true;

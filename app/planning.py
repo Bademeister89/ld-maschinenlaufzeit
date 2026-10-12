@@ -112,6 +112,20 @@ def _priority(value: Any) -> int:
     return priority
 
 
+def _apply_order_title(db: Database, article_key: str | None, payload: dict[str, Any]) -> None:
+    """Auftragsname (``order_title``) als Bezeichnung des Auftrags speichern – nur wenn er mitgeschickt
+    wird; leer löscht ihn. Der Name gilt für den Auftrag, also für alle seine Versionen."""
+    if article_key is None or "order_title" not in payload:
+        return
+    from . import articles
+
+    try:
+        title = articles.order_title(payload["order_title"])
+    except articles.ArticleError as exc:
+        raise PlanningError(str(exc)) from None
+    db.set_order_title(articles.parse_key(article_key)[0], title)
+
+
 def validate_task(db: Database, payload: dict[str, Any]) -> dict[str, Any]:
     """Eingaben prüfen; der Artikel zuletzt, weil er (neue Auftragsnummer) dabei angelegt wird. In
     einer Transaktion aufrufen, damit ein Fehler danach ihn wieder zurücknimmt."""
@@ -124,6 +138,7 @@ def validate_task(db: Database, payload: dict[str, Any]) -> dict[str, Any]:
     }
     milestone = _milestone_of(db, payload.get("milestone_id"))
     fields["article_key"] = _article_key(db, payload.get("article_key"))
+    _apply_order_title(db, fields["article_key"], payload)
     fields["milestone"] = milestone
     return fields
 
@@ -324,12 +339,15 @@ def on_run_started(db: Database, order_key: str, version: str, now: float) -> li
 
 
 def create_change(db: Database, payload: dict[str, Any], now: float) -> int:
-    """Nächsten Änderungsstand anlegen und dazu eine Aufgabe oben in der ersten Spalte."""
+    """Nächsten Änderungsstand anlegen und dazu eine Aufgabe oben in der gewählten Spalte
+    (``milestone_id``, sonst die erste). In „Fertig“ gilt die Änderung gleich als umgesetzt."""
     description = _text(payload, "description", DESCRIPTION_MAX, "was geändert wird", required=True)
     worker_id = _worker_id(db, payload.get("worker_id"))
     due_date = _due_date(payload.get("due_date"))
     with db.transaction():
+        column = _milestone_of(db, payload.get("milestone_id")) or first_milestone(db)
         article_key = _article_key(db, payload.get("article_key"), required=True)
+        _apply_order_title(db, article_key, payload)
         change_id = db.insert_change(article_key, description, worker_id, now)
         label = change_label(db.change(change_id)["number"])
         title = f"Änderung {label}: {description}"
@@ -337,7 +355,6 @@ def create_change(db: Database, payload: dict[str, Any], now: float) -> int:
             title = title[: TITLE_MAX - 1] + "…"
         fields = {"title": title, "note": "", "article_key": article_key, "worker_id": worker_id,
                   "priority": 1, "due_date": due_date}
-        column = first_milestone(db)
         task_id = db.insert_task(fields, column["id"], -10, now, change_id=change_id)
         _place(db, task_id, column, 0, now)
     return change_id

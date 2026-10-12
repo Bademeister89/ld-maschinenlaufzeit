@@ -30,6 +30,9 @@ function build() {
   document.body.append(dialog);
 }
 
+// milestone "" = erste Spalte (Standard), title = Auftragsname bei neuer Nummer
+const emptyDraft = () => ({ description: "", worker: "", due: "", milestone: "", title: "" });
+
 /** Änderungsliste von ``articleKey`` öffnen; ``onChanged`` läuft beim Schließen, wenn sich etwas geändert hat. */
 export async function openChanges(articleKey, { onChanged } = {}) {
   if (!dialog) build();
@@ -42,7 +45,7 @@ export async function openChanges(articleKey, { onChanged } = {}) {
     busy: null, // Hinweis während Bilder verkleinert/hochgeladen werden
     data: null,
     target: null, // id der Änderung, in die Strg+V einfügt (null = neue Änderung)
-    draft: { description: "", worker: "", due: "" },
+    draft: emptyDraft(),
     pending: [], // Bilder der neuen Änderung: { file, url }
   };
   await reload();
@@ -53,7 +56,7 @@ async function reload() {
   try {
     current.data = await api("/api/planning/changes", { article: current.key });
   } catch (err) {
-    current.data ??= { changes: [], workers: [] };
+    current.data ??= { changes: [], workers: [], milestones: [], exists: true };
     current.error = err.message;
   }
   if (current.target != null && !current.data.changes.some((c) => c.id === current.target)) current.target = null;
@@ -171,8 +174,10 @@ async function createChange(e) {
       description: draft.description,
       worker_id: draft.worker || null,
       due_date: draft.due || null,
+      milestone_id: draft.milestone || null,
+      ...(current.data.exists ? {} : { order_title: draft.title }),
     });
-    current.draft = { description: "", worker: "", due: "" };
+    current.draft = emptyDraft();
     current.pending = [];
     current.changed = true;
     if (pending.length) {
@@ -195,6 +200,23 @@ function addForm() {
   text.addEventListener("input", () => (draft.description = text.value));
   const due = el("input", { type: "date", "aria-label": "Termin (optional)", value: draft.due || null });
   due.addEventListener("input", () => (draft.due = due.value));
+  // Spalte des Boards, in die die Aufgabe der Änderung kommt (Standard: erste Spalte)
+  const milestones = current.data.milestones ?? [];
+  const firstOpen = milestones.find((m) => !m.done) ?? milestones[0];
+  const milestone = el(
+    "select",
+    { "aria-label": "Meilenstein der Aufgabe" },
+    milestones.map((m) => el("option", { value: String(m.id), text: m.done ? `${m.name} (gleich umgesetzt)` : m.name })),
+  );
+  milestone.value = draft.milestone || (firstOpen ? String(firstOpen.id) : "");
+  milestone.addEventListener("change", () => (draft.milestone = milestone.value));
+  // Neue Nummer: Der Auftrag entsteht mit der ersten Änderung – hier gleich seinen Namen eintragen
+  let titleField = null;
+  if (!current.data.exists) {
+    const title = el("input", { type: "text", maxlength: "120", autocomplete: "off", placeholder: "z. B. Gabelbrücke oben", value: draft.title || null });
+    title.addEventListener("input", () => (draft.title = title.value));
+    titleField = el("label", { class: "form-field" }, `Auftragsname (neuer Auftrag ${current.key})`, title);
+  }
   const pending = current.pending.map((p, index) =>
     el(
       "span",
@@ -224,18 +246,20 @@ function addForm() {
       onfocusin: () => setTarget(null),
       onpointerdown: () => setTarget(null),
     },
+    titleField,
     el("label", { class: "form-field" }, `Neue Änderung ${label}`, text),
     el("div", { class: "change-images" }, pending, imageButtons(null, `neuer Änderung ${label}`)),
     el(
       "div",
       { class: "change-add-row" },
+      el("label", { class: "form-field" }, "Meilenstein", milestone),
       el("label", { class: "form-field" }, "Bearbeiter", workerSelect(draft.worker, "Bearbeiter", (v) => (draft.worker = v))),
       el("label", { class: "form-field" }, "Termin (optional)", due),
       el("button", { type: "submit", class: "btn primary", disabled: !!current.busy, text: `${label} anlegen` }),
     ),
     el("span", {
       class: "field-hint",
-      text: `${touch ? "" : "Bilder mit Strg+V einfügen. "}Legt dazu oben im Board eine Aufgabe an. Ist sie in „Fertig“, gilt die Änderung als umgesetzt.`,
+      text: `${touch ? "" : "Bilder mit Strg+V einfügen. "}Legt dazu im Board oben im gewählten Meilenstein eine Aufgabe an. Ist sie in „Fertig“, gilt die Änderung als umgesetzt.`,
     }),
   );
 }
@@ -349,7 +373,7 @@ function render() {
       el(
         "header",
         { class: "changes-header" },
-        el("h2", { id: "ch-title", text: `Änderungen ${current.key}` }),
+        el("h2", { id: "ch-title", text: `Änderungen ${current.key}${current.data.order_title ? ` · ${current.data.order_title}` : ""}` }),
         el("span", { class: "muted", text: changes.length ? `${changes.length} Stände · ${open} offen` : "noch keine Änderung" }),
         el("span", { class: "spacer" }),
         el("button", { type: "button", class: "btn", onclick: () => dialog.close(), text: "Schließen" }),

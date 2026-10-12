@@ -1034,6 +1034,9 @@ class Database:
         rows = self._query("SELECT planned_s FROM program_plans WHERE name = ?", (name,))
         return rows[0]["planned_s"] if rows else None
 
+    def set_order_title(self, key: str, title: str) -> None:
+        self._execute("UPDATE orders SET title = ? WHERE key = ?", (title, key))
+
     def set_order_title_if_empty(self, key: str, title: str) -> bool:
         return self._execute("UPDATE orders SET title = ? WHERE key = ? AND title = ''", (title, key)).rowcount > 0
 
@@ -1357,8 +1360,10 @@ class Database:
     _TASK_SELECT = (
         "SELECT t.id, t.title, t.note, t.article_key, t.milestone_id, t.worker_id, w.name AS worker, "
         "t.priority, t.due_date, t.position, t.change_id, c.number AS change_number, c.status AS change_status, "
-        "t.created_at, t.updated_at, t.done_at FROM tasks t LEFT JOIN workers w ON w.id = t.worker_id "
+        "t.created_at, t.updated_at, t.done_at, o.title AS order_title "
+        "FROM tasks t LEFT JOIN workers w ON w.id = t.worker_id "
         "LEFT JOIN article_changes c ON c.id = t.change_id "
+        "LEFT JOIN articles a ON a.key = t.article_key LEFT JOIN orders o ON o.key = a.order_key "
     )
     _TASK_FIELDS = ("title", "note", "article_key", "worker_id", "priority", "due_date")
 
