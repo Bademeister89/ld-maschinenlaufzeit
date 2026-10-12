@@ -238,7 +238,7 @@ export function fmtEta(t, now = Date.now() / 1000) {
   const time = `${fmtTime(t)} Uhr`;
   if (day(t) === day(now)) return time;
   if (day(t) === day(now + 86_400)) return `morgen ${time}`;
-  const options = t - now < 6 * 86_400 ? { weekday: "short" } : { day: "2-digit", month: "2-digit" };
+  const options = Math.abs(t - now) < 6 * 86_400 ? { weekday: "short" } : { day: "2-digit", month: "2-digit" };
   return `${new Intl.DateTimeFormat("de-DE", { timeZone: tz(), ...options }).format(t * 1000)} ${time}`;
 }
 

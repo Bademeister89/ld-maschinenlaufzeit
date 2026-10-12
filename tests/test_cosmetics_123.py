@@ -146,3 +146,35 @@ def test_live_card_has_the_streak(db, make_collector):
     assert (s["since"], s["run_s"], s["stop_s"]) == (10, 930, 60)
     feed(c, (1100, None))  # keine Verbindung: kein Balken
     assert c.live()["streak"] is None
+
+
+def _shift(c, t0, t1, cycle=7200):
+    """Produktion von t0 bis t1: alle ``cycle`` s ein kurzer NC-Stopp (viele Zustandsabschnitte)."""
+    t = t0
+    while t < t1:
+        feed(c, (t, snap("STARTED", "P1")), (t + cycle - 60, snap("STOPPED", "P1")))
+        t += cycle
+    feed(c, (t1, snap("STARTED", "P1")))
+
+
+def test_streak_is_not_capped_at_24_hours(db, make_collector):
+    """Version 1.27.1: DMU 70, 10.–12.10. – 55 h Produktion am Stück; die Anzeige blieb bei gut 24 h."""
+    c = make_collector()
+    feed(c, (0, snap("IDLE", "P1")))
+    _shift(c, 10, 2.5 * DAY)
+    s = c.live()["streak"]
+    assert s["since"] == 10
+    assert s["run_s"] + s["stop_s"] == pytest.approx(2.5 * DAY - 10)
+    # danach lädt es nur noch ab kurz vor dem Beginn – und zählt weiter
+    assert c._streak_from == pytest.approx(10 - 15 * 60 - 60)
+    _shift(c, 2.5 * DAY, 3 * DAY)
+    assert c.live()["streak"]["since"] == 10
+
+
+def test_long_streak_still_starts_after_the_last_long_pause(db, make_collector):
+    c = make_collector()
+    feed(c, (0, snap("IDLE", "P1")))
+    _shift(c, 10, 1 * DAY)
+    feed(c, (1 * DAY + 100, snap("IDLE", "P1")))  # 20 min Pause: neue Produktion
+    _shift(c, 1 * DAY + 1300, 2.5 * DAY)
+    assert c.live()["streak"]["since"] == 1 * DAY + 1300

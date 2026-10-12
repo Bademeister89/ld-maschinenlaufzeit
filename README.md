@@ -12,6 +12,8 @@ spätere Laufzeitauswertungen:
     „5 h 12 min · in Produktion seit 04:52 Uhr“.
     - NC-Stopps, Palettenwechsel und kurzes „Bereit“ zwischen zwei Programmen zählen mit. Erst eine
       Pause von 15 min ohne Programmlauf beginnt von vorn.
+    - Die Produktionszeit läuft auch über mehrere Tage weiter („55 h 07 min · in Produktion seit Sa
+      00:10 Uhr“).
     - Unten im Balken liegt ein Zeitstreifen seit Beginn: hell = Lauf, gelb = Stopp, Lücke = Pause.
       Der Tooltip nennt die Summen.
     - Im Stopp steht darunter, wie lange schon („Gestoppt seit 2 min“).

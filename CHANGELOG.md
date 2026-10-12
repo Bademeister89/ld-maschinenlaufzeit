@@ -10,6 +10,18 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.27.1] – 2026-10-12
+
+### Behoben
+- **Produktionszeit im Statusbalken blieb bei gut 24 h stehen.** Die DMU 70 lief von Samstag 00:10
+  bis Montag 07:17 am Stück (55 h). Die Live-Ansicht zeigte trotzdem nur rund 24 h, und der Beginn
+  „in Produktion seit …“ wanderte mit.
+  - Ursache: Für den Balken wurden nur die Zustände der letzten 24 h gelesen.
+  - Jetzt liest die App weiter zurück, bis die Pause vor dem Beginn belegt ist, höchstens 60 Tage.
+    Danach liest sie nur noch ab kurz vor dem Beginn, das bleibt sparsam.
+  - Die erfassten Läufe und Zeiten waren nicht betroffen, nur die Anzeige.
+- „in Produktion seit“ nennt bei einem Beginn vor mehr als sechs Tagen das Datum statt des Wochentags.
+
 ## [1.27.0] – 2026-10-10
 
 ### Neu

@@ -74,7 +74,10 @@ IDLE_POLL_S = 5.0
 # Produktionszeit im Statusbalken: NC-Stopps, Palettenwechsel und kurzes "Bereit" zwischen zwei
 # Programmen zählen mit. Erst eine Pause ohne Programmlauf von STREAK_BREAK_S beginnt von vorn.
 STREAK_BREAK_S = 15 * 60
+# Zustände erst der letzten 24 h laden; reicht die Produktion bis an den Anfang, schrittweise weiter
+# zurück (DMU 70, 10.–12.10.: 55 h am Stück – die Anzeige blieb bei gut 24 h stehen)
 STREAK_LOOKBACK_S = 24 * 3600
+STREAK_MAX_S = 60 * 86_400
 STREAK_REFRESH_S = 60.0
 
 
@@ -231,6 +234,7 @@ class MachineCollector:
         self._online_at: float | None = None  # letzte erfolgreiche Abfrage
         self._streak_states: list[tuple[str, int | None, float, float]] | None = None
         self._streak_key: tuple[int | None, int] | None = None  # (Abschnitt, Minute) beim Laden
+        self._streak_from: float | None = None  # ab hier laden: kurz vor der laufenden Produktion
         self._activity_at: float | None = None  # letzte Änderung dessen, was die Steuerung meldet
         self._connected = False
         self._control: dict[str, str] = {}
@@ -1001,9 +1005,25 @@ class MachineCollector:
         cur = self._interval
         key = (cur.id if cur else None, int(now // STREAK_REFRESH_S))
         if key != self._streak_key or self._streak_states is None:
-            self._streak_states = self._db.machine_states_since(self.machine.id, now - STREAK_LOOKBACK_S)
+            self._streak_states = self._load_streak_states(now)
             self._streak_key = key
         return production_streak(self._streak_states, now)
+
+    def _load_streak_states(self, now: float) -> list[tuple[str, int | None, float, float]]:
+        """Zustände ab kurz vor der laufenden Produktion (vom letzten Laden bekannt), sonst der letzten
+        24 h. Liegt ihr Beginn nicht mindestens eine Pause hinter dem ersten geladenen Zustand, ist die
+        Pause davor nicht belegt – dann weiter zurück, bis sie es ist (höchstens STREAK_MAX_S)."""
+        t0 = self._streak_from if self._streak_from is not None else now - STREAK_LOOKBACK_S
+        while True:
+            states = self._db.machine_states_since(self.machine.id, t0)
+            streak = production_streak(states, now)
+            if streak is None:
+                self._streak_from = None
+                return states
+            if streak["since"] - states[0][2] >= STREAK_BREAK_S or t0 <= now - STREAK_MAX_S:
+                self._streak_from = streak["since"] - STREAK_BREAK_S - STREAK_REFRESH_S
+                return states
+            t0 = min(t0, states[0][2]) - STREAK_LOOKBACK_S
 
     def live(self) -> dict[str, Any]:
         snap = self._snapshot
