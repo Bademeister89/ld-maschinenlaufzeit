@@ -10,6 +10,18 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.28.0] – 2026-10-12
+
+### Neu
+- **Altprogramme ohne Jahr werden als Auftrag erkannt.** Ältere Programme heißen noch
+  `AUFTRAGSPANNUNG` ohne Trennzeichen, z. B. `1323801.h` = Auftrag 13238, Spannung 01. Bisher
+  zählten sie zu keinem Auftrag.
+  - Sie legen jetzt den Auftrag an und buchen ihre Zeiten darauf, wie ein neues Programm. Umbenennen
+    ist nicht nötig. `1323801` und `26-13238-01-02` gehören zum selben Auftrag.
+  - Erkannt werden nur genau sieben Ziffern mit einer gültigen Artikelgruppe vorne (08 Coverrohre
+    bis 23 Anbauteile). So legt nicht jedes siebenstellige Programm einen Auftrag an.
+  - Schon erfasste Läufe solcher Programme ordnet die App beim nächsten Start ihrem Auftrag zu.
+
 ## [1.27.1] – 2026-10-12
 
 ### Behoben

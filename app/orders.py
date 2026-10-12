@@ -33,6 +33,13 @@ Felgen haben ein eigenes Schema ``BBDDBBZZ-SS[ Zusatz]``, z. B. ``10101018-01 ta
 Jede Felge (die achtstellige Nummer) ist ein Eintrag wie ein Auftrag (Art ``rim``, Schlüssel
 ``10101018``), ohne Jahr. Die Programme einer Spannung laufen nacheinander; die Ø-Zeit je Felge ist die
 Summe aller.
+
+Altprogramme (vor dem Jahr im Namen) heißen ``AUFTRAGSPANNUNG`` ohne Trennzeichen, z. B. ``1323801``:
+Auftrag ``13238``, Spannung ``01``, je Spannung genau ein Programm. Sie zählen zum selben Auftrag wie
+``26-13238-01-01``. Erkannt nur mit gültiger Artikelgruppe vorne, damit nicht jedes siebenstellige
+Programm einen Auftrag anlegt: 08 Coverrohre, 09 Tank, 10 Felgen, 11 Bremsscheiben, 12 Pullys,
+13 Schwinge, 14 Gabel, 15 Rasten, 16 Hebel, 17 Lichter, 18 Risser, 19 Bremsen, 20 Naben, 21 Motor,
+22 Werkzeuge, 23 Anbauteile.
 """
 
 from __future__ import annotations
@@ -56,6 +63,9 @@ _CODE = re.compile(
 _RIM = re.compile(
     r"^(?P<number>(?P<kind>1\d)(?P<design>\d{2})(?P<width>\d{2})(?P<diameter>\d{2}))[-_](?P<setup>\d{2})(?P<variant>\D.*)?$"
 )
+# Altprogramme ohne Jahr: AUFTRAG (5 Ziffern) + SPANNUNG (2), z. B. 1323801 = Auftrag 13238, Spannung 01
+_LEGACY = re.compile(r"^(?P<order>(?P<group>\d{2})\d{3})(?P<setup>\d{2})$")
+ARTICLE_GROUPS = range(8, 24)  # 08 Coverrohre … 23 Anbauteile (erste Ziffern der Auftragsnummer)
 RIM_KINDS = {10: "einteilig", 11: "dreiteilig"}
 # Designs beim ersten Start (danach in der Konfiguration pflegbar)
 RIM_DESIGNS = {10: "999", 20: "Z06", 30: "EK 1", 40: "TrippleX", 50: "Hooligan", 60: "Stelth", 70: "458", 80: "Twister", 90: "Sonder"}
@@ -115,6 +125,11 @@ def parse_program(path: str | None) -> ProgramCode | None:
             key=number, year=0, order=number, setup=int(match["setup"]), program=0, name=name, kind="rim",
             variant=(match["variant"] or "").strip(" -_"),
         )
+    match = _LEGACY.match(name)
+    if match and int(match["group"]) in ARTICLE_GROUPS:
+        # je Spannung genau ein Programm: Nummer 1 wie bei ``…-01-01``; ohne Jahr wie bei Felgen
+        order = match["order"]
+        return ProgramCode(key=order, year=0, order=order, setup=int(match["setup"]), program=1, name=name)
     return None
 
 

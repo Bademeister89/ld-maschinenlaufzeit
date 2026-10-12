@@ -264,7 +264,30 @@ zugeordnet, z. B. `26-21055-01-01`:
 - Felgen haben kein Jahr. Wie Aufträge schließen sie sich nach einigen Tagen ohne Lauf (Standard 7)
   und öffnen sich beim nächsten Lauf wieder.
 - Spannung 08/09 ist bei Felgen kein Vorrichtungsbau.
-- Programmnamen ohne eines der beiden Schemata (z. B. `1301201.h`) zählen zu keinem Auftrag.
+
+**Altprogramme** (aus der Zeit vor dem Jahr im Namen) heißen **`AUFTRAGSPANNUNG`** ohne
+Trennzeichen, z. B. `1323801.h` = Auftrag `13238`, Spannung `01`. Sie müssen nicht umbenannt werden:
+
+- Sie legen den Auftrag an bzw. buchen auf ihn wie ein neues Programm. `1323801` und
+  `26-13238-01-02` gehören zum selben Auftrag 13238.
+- Je Spannung gibt es genau ein Programm; Altprogramme haben kein Jahr und keine Version.
+- Erkannt werden nur genau sieben Ziffern mit einer gültigen **Artikelgruppe** vorne, damit nicht
+  jedes siebenstellige Programm einen Auftrag anlegt:
+
+  | Gruppe | | Gruppe | | Gruppe | |
+  |---|---|---|---|---|---|
+  | 08 | Coverrohre | 14 | Gabel | 20 | Naben |
+  | 09 | Tank | 15 | Rasten | 21 | Motor |
+  | 10 | Felgen | 16 | Hebel | 22 | Werkzeuge |
+  | 11 | Bremsscheiben | 17 | Lichter | 23 | Anbauteile |
+  | 12 | Pullys | 18 | Risser | | |
+  | 13 | Schwinge | 19 | Bremsen | | |
+
+- Spannung 08/09 ist wie bei neuen Programmen Vorrichtungsbau.
+- Läufe von Altprogrammen, die vor Version 1.28.0 erfasst wurden, ordnet die App beim Start
+  nachträglich ihrem Auftrag zu.
+
+Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu keinem Auftrag.
 
 - Taucht ein Programm mit einer neuen Auftragsnummer an einer Maschine auf, wird der Auftrag
   **automatisch angelegt**. Schlüssel ist nur die Nummer (`21055`), das Jahr vorne im Programmnamen

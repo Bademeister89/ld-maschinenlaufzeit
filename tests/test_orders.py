@@ -72,6 +72,36 @@ def test_parse_program_rejects(path):
     assert parse_program(path) is None
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("TNC:\\AUFTRAG\\1323801.h", ("13238", 1, "1323801")),
+        ("0812302.H", ("08123", 2, "0812302")),  # Gruppe 08 Coverrohre
+        ("TNC:/nc_prog/2312301.h", ("23123", 1, "2312301")),  # Gruppe 23 Anbauteile
+    ],
+)
+def test_parse_legacy_program(path, expected):
+    """Altprogramme ohne Jahr: AUFTRAG + SPANNUNG, je Spannung ein Programm."""
+    code = parse_program(path)
+    assert (code.key, code.setup, code.name) == expected
+    assert (code.order, code.year, code.program, code.kind, code.version) == (expected[0], 0, 1, "order", "")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "0712301.h",  # Gruppe 07 gibt es nicht
+        "2412301.h",  # Gruppe 24 gibt es nicht
+        "132380.h",  # 6 Ziffern
+        "13238012.h",  # 8 Ziffern
+        "1323801A.h",  # kein Zusatz
+        "13238-01.h",
+    ],
+)
+def test_parse_legacy_program_rejects(path):
+    assert parse_program(path) is None
+
+
 # --- Erfassung ---------------------------------------------------------------------------
 
 
@@ -131,6 +161,18 @@ def test_year_in_the_program_name_does_not_split_the_order(db, make_collector):
     assert (row["key"], row["running_s"], row["versions"]) == ("21053", 500, ["V1"])
     blocks = [(v["version"], [s["setup"] for s in v["setups"]]) for v in orders.order_detail(db, "21053", TZ)["versions"]]
     assert blocks == [("", [1]), ("V1", [2])]
+
+
+def test_legacy_program_belongs_to_the_same_order(db, make_collector):
+    """Altprogramm 1323801 (Auftrag 13238, Spannung 01) und 26-13238-01-02 sind ein Auftrag."""
+    c = make_collector()
+    t = run_part(c, 0, "TNC:\\AUFTRAG\\1323801.h", 300)
+    assert c.live()["order"]["key"] == "13238"
+    run_part(c, t + 10, "TNC:\\AUFTRAG\\26-13238-01-02.H", 200)
+    [row] = orders.list_orders(db)
+    assert (row["key"], row["kind"], row["running_s"], row["setups"], row["programs"]) == ("13238", "order", 500, [1], 2)
+    [setup] = orders.order_detail(db, "13238", TZ)["setups"]
+    assert [p["name"] for p in setup["programs"]] == ["1323801", "26-13238-01-02"]
 
 
 def test_copy_of_a_program_in_another_folder_is_one_program(db, make_collector):
@@ -238,6 +280,19 @@ def test_backfill_assigns_versions_recorded_before_update(db, make_collector):
     assert orders.backfill(db) == 1
     [row] = orders.list_orders(db)
     assert (row["key"], row["number"], row["running_s"], row["finished"], row["versions"]) == ("21053", "21053", 300, 1, ["V1"])
+
+
+def test_backfill_assigns_legacy_programs_recorded_before_update(db, make_collector):
+    """Vor dem Update wurden Altprogramme (1323801) nicht erkannt: ihre Läufe stehen ohne Auftrag da."""
+    make_collector()
+    program = "TNC:\\AUFTRAG\\1323801.h"
+    run_id = db.start_run("m1", program, 100, True)
+    iv = db.open_interval("m1", "RUNNING", "STARTED", "AUTOMATIC", program, run_id, 100, 100)
+    db.close_interval(iv, 400)
+    db.end_run(run_id, 400, "finished")
+    assert orders.backfill(db) == 1
+    [row] = orders.list_orders(db)
+    assert (row["key"], row["running_s"], row["finished"], row["setups"]) == ("13238", 300, 1, [1])
 
 
 def test_programs_without_code_have_no_order(db, make_collector):
@@ -708,7 +763,8 @@ def test_parse_rim_program(name, expected):
 
 @pytest.mark.parametrize("name", ["1301201.h", "1010101-01.h", "101010180-01.h", "10101018.h", "20101018-01.h", "10101018-1x2.h"])
 def test_other_names_are_no_rims(name):
-    assert parse_program(RIM_DIR + name) is None
+    code = parse_program(RIM_DIR + name)
+    assert code is None or code.kind != "rim"  # 1301201 ist ein Altprogramm (Auftrag 13012)
 
 
 def test_order_scheme_wins_over_rim_scheme():
