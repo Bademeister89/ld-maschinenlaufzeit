@@ -73,6 +73,12 @@ SHORT_GAP_S = 30.0
 # Steuerung). Ein Start fällt dann höchstens IDLE_POLL_S später auf.
 IDLE_AFTER_S = 300.0
 IDLE_POLL_S = 5.0
+# Steht der Satz im Programmlauf, obwohl die Steuerung "gestartet" meldet, steht die Maschine (DMU 70,
+# 14.10. 08:45: PNEUMATIKDRUCK UNTERSCHRITTEN, Satz 327.855 über 20 min, Status blieb "gestartet").
+# Ohne Meldung erst nach STALL_S – der längste echte Satz bisher dauerte gut 7 min (Planen, DMU 70) –,
+# mit einer neuen Meldung der Steuerung schon nach STALL_MESSAGE_S. Gestoppt ab dem letzten Satzwechsel.
+STALL_S = 600.0
+STALL_MESSAGE_S = 60.0
 # Produktionszeit im Statusbalken: NC-Stopps, Palettenwechsel und kurzes "Bereit" zwischen zwei
 # Programmen zählen mit. Erst eine Pause ohne Programmlauf von STREAK_BREAK_S beginnt von vorn.
 STREAK_BREAK_S = 15 * 60
@@ -150,6 +156,18 @@ class _Interval:
     id: int
     key: tuple[Any, ...]
     last_seen: float
+    started_at: float = 0.0
+
+
+@dataclass
+class _Still:
+    """Satz, an dem die Steuerung im Programmlauf gerade steht – nur im Speicher."""
+
+    key: tuple[Any, ...]  # (Betriebsart, Haupt- und aktuelles Programm, Satznummer)
+    since: float  # erste Abfrage an diesem Satz
+    errors: frozenset[str]  # Meldungen beim Satzwechsel (neue Meldungen danach zählen)
+    stalled_at: float | None = None  # als Stillstand erkannt
+    reason: str | None = None  # "message" oder "time"
 
 
 @dataclass
@@ -231,7 +249,10 @@ class MachineCollector:
         self._last_tool: str | None = None
         self._seen_tool: int | None = None  # zuletzt gesehene T-Nummer (Anlegen neuer Werkzeuge)
         self._spindle: int | None = None  # T-Nummer in der Spindel (0 = leer, None = unbekannt) – Aufrufe
-        self._tool_use: tuple[int, int] | None = None  # offener Einsatzabschnitt: (id, T-Nummer)
+        self._tool_use: tuple[int, int, float] | None = None  # offener Einsatzabschnitt: (id, T-Nummer, Beginn)
+        self._still: _Still | None = None  # Satz, an dem der Programmlauf gerade steht
+        # Bei dieser Abfrage als Stillstand erkannt: Die Laufzeit endete schon hier (letzter Satzwechsel)
+        self._run_end: float | None = None
         self._last_update: float | None = None
         self._online_at: float | None = None  # letzte erfolgreiche Abfrage
         self._streak_states: list[tuple[str, int | None, float, float]] | None = None
@@ -286,6 +307,7 @@ class MachineCollector:
         else:
             state = classify(snap.pgm_state)
             snap = self._resolve_program(snap)
+        state = self._check_stall(raw, state, now)
         with self._db.transaction():
             if snap is not None:
                 self._update_run(snap, state, now)
@@ -298,8 +320,57 @@ class MachineCollector:
         self._prev_state = state
         self._snapshot = snap
         self._last_update = now
+        self._run_end = None
         if snap is not None:
             self._online_at = now
+
+    def _check_stall(self, raw: Snapshot | None, state: MachineState, now: float) -> MachineState:
+        """Gestartet, aber der Satz steht: Bei manchen Störungen (z. B. Pneumatikdruck) hält die PLC
+        die Maschine an, die Steuerung meldet weiter "gestartet". Steht der Satz im Programmlauf lange
+        (``STALL_S``) oder erscheint, während er steht, eine neue Meldung (``STALL_MESSAGE_S``), gilt
+        die Maschine als gestoppt – ab dem letzten Satzwechsel, bis sich der Satz wieder ändert."""
+        if raw is None or state is not MachineState.RUNNING or raw.exec_mode in MANUAL_MODES or raw.line_no is None:
+            self._still = None
+            return state
+        key = (raw.exec_mode, raw.program, raw.current_program, raw.line_no)
+        still = self._still
+        if still is None or still.key != key:
+            self._still = _Still(key, now, frozenset(raw.errors))
+            return state
+        if still.stalled_at is None:
+            standing = now - still.since
+            new = sorted(set(raw.errors) - still.errors)
+            if standing >= STALL_S or (new and standing >= STALL_MESSAGE_S):
+                still.stalled_at, still.reason = now, "message" if new and standing < STALL_S else "time"
+                self._run_end = still.since
+                self._db.add_event(self.machine.id, now, "stall", {
+                    "since": still.since, "program": raw.current_program or raw.program, "line": raw.line_no,
+                    "messages": new,
+                })
+                log.info(
+                    "%s: Satz %d steht seit %s (Steuerung meldet gestartet%s) – gilt als gestoppt",
+                    self.machine.name, raw.line_no, time.strftime("%H:%M:%S", time.localtime(still.since)),
+                    f", Meldung: {' | '.join(new)}" if new else "",
+                )
+        return MachineState.STOPPED if still.stalled_at is not None else state
+
+    def _stall_info(self) -> dict[str, Any] | None:
+        still = self._still
+        if still is None or still.stalled_at is None:
+            return None
+        return {"since": still.since, "detected_at": still.stalled_at, "line": still.key[-1], "reason": still.reason}
+
+    def _stall_text(self) -> str | None:
+        info = self._stall_info()
+        if info is None:
+            return None
+        since = time.strftime("%H:%M:%S", time.localtime(info["since"]))
+        return f"Satz {info['line']} steht seit {since}" + (" – neue Meldung" if info["reason"] == "message" else "")
+
+    def _ran_until(self, now: float) -> float:
+        """Bis wann die Maschine seit der letzten Abfrage lief: jetzt – oder, wenn gerade ein
+        Stillstand erkannt wurde, bis zum letzten Satzwechsel."""
+        return now if self._run_end is None else min(self._run_end, now)
 
     def _record_raw(
         self, raw: Snapshot | None, snap: Snapshot | None, state: MachineState, now: float, reason: str | None
@@ -309,7 +380,7 @@ class MachineCollector:
         key = (
             (state.value, reason)
             if raw is None
-            else (raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors)
+            else (raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors, state.value)
         )
         if key != self._raw_key:
             self._activity_at = now
@@ -329,7 +400,7 @@ class MachineCollector:
                 "caller": snap.caller if snap else None,
                 "run_id": run.id if run else None,
                 "run_program": run.program if run else None,
-                "reason": reason,
+                "reason": reason or self._stall_text(),
             })
             self._raw_key = key
         self._raw_last = raw
@@ -493,8 +564,9 @@ class MachineCollector:
         run = self._run
         cur = self._interval
         if run is not None and cur is not None and cur.key[0] == MachineState.RUNNING.value and cur.key[-1] == run.id:
-            # Seit der letzten Abfrage lief das Programm durchgehend
-            run.run_s += now - cur.last_seen
+            # Seit der letzten Abfrage lief das Programm durchgehend (bei einem eben erkannten
+            # Stillstand nur bis zum letzten Satzwechsel – die Zeit danach war schon gezählt)
+            run.run_s += self._ran_until(now) - cur.last_seen
 
         if run is not None and run.program in self._callers:
             # Lauf eines Oberprogramms von vor seinem ersten erkannten Aufruf: verwerfen. Die Zeit
@@ -570,8 +642,9 @@ class MachineCollector:
 
         start = now
         if cur is not None:
-            # Beim Verbindungsverlust endet der alte Zustand beim letzten Lebenszeichen.
-            start = cur.last_seen if state is MachineState.OFFLINE else now
+            # Beim Verbindungsverlust endet der alte Zustand beim letzten Lebenszeichen, bei einem
+            # Stillstand trotz "gestartet" beim letzten Satzwechsel.
+            start = cur.last_seen if state is MachineState.OFFLINE else max(self._ran_until(now), cur.started_at)
             self._db.close_interval(cur.id, start)
         if cur is None or cur.key[0] != state.value:
             self._state_since = start
@@ -588,7 +661,7 @@ class MachineCollector:
         interval_id = self._db.open_interval(
             self.machine.id, *key[:4], run_id, start, now, order_key=code.key if code else None
         )
-        self._interval = _Interval(interval_id, key, now)
+        self._interval = _Interval(interval_id, key, now, start)
 
     def _update_tool(self, snap: Snapshot | None, state: MachineState, now: float) -> None:
         """Werkzeug in der Spindel: neu anlegen, Einsatzzeit bei laufendem Programm fortschreiben."""
@@ -615,12 +688,12 @@ class MachineCollector:
             # Bis zu dieser Abfrage lief das Werkzeug; ohne Verbindung endet der Abschnitt
             # bei der letzten Abfrage (wie die Zustandsabschnitte).
             if snap is not None:
-                self._db.touch_tool_usage(use[0], now)
+                self._db.touch_tool_usage(use[0], max(self._ran_until(now), use[2]))
             if use[1] == active:
                 return
             self._tool_use = None
         if active is not None:
-            self._tool_use = (self._db.open_tool_usage(self.machine.id, active, now), active)
+            self._tool_use = (self._db.open_tool_usage(self.machine.id, active, now), active, now)
 
     def forget_run(self, run_id: int, program: str | None) -> None:
         """Nach dem Löschen eines beendeten Laufs (Tab Aufträge): ihn nicht mehr per Satzvorlauf
@@ -810,7 +883,8 @@ class MachineCollector:
             running = bool(current) and current != table and raw.exec_mode not in MANUAL_MODES
             p = self._pallet = _PalletRun(table, joined_running=running)
         if self._prev_state is MachineState.RUNNING and self._last_update is not None:
-            p.entry_run_s += now - self._last_update  # lief seit der letzten Abfrage (wie die Laufzeit eines Laufs)
+            # lief seit der letzten Abfrage (wie die Laufzeit eines Laufs, auch beim Stillstand)
+            p.entry_run_s += self._ran_until(now) - self._last_update
         if raw.exec_mode in MANUAL_MODES:
             return
         if not raw.current_program:
@@ -1067,6 +1141,8 @@ class MachineCollector:
             "connection_error": self._last_error,
             "control": self._control,
             "pgm_state": snap.pgm_state if snap else None,
+            # Gestoppt, obwohl die Steuerung "gestartet" meldet: Der Satz steht (siehe _check_stall)
+            "stall": self._stall_info(),
             "exec_mode": snap.exec_mode if snap else None,
             "program": snap.program if snap else None,
             "current_program": snap.current_program if snap else None,

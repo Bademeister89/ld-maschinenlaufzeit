@@ -10,6 +10,22 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.31.1] – 2026-10-14
+
+### Behoben
+- **Maschine stand, die Live-Ansicht zeigte „Läuft“.** Die DMU 70 hielt am 14.10. um 08:45 mit
+  „PNEUMATIKDRUCK UNTERSCHRITTEN“ an. Die Steuerung meldete aber weiter „gestartet“, deshalb lief die
+  Laufzeit weiter.
+  - Jetzt achtet die App im Programmlauf auf die Satznummer. Bleibt der Satz stehen und erscheint
+    eine neue Meldung der Steuerung, gilt die Maschine nach einer Minute als „Gestoppt“. Ohne
+    Meldung gilt sie erst nach 10 min als gestoppt, denn ein langer Satz dauerte bisher bis zu 7 min
+    (Planen auf der DMU 70).
+  - Die Zeit zählt rückwirkend ab dem letzten Satzwechsel als Stopp, in der Auswertung, im Lauf
+    und bei der Einsatzzeit des Werkzeugs. Sobald sich der Satz wieder ändert, gilt „Läuft“.
+  - Die Live-Karte zeigt beim Programmstatus „gestartet, Satz steht seit …“. In den Ereignissen
+    steht dazu der Eintrag `stall` mit Satz und Meldung.
+  - Bei Handbetrieb und MDI greift die Regel nicht.
+
 ## [1.31.0] – 2026-10-12
 
 ### Neu

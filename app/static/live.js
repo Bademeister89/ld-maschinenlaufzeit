@@ -567,7 +567,10 @@ function renderLive(m, now) {
         "dl",
         { class: "facts" },
         fact("Betriebsart", execLabel(m.exec_mode)),
-        fact("Programmstatus", pgmStateLabel(m.pgm_state)),
+        // Gestoppt, obwohl die Steuerung „gestartet“ meldet: der Satz steht
+        fact("Programmstatus", m.stall
+          ? `${pgmStateLabel(m.pgm_state)}, Satz steht seit ${fmtTime(m.stall.since)} Uhr`
+          : pgmStateLabel(m.pgm_state)),
         fact("Satz", m.blocks ? blocksText(m.blocks).replace("Satz ", "") : null),
         toolFact(m),
         fact("Lauf-Nr.", m.run ? String(m.run.id) : null),

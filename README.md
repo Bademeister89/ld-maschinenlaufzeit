@@ -756,7 +756,7 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
 | Zustand | Bedeutung (Heidenhain-Programmstatus) |
 |---|---|
 | **Läuft** | Programm gestartet (`STARTED`) |
-| **Gestoppt** | NC-Stopp bzw. Programm unterbrochen (`STOPPED`, `INTERRUPTED`) |
+| **Gestoppt** | NC-Stopp bzw. Programm unterbrochen (`STOPPED`, `INTERRUPTED`); auch „gestartet“, wenn der Satz im Programmlauf steht (siehe unten) |
 | **Fehler** | Programm mit Fehler angehalten (`ERROR`) |
 | **Bereit** | kein Programm aktiv (`IDLE`, `FINISHED`, `CANCELLED`, `ERROR_CLEARED`) |
 | **Offline** | Steuerung nicht erreichbar (Maschine aus, Netzwerk weg) |
@@ -767,6 +767,10 @@ pyLSV2), baut die App keine Verbindung auf. Tests mit einer nachgebauten Steueru
   Verbindungsabbrüche beenden keinen Lauf. Beginnt ein Programm während eines kurzen Abbruchs
   (höchstens 30 s, z. B. Zeitüberschreitung), gilt sein Start trotzdem als beobachtet. Ergebnis:
   fertig, abgebrochen, Fehler oder unterbrochen.
+  - **Satz steht trotz „gestartet“:** Bei manchen Störungen (z. B. Pneumatikdruck) hält die PLC die
+    Maschine an, die Steuerung meldet weiter „gestartet“. Bleibt im Programmlauf der Satz stehen und
+    erscheint eine neue Meldung, gilt die Maschine nach 1 min als „Gestoppt“, ohne Meldung nach
+    10 min. Gezählt wird ab dem letzten Satzwechsel. Ändert sich der Satz wieder, gilt „Läuft“.
   - **Handbetrieb und MDI** („Positionieren mit Handeingabe“): Auch hier meldet die Steuerung
     „gestartet“, z. B. für einen MDI-Satz oder ein Makro. Daraus entsteht kein Lauf. Die Zeit zählt
     als Laufzeit der Maschine, aber zu keinem Programm und keinem Auftrag.
