@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS article_changes (
     status      TEXT NOT NULL DEFAULT 'open',
     created_at  REAL NOT NULL,
     done_at     REAL,
+    setup       INTEGER,  -- Aufspannung bzw. Spannung; NULL = alle Spannungen des Artikels
     UNIQUE (article_key, number)
 );
 CREATE INDEX IF NOT EXISTS ix_changes_article ON article_changes(article_key, status);
@@ -387,6 +388,10 @@ class Database:
         if self.get_meta("milestones_milling_seeded") is None:  # Entwicklungsstand ohne die Spalte
             self._con.execute("UPDATE milestones SET milling = 1 WHERE name = 'Fräsen'")
             self.set_meta("milestones_milling_seeded", "1")
+        # v19 → v20: Änderung an einer bestimmten Spannung (NULL = alle, wie bisher)
+        columns = {row["name"] for row in self._con.execute("PRAGMA table_info(article_changes)")}
+        if "setup" not in columns:
+            self._con.execute("ALTER TABLE article_changes ADD COLUMN setup INTEGER")
         self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def _merge_orders(self, pattern: str) -> None:
@@ -1381,6 +1386,7 @@ class Database:
     _TASK_SELECT = (
         "SELECT t.id, t.title, t.note, t.article_key, t.milestone_id, t.worker_id, w.name AS worker, "
         "t.priority, t.due_date, t.position, t.change_id, c.number AS change_number, c.status AS change_status, "
+        "c.setup AS change_setup, "
         "t.created_at, t.updated_at, t.done_at, o.title AS order_title "
         "FROM tasks t LEFT JOIN workers w ON w.id = t.worker_id "
         "LEFT JOIN article_changes c ON c.id = t.change_id "
@@ -1438,7 +1444,7 @@ class Database:
 
     _CHANGE_SELECT = (
         "SELECT c.id, c.article_key, c.number, c.description, c.worker_id, w.name AS worker, c.status, "
-        "c.created_at, c.done_at FROM article_changes c LEFT JOIN workers w ON w.id = c.worker_id "
+        "c.created_at, c.done_at, c.setup FROM article_changes c LEFT JOIN workers w ON w.id = c.worker_id "
     )
 
     def changes(self, article_key: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
@@ -1456,18 +1462,30 @@ class Database:
         rows = self._query(self._CHANGE_SELECT + "WHERE c.id = ?", (change_id,))
         return rows[0] if rows else None
 
-    def insert_change(self, article_key: str, description: str, worker_id: int | None, t: float) -> int:
+    def insert_change(
+        self, article_key: str, description: str, worker_id: int | None, t: float, setup: int | None = None
+    ) -> int:
         """Nächster Änderungsstand des Artikels (höchste Nummer + 1)."""
         return int(self._execute(
-            "INSERT INTO article_changes(article_key, number, description, worker_id, created_at) "
-            "SELECT ?, COALESCE(MAX(number), 0) + 1, ?, ?, ? FROM article_changes WHERE article_key = ?",
-            (article_key, description, worker_id, t, article_key),
+            "INSERT INTO article_changes(article_key, number, description, worker_id, created_at, setup) "
+            "SELECT ?, COALESCE(MAX(number), 0) + 1, ?, ?, ?, ? FROM article_changes WHERE article_key = ?",
+            (article_key, description, worker_id, t, setup, article_key),
         ).lastrowid)
 
-    def update_change(self, change_id: int, description: str, worker_id: int | None) -> None:
+    def update_change(self, change_id: int, description: str, worker_id: int | None, setup: int | None) -> None:
         self._execute(
-            "UPDATE article_changes SET description = ?, worker_id = ? WHERE id = ?", (description, worker_id, change_id)
+            "UPDATE article_changes SET description = ?, worker_id = ?, setup = ? WHERE id = ?",
+            (description, worker_id, setup, change_id),
         )
+
+    def order_program_names(self, order_key: str) -> list[str]:
+        """Programme eines Auftrags: gelaufene und solche mit Planzeit (Spannungen einer Änderung)."""
+        rows = self._query(
+            "SELECT program FROM program_runs WHERE order_key = ? AND program IS NOT NULL "
+            "UNION SELECT program FROM program_plans WHERE order_key = ?",
+            (order_key, order_key),
+        )
+        return [r["program"] for r in rows]
 
     def set_change_status(self, change_id: int, status: str, done_at: float | None) -> None:
         self._execute("UPDATE article_changes SET status = ?, done_at = ? WHERE id = ?", (status, done_at, change_id))

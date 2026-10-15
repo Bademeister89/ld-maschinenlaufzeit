@@ -220,10 +220,11 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 .art-table tbody tr { cursor: pointer; }
 .art-thumb-cell { width: 44px; padding-right: 0; }
 .art-thumb { display: block; width: 40px; height: 30px; border-radius: 6px; object-fit: cover; background: var(--surface-2); border: 1px solid var(--border); }
-.art-thumb-wrap { position: relative; display: block; }
-.art-zoom {
+/* Vorschaubild mit Zoom beim Drüberfahren (zoomThumb in common.js) */
+.zoom-wrap { position: relative; display: block; }
+.zoom-img {
   display: none;
-  position: fixed;  /* Lage setzt artikel.js beim Drüberfahren */
+  position: fixed;  /* Lage setzt zoomThumb beim Drüberfahren */
   z-index: 30;
   width: 360px;
   height: auto;
@@ -235,8 +236,10 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
-.art-thumb-wrap:hover .art-zoom { display: block; }
-@media (hover: none) { .art-zoom { display: none !important; } }
+.zoom-img.contain { object-fit: contain; }
+.zoom-wrap:hover .zoom-img { display: block; }
+.board.is-dragging .zoom-img { display: none !important; }
+@media (hover: none) { .zoom-img { display: none !important; } }
 .art-key { font-weight: 700; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .art-key:hover { text-decoration: underline; }
 .art-version { margin-left: 2px; color: var(--accent); }
@@ -1379,14 +1382,19 @@ dialog input[type="date"] { font-size: 15px; padding: 6px 10px; width: 100%; }
 
 .board {
   display: grid;
-  grid-template-columns: repeat(var(--cols, 6), minmax(220px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
   gap: 12px;
   overflow-x: auto;
   padding-bottom: 6px;
   align-items: start;
 }
 .board-col { background: var(--surface-2); border-radius: var(--radius); padding: 10px; min-width: 0; display: grid; gap: 8px; }
-.board-col.is-done { background: color-mix(in srgb, var(--st-running) 7%, var(--surface-2)); }
+/* Ganz leere Spalten ausblenden – beim Ziehen einer Karte erscheinen sie als Ablageziel */
+.board-col.is-empty { display: none; }
+.board.is-dragging .board-col.is-empty { display: grid; }
+.board-note { margin: 6px 2px 0; font-size: 13px; }
+.board-note:empty { display: none; }
 .board-col-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 2px; font-size: 14px; font-weight: 650; }
 .board-list { display: grid; gap: 8px; min-height: 64px; align-content: start; }
 .board-empty { margin: 0; padding: 14px 4px; font-size: 13px; color: var(--muted); text-align: center; border: 1px dashed var(--axis); border-radius: 8px; }
@@ -1405,10 +1413,36 @@ dialog input[type="date"] { font-size: 15px; padding: 6px 10px; width: 100%; }
 .task-card:hover { border-color: var(--axis); }
 .task-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .task-card.dragging { opacity: 0.4; }
-.board-col.is-done .task-card .task-title { color: var(--ink-2); }
+.task-foot { display: flex; align-items: center; gap: 6px; }
+.task-foot .task-badges { flex: 1; }
+.task-done-btn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.task-done-btn:hover, .task-done-btn:focus-visible { border-color: var(--st-running); color: var(--ink); background: color-mix(in srgb, var(--st-running) 14%, transparent); }
 .task-title { margin: 0; font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
 .task-meta { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
-.task-thumb { width: 28px; height: 28px; border-radius: 4px; object-fit: cover; }
+/* Bild des Auftrags links neben dem Text, groß beim Drüberfahren */
+.task-card.has-thumb { grid-template-columns: 48px minmax(0, 1fr); column-gap: 10px; }
+.task-card.has-thumb > .zoom-wrap { grid-row: 1 / span 3; align-self: start; }
+.task-card.has-thumb > :not(.zoom-wrap) { grid-column: 2; }
+.task-thumb { display: block; width: 48px; height: 36px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border); }
+/* Ansicht „Zeilen“: eine Zeile je Meilenstein, die Karten nebeneinander über die ganze Breite */
+.board[data-layout="rows"] { grid-auto-flow: row; grid-auto-columns: auto; overflow-x: visible; }
+.board[data-layout="rows"] .board-col { grid-template-columns: 120px minmax(0, 1fr); align-items: start; gap: 8px 12px; }
+.board[data-layout="rows"] .board-col-head { flex-direction: column; align-items: flex-start; gap: 2px; padding-top: 4px; }
+.board[data-layout="rows"] .board-list { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); min-height: 48px; }
+.board[data-layout="rows"] .task-card.drop-before { box-shadow: -5px 0 0 -1px var(--accent); }
+.board[data-layout="rows"] .board-list.drop-end { box-shadow: inset 0 -3px 0 var(--accent); border-radius: 8px; }
 .task-article { font-weight: 600; color: var(--ink); }
 .task-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .task-badge { font: inherit; font-size: 11.5px; line-height: 1.5; padding: 0 7px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
@@ -1418,7 +1452,18 @@ dialog input[type="date"] { font-size: 15px; padding: 6px 10px; width: 100%; }
 .task-badge.change.done { background: color-mix(in srgb, var(--st-running) 14%, transparent); color: var(--ink-2); }
 .drop-marker { height: 3px; border-radius: 2px; background: var(--accent); margin: -2px 0; }
 .task-move { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.task-move[hidden], #t-change[hidden], #t-changes[hidden], #t-delete[hidden] { display: none; }
+.task-move[hidden], #t-change[hidden], #t-delete[hidden], #t-done[hidden] { display: none; }
+/* Dialog mit Reitern (Aufgabe | Änderungsliste): Kopf mit Reitern fest, darunter scrollt der Reiter */
+dialog.tabbed-dialog { width: min(760px, calc(100vw - 32px)); }
+dialog.tabbed-dialog[open] { display: flex; flex-direction: column; }
+.tabbed-dialog > form, .tabbed-dialog > .changes-panel { flex: 1 1 auto; min-height: 0; }
+.tabbed-dialog > form { max-height: none; }
+.tabbed-dialog > form[hidden], .changes-panel[hidden] { display: none; }
+.dialog-tabs { margin: 10px 0 0; }
+.dialog-tabs [role="tab"]:disabled { color: var(--muted); cursor: not-allowed; background: none; }
+.changes-panel { overflow-y: auto; }
+.changes-panel .changes-body { max-height: none; overflow: visible; }
+.changes-header h3 { margin: 0; font-size: 16px; }
 
 .change-table td.wrap { min-width: 220px; }
 tr.clickable { cursor: pointer; }
@@ -1451,12 +1496,16 @@ dialog.changes-dialog { width: min(760px, calc(100vw - 32px)); }
 .change-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .change-images { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .change-image { position: relative; }
-.change-image img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.change-image > img, .change-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.change-setup { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--accent-wash); color: var(--accent); }
 .change-image-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--critical-text); font-size: 11px; line-height: 1; cursor: pointer; padding: 0; }
 .change-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 720px) {
-  .board { grid-template-columns: repeat(var(--cols, 6), minmax(78vw, 1fr)); scroll-snap-type: x mandatory; }
+  .board { grid-auto-columns: minmax(78vw, 1fr); scroll-snap-type: x mandatory; }
+  .board[data-layout="rows"] { scroll-snap-type: none; }
+  .board[data-layout="rows"] .board-col { grid-template-columns: minmax(0, 1fr); }
+  .board[data-layout="rows"] .board-col-head { flex-direction: row; }
   .board-col { scroll-snap-align: start; }
   .changes-body { padding: 14px 16px 18px; }
 }

@@ -41,6 +41,10 @@
         <input type="search" id="search" placeholder="Aufgabe oder Artikel" autocomplete="off">
       </label>
       <label class="field"><input type="checkbox" id="overdue"> nur überfällig</label>
+      <div class="segmented" id="layout" role="group" aria-label="Ansicht des Boards">
+        <button type="button" data-layout="columns" title="Eine Spalte je Meilenstein">Spalten</button>
+        <button type="button" data-layout="rows" title="Eine Zeile je Meilenstein, Karten nebeneinander">Zeilen</button>
+      </div>
       <span class="spacer"></span>
       <span class="muted" id="count"></span>
       <button type="button" class="btn" id="add-change">+ Änderung</button>
@@ -51,9 +55,18 @@
       <div class="section-head">
         <h2>Board</h2>
         <p class="muted">Karten ziehen, um Meilenstein oder Reihenfolge zu ändern – oben ist das Wichtigste. Am Tablet über
-          „Bearbeiten“. Spalten und Bearbeiter: <a href="konfiguration.html#meilensteine">Konfiguration → Planung</a>.</p>
+          „Bearbeiten“. Fertig? „✓ Erledigt“ nimmt die Karte vom Board. Spalten und Bearbeiter:
+          <a href="konfiguration.html#meilensteine">Konfiguration → Planung</a>.</p>
       </div>
       <div id="board" class="board"></div>
+      <p class="muted board-note" id="empty-cols"></p>
+    </section>
+
+    <section class="section card">
+      <details id="done-tasks-box">
+        <summary>Erledigte Aufgaben <span class="summary-note num" id="done-count"></span></summary>
+        <div id="done-tasks"></div>
+      </details>
     </section>
 
     <section class="section card">
@@ -63,11 +76,26 @@
       </div>
       <div id="open-changes"></div>
     </section>
+
+    <section class="section card">
+      <details id="done-changes-box">
+        <summary>Umgesetzte Änderungen <span class="summary-note num" id="done-changes-count"></span></summary>
+        <div id="done-changes"></div>
+      </details>
+    </section>
   </main>
 
-  <dialog id="editor" aria-labelledby="editor-title">
-    <form id="editor-form" novalidate>
-      <header><h2 id="editor-title">Aufgabe</h2></header>
+  <dialog id="editor" class="tabbed-dialog" aria-labelledby="editor-title">
+    <header>
+      <h2 id="editor-title">Aufgabe</h2>
+      <nav class="subtabs dialog-tabs" role="tablist" aria-label="Aufgabe">
+        <button type="button" role="tab" id="tab-task" aria-controls="editor-form" aria-selected="true">Aufgabe</button>
+        <button type="button" role="tab" id="tab-changes" aria-controls="changes-panel" aria-selected="false"
+          title="Erst eine Artikelnummer eintragen">Änderungsliste</button>
+      </nav>
+    </header>
+    <div id="changes-panel" class="changes-panel" role="tabpanel" aria-labelledby="tab-changes" hidden></div>
+    <form id="editor-form" novalidate role="tabpanel" aria-labelledby="tab-task">
       <div class="form-body">
         <label class="form-field">Titel
           <input type="text" id="t-title" maxlength="120" autocomplete="off" required placeholder="z. B. Schwinge Gen 3 konstruieren">
@@ -113,7 +141,7 @@
       </div>
       <footer>
         <button type="button" class="btn danger" id="t-delete">Entfernen</button>
-        <button type="button" class="btn" id="t-changes">Änderungsliste</button>
+        <button type="button" class="btn" id="t-done">✓ Erledigt</button>
         <span class="spacer"></span>
         <button type="button" class="btn" id="t-cancel">Abbrechen</button>
         <button type="submit" class="btn primary">Speichern</button>

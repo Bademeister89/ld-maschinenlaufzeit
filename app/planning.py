@@ -8,10 +8,13 @@
   Änderung legt Auftrag und Artikel an (``articles.create``); ihre Programme buchen später darauf.
 - Eine **Änderung** gehört zu genau einem Artikel (21053V1 hat eine eigene Liste neben 21053) und
   bekommt die nächste Nummer: A01, A02 … Beim Anlegen entsteht dazu eine Aufgabe oben in der ersten
-  Spalte. Beide bleiben gleich: Aufgabe in „Fertig“ → Änderung umgesetzt, wieder heraus → offen; die
-  Änderung von Hand umsetzen oder öffnen verschiebt die Aufgabe.
+  Spalte. Beide bleiben gleich: Aufgabe erledigt („Fertig“-Meilenstein, nicht im Board) → Änderung
+  umgesetzt, wieder geöffnet → offen; die Änderung von Hand umsetzen oder öffnen verschiebt die Aufgabe.
+- Eine Änderung kann an einer **Spannung** hängen (``setup``, sonst alle). Zur Wahl stehen die eigenen
+  Spannungen des Artikels ohne Vorrichtung (08/09); die von einer Version übernommene Spannung der
+  Grundversion gehört zur Grundversion (``article_setups``).
 - Läuft ein Programm eines Artikels mit offener Änderung, zeigt die Live-Ansicht einen Alarm
-  (``open_changes``).
+  (``open_changes``) – bei einer Änderung an einer Spannung nur für Programme dieser Spannung.
 - Startet ein Programm eines Auftrags, rücken seine Aufgaben aus den Spalten davor in die Spalte
   „Programmlauf“ (Standard: Fräsen; ``on_run_started``).
 """
@@ -19,6 +22,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from datetime import date
 from typing import Any
 
@@ -91,6 +95,49 @@ def _article_key(db: Database, value: Any, required: bool = False) -> str | None
         # angelegt, wie im Tab Artikel. Laufen später ihre Programme, buchen sie auf diesen Auftrag.
         articles.create(db, key)
     return key
+
+
+def article_setups(db: Database, article_key: str) -> dict[str, Any]:
+    """Spannungen eines Artikels zur Wahl an einer Änderung, ermittelt wie im Auftragsdetail aus den
+    Programmen (gelaufen oder mit Planzeit): ``setups`` die eigenen ohne Vorrichtung (08/09);
+    ``inherited`` die von der Grundversion übernommenen (Version, z. B. Spannung 1 bei 21053V1) – sie
+    gehören zur Grundversion. ``base``: Artikel der Grundversion; ``label``: „Spannung“ bei Felgen."""
+    from . import articles, orders  # hier, beide nutzen planning
+
+    order_key, version, kind = articles.parse_key(article_key)
+    found: dict[str, set[int]] = defaultdict(set)
+    for program in db.order_program_names(order_key):
+        code = orders.parse_program(program)
+        if code is None or code.key != order_key or (kind == "order" and code.setup in orders.FIXTURE_SETUPS):
+            continue
+        found[code.version].add(code.setup)
+    own = sorted(found.get(version, ()))
+    inherited = sorted(s for s in found.get("", ()) if s < min(own)) if version and own else []
+    return {
+        "setups": own, "inherited": inherited, "base": order_key, "kind": kind,
+        "label": "Spannung" if kind == "rim" else "Aufspannung",
+    }
+
+
+def _setup(db: Database, article_key: str, value: Any) -> int | None:
+    """Spannung einer Änderung prüfen (leer = alle Spannungen)."""
+    if value in (None, ""):
+        return None
+    from . import orders
+
+    try:
+        setup = int(value)
+    except (TypeError, ValueError):
+        raise PlanningError("Ungültige Spannung.") from None
+    info = article_setups(db, article_key)
+    if setup in info["inherited"]:
+        raise PlanningError(
+            f"{info['label']} {setup} ist die gemeinsame der Grundversion {info['base']}. "
+            f"Bitte die Änderung bei {info['base']} anlegen."
+        )
+    if not 1 <= setup <= 99 or (info["kind"] == "order" and setup in orders.FIXTURE_SETUPS):
+        raise PlanningError("Ungültige Spannung.")
+    return setup
 
 
 def _due_date(value: Any) -> str | None:
@@ -182,7 +229,7 @@ def update_milestone(db: Database, milestone_id: int, payload: dict[str, Any]) -
     name = _milestone_name(payload)
     done = bool(payload.get("done", milestone["done"]))
     if milestone["done"] and not done:
-        raise PlanningError("Ein Meilenstein muss „Fertig“ sein. Bitte einen anderen als „Fertig“ markieren.")
+        raise PlanningError("Ein Meilenstein muss „Erledigt“ sein. Bitte einen anderen als „Erledigt“ markieren.")
     with db.transaction():
         if not db.update_milestone(milestone_id, name, bool(milestone["done"])):
             raise PlanningError(f"„{name}“ ist schon in der Liste.", 409)
@@ -190,7 +237,7 @@ def update_milestone(db: Database, milestone_id: int, payload: dict[str, Any]) -
             _make_done(db, milestone_id)
         if "milling" in payload and bool(payload["milling"]) != bool(milestone["milling"]):
             if payload["milling"] and (done or milestone["done"]):
-                raise PlanningError("Die „Fertig“-Spalte kann nicht die Spalte für laufende Programme sein.")
+                raise PlanningError("Der „Erledigt“-Meilenstein kann nicht die Spalte für laufende Programme sein.")
             db.set_milling_milestone(milestone_id if payload["milling"] else None)
     return db.milestone(milestone_id)
 
@@ -215,7 +262,7 @@ def delete_milestone(db: Database, milestone_id: int) -> None:
     if milestone is None:
         raise PlanningError("Unbekannter Meilenstein.", 404)
     if milestone["done"]:
-        raise PlanningError("Den „Fertig“-Meilenstein kann man nicht entfernen. Erst einen anderen als „Fertig“ markieren.", 409)
+        raise PlanningError("Den „Erledigt“-Meilenstein kann man nicht entfernen. Erst einen anderen als „Erledigt“ markieren.", 409)
     if db.task_ids(milestone_id):
         raise PlanningError(f"In „{milestone['name']}“ liegen noch Aufgaben. Bitte erst verschieben.", 409)
     db.delete_milestone(milestone_id)
@@ -347,8 +394,9 @@ def create_change(db: Database, payload: dict[str, Any], now: float) -> int:
     with db.transaction():
         column = _milestone_of(db, payload.get("milestone_id")) or first_milestone(db)
         article_key = _article_key(db, payload.get("article_key"), required=True)
+        setup = _setup(db, article_key, payload.get("setup"))
         _apply_order_title(db, article_key, payload)
-        change_id = db.insert_change(article_key, description, worker_id, now)
+        change_id = db.insert_change(article_key, description, worker_id, now, setup)
         label = change_label(db.change(change_id)["number"])
         title = f"Änderung {label}: {description}"
         if len(title) > TITLE_MAX:
@@ -361,17 +409,19 @@ def create_change(db: Database, payload: dict[str, Any], now: float) -> int:
 
 
 def update_change(db: Database, change_id: int, payload: dict[str, Any], now: float) -> None:
-    """Text und Bearbeiter ändern; ``status`` (open/done) verschiebt die verknüpfte Aufgabe mit."""
+    """Text, Bearbeiter und Spannung ändern (``setup`` nur, wenn mitgeschickt); ``status`` (open/done)
+    verschiebt die verknüpfte Aufgabe mit."""
     change = db.change(change_id)
     if change is None:
         raise PlanningError("Unbekannte Änderung.", 404)
     description = _text(payload, "description", DESCRIPTION_MAX, "was geändert wird", required=True)
     worker_id = _worker_id(db, payload.get("worker_id"))
+    setup = _setup(db, change["article_key"], payload["setup"]) if "setup" in payload else change["setup"]
     status = payload.get("status", change["status"])
     if status not in STATUSES:
         raise PlanningError("Ungültiger Status.")
     with db.transaction():
-        db.update_change(change_id, description, worker_id)
+        db.update_change(change_id, description, worker_id, setup)
         if status == change["status"]:
             return
         db.set_change_status(change_id, status, now if status == "done" else None)
@@ -421,9 +471,11 @@ def order_changes(db: Database, order_key: str) -> dict[str, dict[str, Any]]:
     return result
 
 
-def open_changes(db: Database, article_key: str) -> list[dict[str, Any]]:
-    """Offene Änderungen eines Artikels (Alarm in der Live-Ansicht), die neueste zuerst."""
+def open_changes(db: Database, article_key: str, setup: int | None = None) -> list[dict[str, Any]]:
+    """Offene Änderungen eines Artikels (Alarm in der Live-Ansicht), die neueste zuerst. Mit ``setup``
+    (Spannung des laufenden Programms) nur die für alle Spannungen und die für genau diese."""
     return [
-        {"id": r["id"], "label": change_label(r["number"]), "description": r["description"]}
+        {"id": r["id"], "label": change_label(r["number"]), "description": r["description"], "setup": r["setup"]}
         for r in db.changes(article_key, "open")
+        if setup is None or r["setup"] is None or r["setup"] == setup
     ]

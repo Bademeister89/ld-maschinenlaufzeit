@@ -10,6 +10,33 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.34.0] – 2026-10-15
+
+### Neu
+- **Planung: Ansicht „Zeilen | Spalten“.** „Zeilen“ (Standard) zeigt je Meilenstein eine Zeile mit den
+  Karten nebeneinander über die ganze Breite, ohne Querscrollen. „Spalten“ ist die bisherige
+  Ansicht. Jeder Browser merkt sich die Wahl.
+- **„✓ Erledigt“ statt Fertig-Spalte:** Auf jeder Karte und im Dialog nimmt „✓ Erledigt“ die Aufgabe
+  vom Board. Erledigte Aufgaben stehen in einer eigenen Liste unter dem Board, „Wieder öffnen“ holt
+  sie in die erste Spalte zurück. Eine verknüpfte Änderung gilt weiter als umgesetzt bzw. offen.
+  Aufgaben, die schon in „Fertig“ lagen, sind erledigt.
+- **Umgesetzte Änderungen** als eigene Liste unter „Offene Änderungen“, die neueste zuerst mit Datum
+  der Umsetzung, zuklappbar.
+- **Änderung an einer Spannung:** Eine Änderung kann für alle Spannungen gelten (wie bisher) oder
+  für eine, z. B. „Aufspannung 2“. Der Alarm auf der Live-Karte kommt dann nur, wenn ein Programm
+  genau dieser Spannung angewählt ist oder läuft. Die Karte zeigt „Änderung A03 · Sp. 2“. Die
+  gemeinsame Spannung der Grundversion steht bei einer Version nicht zur Wahl, Vorrichtungen
+  (08/09) auch nicht. Datenbank-Schema 20; vorhandene Änderungen gelten für alle Spannungen.
+- **Änderungsliste als Reiter** im Dialog einer Aufgabe: „Aufgabe | Änderungsliste (2 offen)“.
+  Strg+V für Bilder funktioniert dort genauso.
+- **Bilder groß beim Drüberfahren** auch auf den Karten im Board und bei den Bildern einer Änderung,
+  wie schon in der Artikelliste.
+
+### Geändert
+- **Leere Meilensteine sind ausgeblendet.** Unter dem Board steht, welche. Beim Ziehen einer Karte
+  erscheinen sie als Ablageziel.
+- Konfiguration → Planung: Der frühere „Fertig“-Meilenstein heißt dort „✓ Erledigt (nicht im Board)“.
+
 ## [1.33.0] – 2026-10-15
 
 ### Neu

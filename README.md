@@ -607,8 +607,22 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
 
 ## Planung und Änderungen (Tab „Planung“)
 
-**Board:** Je Meilenstein eine Spalte, von links nach rechts Offen, Design, CAD, CAM, Fräsen und
-Fertig. Die Spalten und die Bearbeiter pflegt man unter Konfiguration → Planung.
+**Board:** Je Meilenstein eine Zeile bzw. Spalte: Offen, Design, CAD, CAM und Fräsen. Die Meilensteine
+und die Bearbeiter pflegst du unter Konfiguration → Planung.
+
+- **Ansicht „Zeilen | Spalten“** (oben in der Filterleiste): „Zeilen“ zeigt je Meilenstein eine Zeile,
+  die Karten stehen nebeneinander über die ganze Breite. Das ist der Standard, so passt das Board ohne
+  Querscrollen auf den Bildschirm. „Spalten“ ist die gewohnte Kanban-Ansicht. Jeder Browser merkt
+  sich seine Wahl.
+- **Erledigt:** Ist eine Aufgabe fertig, klickst du auf der Karte (oder im Dialog) auf „✓ Erledigt“.
+  Sie verschwindet vom Board und steht unter „Erledigte Aufgaben“, die neueste zuerst. „Wieder
+  öffnen“ holt sie oben in die erste Spalte zurück. Technisch ist „Erledigt“ der frühere
+  „Fertig“-Meilenstein; er steht nur nicht mehr im Board.
+- **Leere Meilensteine** sind ausgeblendet, unter dem Board steht, welche („Ausgeblendet, weil leer:
+  Fräsen“). Ziehst du eine Karte, erscheinen sie, damit du dort ablegen kannst. Im Dialog sind
+  ohnehin alle wählbar. Leert nur der Filter eine Zeile, bleibt sie stehen.
+- **Bilder:** Hat der Auftrag ein Bild, steht es links auf der Karte. Fährst du mit der Maus darüber,
+  wird es groß, wie in der Artikelliste.
 
 - **Aufgabe:** Titel, optional Artikel, Bearbeiter, Priorität (hoch/normal/niedrig), Termin und
   Notiz. Ist der Termin vorbei und die Aufgabe nicht fertig, ist sie rot als überfällig markiert.
@@ -622,8 +636,8 @@ Fertig. Die Spalten und die Bearbeiter pflegt man unter Konfiguration → Planun
   Laufen später Programme wie `26-14025-01-01`, buchen sie auf diesen Auftrag. Wie jeder Auftrag
   schließt er sich nach einigen Tagen ohne Programmlauf (Standard 7) und öffnet sich beim ersten
   Lauf wieder.
-- **Verschieben:** Karte mit der Maus in eine andere Spalte oder an eine andere Stelle ziehen. Oben in
-  der Spalte steht das Wichtigste. Am Tablet geht das über „Bearbeiten“: Meilenstein wählen,
+- **Verschieben:** Karte mit der Maus in einen anderen Meilenstein oder an eine andere Stelle ziehen.
+  Vorne bzw. oben steht das Wichtigste. Am Tablet geht das über „Bearbeiten“: Meilenstein wählen,
   „↑ höher“ / „↓ tiefer“.
 - **Filter:** Bearbeiter, Suche (Aufgabe, Artikel, Bezeichnung) und „nur überfällig“.
 - **Automatisch nach „Fräsen“:** Startet an einer Maschine ein Programm eines Auftrags, rücken seine
@@ -631,11 +645,10 @@ Fertig. Die Spalten und die Bearbeiter pflegt man unter Konfiguration → Planun
   Laufs, nicht schon beim Anwählen.
   - Aufgaben der Grundversion (`21053`) rücken bei jeder Version mit, Aufgaben einer Version
     (`21053V1`) nur bei Programmen dieser Version. Aufgaben ohne Artikel bleiben stehen.
-  - Aufgaben in späteren Spalten und in „Fertig“ bleiben, wo sie sind. Ein späterer Lauf holt
+  - Aufgaben in späteren Spalten und erledigte Aufgaben bleiben, wo sie sind. Ein späterer Lauf holt
     erledigte Aufgaben also nicht zurück.
   - Die Zielspalte ist unter Konfiguration → Planung als „▶ Programmlauf“ markiert. Man kann eine
     andere wählen („Als Programmlauf“) oder die Funktion abschalten („Programmlauf aus“).
-- Die Spalte „Fertig“ zeigt die letzten 14 Tage. Ältere Aufgaben blendet „+ ältere zeigen“ ein.
 
 **Änderungsliste:** Je Artikel gibt es eigene Änderungsstände A01, A02 … Die Version 21053V1 hat eine
 eigene Liste neben 21053.
@@ -643,6 +656,14 @@ eigene Liste neben 21053.
 - Öffnen über „+ Änderung“ im Tab Planung, über den Knopf „+ Änderung“ im Auftrag (Tab Aufträge; bei
   Versionen je Version), über die Spalte „Änderung“ in der Artikelliste oder über die Marke
   „Änderung A03“ auf einer Karte.
+- Im Dialog einer Aufgabe mit Artikel ist die Liste ein eigener Reiter: „Änderungsliste (2 offen)“.
+  Ohne Artikelnummer an der Aufgabe ist der Reiter grau.
+- **Spannung:** Beim Anlegen und Bearbeiten wählst du „alle Aufspannungen“ oder eine bestimmte, z. B.
+  „Aufspannung 2“ (bei Felgen „Spannung“). Zur Wahl stehen die Spannungen, zu denen es Programme
+  oder Planzeiten gibt, ohne Vorrichtung (08/09). Die Karte zeigt dann „Änderung A03 · Sp. 2“.
+  - Bei einer Version steht die gemeinsame Spannung der Grundversion nicht zur Wahl: Bei 21053V1 ist
+    Spannung 1 die von 21053, ihre Programme heißen `26-21053-01-xx`. Eine Änderung daran legst du
+    deshalb bei 21053 an.
 - Jede Änderung hat einen Text, einen Bearbeiter und beliebig viele Bilder. Die Bilder verkleinert der
   Browser wie das Auftragsbild.
 - **Bilder einfügen:** „+ Bild“ (Datei), „Foto“ (Handy/Tablet), Strg+V oder „Aus Zwischenablage“.
@@ -652,13 +673,21 @@ eigene Liste neben 21053.
   Priorität hoch, oben in der Spalte, die man beim Anlegen unter „Meilenstein“ wählt (Standard: die
   erste). Ist die Nummer neu, fragt der Dialog auch nach dem Auftragsnamen. Beide Seiten bleiben
   gleich:
-  - Ist die Karte in „Fertig“, gilt die Änderung als umgesetzt.
-  - Zieht man die Karte wieder heraus, ist die Änderung wieder offen.
-  - „Als umgesetzt markieren“ in der Liste schiebt die Karte nach „Fertig“.
+  - Ist die Aufgabe erledigt, gilt die Änderung als umgesetzt.
+  - Öffnest du die Aufgabe wieder, ist die Änderung wieder offen.
+  - „Als umgesetzt markieren“ in der Liste erledigt die Aufgabe.
+- **Offene und umgesetzte Änderungen:** Unter dem Board stehen alle offenen Änderungen und darunter
+  die umgesetzten, die neueste zuerst mit dem Datum der Umsetzung. Gezeigt werden die neuesten 20,
+  „alle zeigen“ blendet die älteren ein. Die Liste lässt sich zuklappen, der Browser merkt es sich.
+- Bilder einer Änderung werden beim Drüberfahren groß; ein Klick öffnet sie in einem neuen Tab.
 - **Alarm:** Ist ein Programm eines Artikels mit offener Änderung angewählt oder läuft es, zeigt die
   Live-Karte einen roten Hinweis, z. B. „Achtung: 21053V1 hat eine offene Änderung A03“, mit Link zur
   Liste. Der Alarm gilt genau für diese Version, eine Änderung an 21053 meldet sich nicht bei 21053V1.
   Altprogramme (`1323801.h`) zählen wie neue Programme.
+  - Hängt die Änderung an einer Spannung, kommt der Alarm nur bei Programmen dieser Spannung:
+    „Achtung: 21053V1 hat eine offene Änderung A03 an Aufspannung 2“. Läuft gerade Spannung 3, bleibt
+    die Karte ruhig. Eine Änderung ohne Spannung meldet sich wie bisher bei jedem Programm des
+    Artikels.
 
 ## Werkzeugauswertung (Tab „Werkzeugauswertung“)
 
@@ -889,9 +918,9 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET/POST/PUT/DELETE /api/config/workers` | Bearbeiter: `{"name"}` |
 | `GET /api/planning/board` | Spalten mit Aufgaben, Bearbeiter |
 | `POST /api/planning/tasks`, `PUT/DELETE /api/planning/tasks/{id}` | Aufgabe: `{"title", "note", "article_key", "worker_id", "priority" (1–3), "due_date", "milestone_id"}` |
-| `POST /api/planning/tasks/{id}/move` | Aufgabe verschieben: `{"milestone_id", "index"}` (0 = oben) |
-| `GET /api/planning/changes?article=&status=`, `POST /api/planning/changes` | Änderungen; anlegen mit `{"article_key", "description", "worker_id"}` |
-| `PUT/DELETE /api/planning/changes/{id}` | Text, Bearbeiter, `status` (`open`/`done`) bzw. entfernen |
+| `POST /api/planning/tasks/{id}/move` | Aufgabe verschieben: `{"milestone_id", "index"}` (0 = oben); erledigen = in den „Erledigt“-Meilenstein |
+| `GET /api/planning/changes?article=&status=`, `POST /api/planning/changes` | Änderungen (mit `setups`: Spannungen des Artikels zur Wahl); anlegen mit `{"article_key", "description", "worker_id", "setup"}` (`setup` leer = alle Spannungen) |
+| `PUT/DELETE /api/planning/changes/{id}` | Text, Bearbeiter, `setup`, `status` (`open`/`done`) bzw. entfernen |
 | `PUT /api/planning/changes/{id}/images`, `GET/DELETE /api/planning/images/{id}` | Bild zur Änderung (Upload wie beim Auftragsbild) |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
 | `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |

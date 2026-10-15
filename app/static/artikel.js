@@ -2,7 +2,7 @@
 // Produktionsdaten. Bearbeiten im Dialog, Export als Excel-Datei.
 
 import { openChanges } from "./aenderungen.js";
-import { api, el, fmtDuration, fmtHours, loadMeta, send } from "./common.js";
+import { api, el, fmtDuration, fmtHours, loadMeta, send, zoomThumb } from "./common.js";
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 60000;
@@ -96,29 +96,10 @@ const COLUMNS = [
   {
     label: "",
     cls: "art-thumb-cell",
-    value: (a) => {
-      if (!a.thumb_url) return el("span", { class: "art-thumb empty-thumb", "aria-hidden": "true" });
-      // Beim Drüberfahren groß: das große Bild erst dann laden (die Liste bleibt schnell)
-      const zoom = el("img", { class: "art-zoom", alt: `Bild ${a.key}` });
-      return el(
-        "span",
-        {
-          class: "art-thumb-wrap",
-          onmouseenter: (e) => {
-            if (!zoom.src) zoom.src = a.image_url || a.thumb_url;
-            // Rechts neben dem Vorschaubild, immer ganz im sichtbaren Bereich
-            const r = e.currentTarget.getBoundingClientRect();
-            const width = Math.min(360, innerWidth * 0.5);
-            const height = (width * 3) / 4;
-            zoom.style.width = `${width}px`;
-            zoom.style.left = `${r.right + 10}px`;
-            zoom.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, r.top + r.height / 2 - height / 2))}px`;
-          },
-        },
-        el("img", { class: "art-thumb", src: a.thumb_url, alt: "", loading: "lazy" }),
-        zoom,
-      );
-    },
+    value: (a) =>
+      a.thumb_url
+        ? zoomThumb(a.thumb_url, a.image_url, { alt: `Bild ${a.key}` })
+        : el("span", { class: "art-thumb empty-thumb", "aria-hidden": "true" }),
   },
   {
     label: "Artikel / Bezeichnung",

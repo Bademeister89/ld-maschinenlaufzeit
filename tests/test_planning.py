@@ -53,9 +53,9 @@ def test_milestones_are_seeded_once(tmp_path):
 
 def test_milestone_rules(pdb):
     ids = columns(pdb)
-    with pytest.raises(PlanningError, match="Fertig"):
+    with pytest.raises(PlanningError, match="Erledigt"):
         planning.delete_milestone(pdb, ids["Fertig"])
-    with pytest.raises(PlanningError, match="muss „Fertig“"):
+    with pytest.raises(PlanningError, match="muss „Erledigt“"):
         planning.update_milestone(pdb, ids["Fertig"], {"name": "Fertig", "done": False})
     planning.create_task(pdb, {"title": "Halter"}, 0)
     with pytest.raises(PlanningError, match="noch Aufgaben"):
@@ -211,7 +211,7 @@ def test_milling_column_can_be_changed_or_switched_off(pdb, make_collector):
     assert [m["name"] for m in pdb.milestones() if m["milling"]] == ["Fräsen"]
     planning.update_milestone(pdb, ids["CAM"], {"name": "CAM", "milling": True})
     assert [m["name"] for m in pdb.milestones() if m["milling"]] == ["CAM"]
-    with pytest.raises(PlanningError, match="Fertig"):
+    with pytest.raises(PlanningError, match="Erledigt"):
         planning.update_milestone(pdb, ids["Fertig"], {"name": "Fertig", "milling": True})
     planning.update_milestone(pdb, ids["CAM"], {"name": "CAM", "milling": False})
     task = planning.create_task(pdb, {"title": "x", "article_key": "21053"}, 0)
@@ -271,9 +271,52 @@ def test_live_card_warns_about_open_change_of_this_version(pdb, make_collector):
     run(c, "TNC:\\AUFTRAG\\26-21053V1-01-01.H")
     assert c.live()["order"]["changes"] == []  # Änderung der Grundversion betrifft V1 nicht
     change_id = planning.create_change(pdb, {"article_key": "21053V1", "description": "Bohrung"}, 0)
-    assert c.live()["order"]["changes"] == [{"id": change_id, "label": "A01", "description": "Bohrung"}]
+    assert c.live()["order"]["changes"] == [{"id": change_id, "label": "A01", "description": "Bohrung", "setup": None}]
     planning.update_change(pdb, change_id, {"description": "Bohrung", "status": "done"}, 1)
     assert c.live()["order"]["changes"] == []
+
+
+def plan(db, *names):
+    """Programme mit Planzeit (ohne Lauf): Sie bestimmen die Spannungen des Artikels mit."""
+    for name in names:
+        db.set_plan(name, name, orders.parse_program(name).key, 600, "manual", 0)
+
+
+def test_change_setup_choices(pdb):
+    """Zur Wahl stehen die eigenen Spannungen ohne Vorrichtung; die gemeinsame Spannung 1 gehört zur
+    Grundversion."""
+    plan(pdb, "26-21053-01-01", "26-21053-08-01", "26-21053V1-02-01", "26-21053V1-03-01")
+    assert planning.article_setups(pdb, "21053V1") == {
+        "setups": [2, 3], "inherited": [1], "base": "21053", "kind": "order", "label": "Aufspannung",
+    }
+    assert planning.article_setups(pdb, "21053")["setups"] == [1]
+    with pytest.raises(PlanningError, match="Grundversion 21053"):
+        planning.create_change(pdb, {"article_key": "21053V1", "description": "x", "setup": 1}, 0)
+    with pytest.raises(PlanningError, match="Ungültige Spannung"):
+        planning.create_change(pdb, {"article_key": "21053", "description": "Vorrichtung", "setup": 8}, 0)
+    change_id = planning.create_change(pdb, {"article_key": "21053V1", "description": "Bohrung", "setup": "2"}, 0)
+    assert pdb.change(change_id)["setup"] == 2
+    [task] = pdb.tasks()
+    assert task["change_setup"] == 2
+    # Bearbeiten ohne setup lässt die Spannung, mit leerem Wert gilt die Änderung für alle
+    planning.update_change(pdb, change_id, {"description": "Bohrung 10"}, 1)
+    assert pdb.change(change_id)["setup"] == 2
+    planning.update_change(pdb, change_id, {"description": "Bohrung 10", "setup": ""}, 2)
+    assert pdb.change(change_id)["setup"] is None
+
+
+def test_live_alarm_only_for_the_setup_of_the_change(pdb, make_collector):
+    c = make_collector()
+    plan(pdb, "26-21053V1-02-01", "26-21053V1-03-01")
+    on_setup = planning.create_change(pdb, {"article_key": "21053V1", "description": "Bohrung", "setup": 3}, 0)
+    run(c, "TNC:\\AUFTRAG\\26-21053V1-02-01.H")
+    assert c.live()["order"]["changes"] == []  # andere Spannung: kein Alarm
+    run(c, "TNC:\\AUFTRAG\\26-21053V1-03-01.H", 100)
+    assert [x["id"] for x in c.live()["order"]["changes"]] == [on_setup]
+    everywhere = planning.create_change(pdb, {"article_key": "21053V1", "description": "Fase"}, 0)
+    assert [x["id"] for x in c.live()["order"]["changes"]] == [everywhere, on_setup]
+    run(c, "TNC:\\AUFTRAG\\26-21053V1-02-01.H", 200)
+    assert [x["id"] for x in c.live()["order"]["changes"]] == [everywhere]  # ohne Spannung: überall
 
 
 def test_live_card_warns_for_legacy_program(pdb, make_collector):
@@ -380,6 +423,27 @@ def test_live_api_shows_change(app_client):
     run(collector, "TNC:\\AUFTRAG\\26-21053-01-01.H", 1000)
     order = client.get("/api/machines").json()["machines"][0]["order"]
     assert [c["label"] for c in order["changes"]] == ["A01"]
+
+
+def test_update_from_schema_19(tmp_path):
+    """Eine Datenbank von Version 1.31 bekommt die Spalte setup; vorhandene Änderungen gelten für alle
+    Spannungen."""
+    path = tmp_path / "old.db"
+    db = Database(path)
+    db.ensure_article("21053", "21053", "", 0)
+    planning.create_change(db, {"article_key": "21053", "description": "Fase"}, 0)
+    db.close()
+    con = sqlite3.connect(path)
+    con.execute("ALTER TABLE article_changes DROP COLUMN setup")
+    con.execute("UPDATE meta SET value = '19' WHERE key = 'schema_version'")
+    con.commit()
+    con.close()
+    db = Database(path)
+    assert db.get_meta("schema_version") == str(SCHEMA_VERSION)
+    [change] = db.changes("21053")
+    assert (change["number"], change["setup"]) == (1, None)
+    assert [x["label"] for x in planning.open_changes(db, "21053", 2)] == ["A01"]
+    db.close()
 
 
 def test_update_from_schema_18(tmp_path):

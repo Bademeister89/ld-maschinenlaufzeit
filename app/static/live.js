@@ -200,18 +200,20 @@ function toolWarning(m) {
     : el("p", { class: "tool-warning warn" }, `⚠ T${info.number}: Vorwarnzeit erreicht (${values}) · `, link);
 }
 
-/** Alarm, wenn für genau diesen Artikel (Auftrag und Version) noch eine Änderung offen ist. */
+/** Alarm, wenn für genau diesen Artikel (Auftrag und Version) noch eine Änderung offen ist – für alle
+ *  Spannungen oder für die Spannung des laufenden Programms (das filtert schon der Server). */
 function changeWarning(m) {
   const changes = m.order?.changes;
   if (!changes?.length) return null;
   const article = `${m.order.key}${m.order.version ?? ""}`;
   const [newest] = changes;
+  const setup = newest.setup != null ? ` an ${m.order.kind === "rim" ? "Spannung" : "Aufspannung"} ${newest.setup}` : "";
   const more = changes.length > 1 ? ` und ${changes.length - 1} weitere` : "";
   const link = el("a", { href: `planung.html?article=${encodeURIComponent(article)}`, text: "Änderung ansehen" });
   return el(
     "p",
     { class: "tool-warning over", role: "alert" },
-    `✕ Achtung: ${article} hat eine offene Änderung ${newest.label} („${newest.description}“)${more} · `,
+    `✕ Achtung: ${article} hat eine offene Änderung ${newest.label}${setup} („${newest.description}“)${more} · `,
     link,
   );
 }

@@ -129,6 +129,32 @@ export function machineThumb(machine, size = "") {
   return el("span", { class: `${cls} thumb-placeholder`, "aria-hidden": "true", text: initials || "?" });
 }
 
+/** Vorschaubild, das beim Drüberfahren groß erscheint: rechts daneben (bei wenig Platz links), immer
+ *  ganz im sichtbaren Bereich. Das große Bild lädt erst beim ersten Drüberfahren, damit Listen schnell
+ *  bleiben. Auf Touch-Geräten gibt es keinen Zoom (CSS). ``className``: Klasse des kleinen Bildes;
+ *  ``contain``: ganzes Bild zeigen statt auf 4:3 zuschneiden (z. B. Skizzen und Screenshots). */
+export function zoomThumb(thumbUrl, fullUrl, { className = "art-thumb", alt = "", contain = false } = {}) {
+  const zoom = el("img", { class: `zoom-img${contain ? " contain" : ""}`, alt });
+  return el(
+    "span",
+    {
+      class: "zoom-wrap",
+      onmouseenter: (e) => {
+        if (!zoom.src) zoom.src = fullUrl || thumbUrl;
+        const r = e.currentTarget.getBoundingClientRect();
+        const width = Math.min(360, innerWidth * 0.5);
+        const height = (width * 3) / 4;
+        const right = r.right + 10;
+        zoom.style.width = `${width}px`;
+        zoom.style.left = `${right + width <= innerWidth - 8 ? right : Math.max(8, r.left - width - 10)}px`;
+        zoom.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, r.top + r.height / 2 - height / 2))}px`;
+      },
+    },
+    el("img", { class: className, src: thumbUrl, alt: "", loading: "lazy" }),
+    zoom,
+  );
+}
+
 // --- Bilder verkleinern (Maschinenbild, Auftragsbild) ---------------------------------------
 
 /** Foto lesen, Handyfotos richtig herum (Ausrichtung aus den EXIF-Daten). */

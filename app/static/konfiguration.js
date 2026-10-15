@@ -485,7 +485,7 @@ function milestoneRow(m, index) {
     "li",
     {},
     el("span", { class: "mf-name", text: m.name }),
-    m.done ? el("span", { class: "ms-done", text: "✓ Fertig" }) : null,
+    m.done ? el("span", { class: "ms-done", title: "Aufgaben hier sind erledigt und stehen unter dem Board", text: "✓ Erledigt (nicht im Board)" }) : null,
     m.milling ? el("span", { class: "ms-done", title: "Startet ein Programm des Auftrags, rücken seine Aufgaben hierher", text: "▶ Programmlauf" }) : null,
     el("span", { class: "muted mf-usage", text: taskCount(m.tasks) }),
     el(
@@ -493,7 +493,7 @@ function milestoneRow(m, index) {
       { class: "mf-actions" },
       el("button", { type: "button", class: "btn icon", title: "Nach links", "aria-label": `${m.name} nach links`, disabled: index === 0, onclick: () => moveMilestone(index, -1), text: "←" }),
       el("button", { type: "button", class: "btn icon", title: "Nach rechts", "aria-label": `${m.name} nach rechts`, disabled: index === milestones.length - 1, onclick: () => moveMilestone(index, 1), text: "→" }),
-      m.done ? null : el("button", { type: "button", class: "btn", onclick: () => msRequest("PUT", `/api/config/milestones/${m.id}`, { name: m.name, done: true }), text: "Als „Fertig“" }),
+      m.done ? null : el("button", { type: "button", class: "btn", title: "Diesen Meilenstein als „Erledigt“ verwenden (nicht im Board)", onclick: () => msRequest("PUT", `/api/config/milestones/${m.id}`, { name: m.name, done: true }), text: "Als „Erledigt“" }),
       m.done
         ? null
         : el("button", {

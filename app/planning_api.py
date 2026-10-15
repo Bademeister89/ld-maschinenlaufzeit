@@ -55,8 +55,11 @@ def article_choices(request: Request) -> dict[str, Any]:
         order = orders.get(art["order_key"])
         if order is None:
             continue
-        thumb = ctx.order_images.public({"key": order["key"], "image": order["image"]}, files)["thumb_url"]
-        rows.append({"key": art["key"], "title": order["title"], "kind": order["kind"], "thumb_url": thumb})
+        urls = ctx.order_images.public({"key": order["key"], "image": order["image"]}, files)
+        rows.append({
+            "key": art["key"], "title": order["title"], "kind": order["kind"],
+            "thumb_url": urls["thumb_url"], "image_url": urls["image_url"],  # großes Bild für den Zoom
+        })
     return {"articles": rows}
 
 
@@ -107,11 +110,16 @@ def list_changes(request: Request, article: str | None = None, status: str = STA
     ctx = _ctx(request)
     key = article.strip().upper() if article else None
     rows = planning.changes(ctx.db, key, None if status == "all" else status)
-    order = None
+    order = setups = None
     if key:
         article = ctx.db.article(key)
         order = ctx.db.order(article["order_key"]) if article else None
+        try:
+            setups = planning.article_setups(ctx.db, key)  # Auswahl „Spannung“ an der Änderung
+        except ValueError:
+            setups = None
     return {
+        "setups": setups,
         "changes": _public_changes(ctx, rows),
         "workers": ctx.db.workers(),
         "milestones": [{"id": m["id"], "name": m["name"], "done": bool(m["done"])} for m in ctx.db.milestones()],

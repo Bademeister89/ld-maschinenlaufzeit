@@ -1185,12 +1185,13 @@ class MachineCollector:
         return row["stop_s"] if row else 0.0
 
     def _order_info(self, snap: Snapshot | None) -> dict[str, Any] | None:
-        """Auftrag des Programms; ``changes``: offene Änderungen genau dieses Artikels (Version), die
-        Live-Karte zeigt sie als Alarm."""
+        """Auftrag des Programms; ``changes``: offene Änderungen genau dieses Artikels (Version) für alle
+        Spannungen oder für die Spannung dieses Programms, die Live-Karte zeigt sie als Alarm."""
         code = parse_program(snap.program if snap else None)
         if code is None:
             return None
-        return {**code.public(), "changes": planning.open_changes(self._db, article_key(code.key, code.version))}
+        changes = planning.open_changes(self._db, article_key(code.key, code.version), code.setup)
+        return {**code.public(), "changes": changes}
 
     def _caller_file(self, path: str) -> dict[str, Any]:
         """Was über die Datei des Oberprogramms bekannt ist – zur Kontrolle auf der Live-Karte."""

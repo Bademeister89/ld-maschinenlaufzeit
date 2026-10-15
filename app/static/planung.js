@@ -1,19 +1,22 @@
 // Tab „Planung“: Board mit einer Spalte je Meilenstein. Karten ziehen ändert Meilenstein und
-// Reihenfolge (oben = wichtigste); am Tablet geht das über „Bearbeiten“. Darunter die offenen Änderungen.
+// Reihenfolge (oben = wichtigste); am Tablet geht das über „Bearbeiten“. Erledigte Aufgaben (der
+// „Fertig“-Meilenstein) stehen nicht im Board, sondern in einer eigenen Liste darunter, ebenso die
+// offenen und die umgesetzten Änderungen. Leere Spalten sind ausgeblendet, beim Ziehen erscheinen sie.
 
-import { openChanges } from "./aenderungen.js";
-import { api, el, loadMeta, send } from "./common.js";
+import { mountChanges, openChanges, unmountChanges } from "./aenderungen.js";
+import { api, el, loadMeta, send, zoomThumb } from "./common.js";
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 60000;
-const DONE_DAYS = 14; // „Fertig“ zeigt nur die letzten 14 Tage, ältere auf Wunsch
+const DONE_CHANGES_SHOWN = 20; // umgesetzte Änderungen: die neuesten, ältere auf Wunsch
 const KEY = "ldm-planung-filter";
 const PRIORITY = { 1: "hoch", 3: "niedrig" }; // „normal“ ohne Marke
 
 let data = { milestones: [], workers: [], today: "" };
 let articles = new Map();
 let openChangeRows = [];
-let showOldDone = false;
+let doneChangeRows = [];
+let showAllDoneChanges = false;
 let editing = null; // Aufgabe im Dialog (null = neue)
 let dragging = null; // id der gezogenen Aufgabe
 
@@ -21,17 +24,36 @@ const state = loadFilter();
 
 function loadFilter() {
   try {
-    return { worker: "all", overdue: false, ...JSON.parse(localStorage.getItem(KEY) || "{}"), search: "" };
+    return { worker: "all", overdue: false, layout: "rows", ...JSON.parse(localStorage.getItem(KEY) || "{}"), search: "" };
   } catch {
-    return { worker: "all", overdue: false, search: "" };
+    return { worker: "all", overdue: false, layout: "rows", search: "" };
   }
 }
 
 function saveFilter() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ worker: state.worker, overdue: state.overdue }));
+    localStorage.setItem(KEY, JSON.stringify({ worker: state.worker, overdue: state.overdue, layout: state.layout }));
   } catch {
     /* privates Fenster: Filter nur für diese Sitzung */
+  }
+}
+
+const DONE_CHANGES_KEY = "ldm-planung-umgesetzt"; // Liste „Umgesetzte Änderungen“ auf- oder zugeklappt
+
+function loadOpen(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : value === "open";
+  } catch {
+    return fallback;
+  }
+}
+
+function saveOpen(key, open) {
+  try {
+    localStorage.setItem(key, open ? "open" : "closed");
+  } catch {
+    /* privates Fenster: nur für diese Sitzung */
   }
 }
 
@@ -73,9 +95,14 @@ const fmtDate = (t) => new Date(t * 1000).toLocaleDateString("de-DE");
 // --- Laden ------------------------------------------------------------------------------------
 
 async function refresh() {
-  const [board, changes] = await Promise.all([api("/api/planning/board"), api("/api/planning/changes", { status: "open" })]);
+  const [board, open, done] = await Promise.all([
+    api("/api/planning/board"),
+    api("/api/planning/changes", { status: "open" }),
+    api("/api/planning/changes", { status: "done" }),
+  ]);
   data = board;
-  openChangeRows = changes.changes;
+  openChangeRows = open.changes;
+  doneChangeRows = done.changes.sort((a, b) => (b.done_at ?? 0) - (a.done_at ?? 0));
   $("banner").hidden = true;
   renderWorkerFilter();
   render();
@@ -112,31 +139,35 @@ function visible(task) {
 
 // --- Board ------------------------------------------------------------------------------------
 
+const doneMilestone = () => data.milestones.find((m) => m.done);
+const firstMilestone = () => data.milestones.find((m) => !m.done) ?? data.milestones[0];
+
 function render() {
   let shown = 0;
-  const now = Date.now() / 1000;
-  const columns = data.milestones.map((m) => {
-    let tasks = m.tasks.filter(visible);
-    let hidden = 0;
-    if (m.done && !showOldDone) {
-      const recent = tasks.filter((t) => !t.done_at || now - t.done_at < DONE_DAYS * 86400);
-      hidden = tasks.length - recent.length;
-      tasks = recent;
-    }
-    shown += tasks.length;
-    return column(m, tasks, hidden);
-  });
-  $("board").replaceChildren(...columns);
-  $("board").style.setProperty("--cols", String(data.milestones.length));
-  const total = data.milestones.reduce((n, m) => n + m.tasks.length, 0);
+  const board = data.milestones.filter((m) => !m.done);
+  $("board").replaceChildren(
+    ...board.map((m) => {
+      const tasks = m.tasks.filter(visible);
+      shown += tasks.length;
+      return column(m, tasks);
+    }),
+  );
+  const total = board.reduce((n, m) => n + m.tasks.length, 0);
   $("count").textContent = shown === total ? `${total} Aufgaben` : `${shown} von ${total} Aufgaben`;
+  // Ganz leere Spalten sind ausgeblendet (nicht die, die erst der Filter leer macht)
+  const empty = board.filter((m) => !m.tasks.length).map((m) => m.name);
+  $("empty-cols").textContent = empty.length
+    ? `Ausgeblendet, weil leer: ${empty.join(", ")}. Beim Ziehen einer Karte ${empty.length === 1 ? "erscheint sie" : "erscheinen sie"}.`
+    : "";
+  renderDoneTasks();
   renderOpenChanges();
+  renderDoneChanges();
 }
 
-function column(m, tasks, hidden) {
+function column(m, tasks) {
   const list = el("div", { class: "board-list", "data-milestone": String(m.id) });
   list.append(...tasks.map(card));
-  if (!tasks.length) list.append(el("p", { class: "board-empty", text: m.done ? "Noch nichts fertig." : "Keine Aufgaben." }));
+  if (!tasks.length) list.append(el("p", { class: "board-empty", text: m.tasks.length ? "Keine passenden Aufgaben." : "Hierher ziehen" }));
   list.addEventListener("dragover", (e) => onDragOver(e, list));
   list.addEventListener("dragleave", (e) => {
     if (!list.contains(e.relatedTarget)) clearMarker();
@@ -144,19 +175,16 @@ function column(m, tasks, hidden) {
   list.addEventListener("drop", (e) => onDrop(e, m, list));
   return el(
     "section",
-    { class: `board-col ${m.done ? "is-done" : ""}`, "aria-label": m.name },
-    el("h3", { class: "board-col-head" }, el("span", { text: m.done ? `✓ ${m.name}` : m.name }), el("span", { class: "muted num", text: String(tasks.length) })),
+    { class: `board-col ${m.tasks.length ? "" : "is-empty"}`, "aria-label": m.name },
+    el("h3", { class: "board-col-head" }, el("span", { text: m.name }), el("span", { class: "muted num", text: String(tasks.length) })),
     list,
-    hidden || (m.done && showOldDone)
-      ? el("button", {
-          type: "button",
-          class: "link-button board-more",
-          onclick: () => ((showOldDone = !showOldDone), render()),
-          text: showOldDone ? `nur die letzten ${DONE_DAYS} Tage` : `+ ${hidden} ältere zeigen`,
-        })
-      : null,
   );
 }
+
+/** Aufgabe erledigen: in den „Fertig“-Meilenstein (nicht im Board); eine verknüpfte Änderung gilt dann als umgesetzt. */
+const finish = (id) => move(id, doneMilestone().id, 0);
+/** Erledigte Aufgabe wieder öffnen: oben in die erste Spalte; eine verknüpfte Änderung ist wieder offen. */
+const reopen = (id) => move(id, firstMilestone().id, 0);
 
 function card(t) {
   const article = t.article_key ? articles.get(t.article_key) : null;
@@ -169,14 +197,15 @@ function card(t) {
           class: `task-badge change ${t.change_status === "done" ? "done" : ""}`,
           title: "Änderungsliste öffnen",
           onclick: (e) => (e.stopPropagation(), openChanges(t.article_key, { onChanged: reloadAll })),
-          text: `Änderung ${t.change}`,
+          text: `Änderung ${t.change}${t.change_setup != null ? ` · Sp. ${t.change_setup}` : ""}`,
         })
       : null,
   ].filter(Boolean);
+  const thumb = article?.thumb_url ? zoomThumb(article.thumb_url, article.image_url, { className: "task-thumb", alt: `Bild ${t.article_key}` }) : null;
   const node = el(
     "article",
     {
-      class: "task-card",
+      class: `task-card ${thumb ? "has-thumb" : ""}`,
       draggable: "true",
       tabindex: "0",
       "data-id": String(t.id),
@@ -189,26 +218,40 @@ function card(t) {
         dragging = t.id;
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", String(t.id));
-        requestAnimationFrame(() => node.classList.add("dragging"));
+        // erst im nächsten Bild umbauen, sonst bricht der Browser das Ziehen ab; leere Spalten erscheinen
+        requestAnimationFrame(() => (node.classList.add("dragging"), $("board").classList.add("is-dragging")));
       },
       ondragend: () => {
         dragging = null;
         node.classList.remove("dragging");
+        $("board").classList.remove("is-dragging");
         clearMarker();
       },
     },
+    thumb,
     el("p", { class: "task-title", text: t.title }),
     t.article_key || t.worker
       ? el(
           "div",
           { class: "task-meta" },
-          article?.thumb_url ? el("img", { class: "task-thumb", src: article.thumb_url, alt: "", loading: "lazy" }) : null,
           t.article_key ? el("span", { class: "task-article num", text: t.article_key }) : null,
           t.order_title ? el("span", { class: "task-order-title", text: t.order_title }) : null,
           t.worker ? el("span", { class: "task-worker", text: t.worker }) : null,
         )
       : null,
-    badges.length ? el("div", { class: "task-badges" }, badges) : null,
+    el(
+      "div",
+      { class: "task-foot" },
+      badges.length ? el("div", { class: "task-badges" }, badges) : null,
+      el("button", {
+        type: "button",
+        class: "task-done-btn",
+        title: t.change ? `Erledigt – vom Board nehmen, Änderung ${t.change} gilt dann als umgesetzt` : "Erledigt – vom Board nehmen",
+        "aria-label": `${t.title}: erledigt`,
+        onclick: (e) => (e.stopPropagation(), finish(t.id)),
+        text: "✓ Erledigt",
+      }),
+    ),
   );
   return node;
 }
@@ -220,13 +263,18 @@ let marker = null;
 function clearMarker() {
   marker?.remove();
   marker = null;
+  for (const node of document.querySelectorAll(".drop-before, .drop-end")) node.classList.remove("drop-before", "drop-end");
 }
 
-/** Karte, vor der abgelegt würde (null = ans Ende). */
-function cardAfter(list, y) {
+const rowsLayout = () => state.layout === "rows";
+
+/** Karte, vor der abgelegt würde (null = ans Ende). In Zeilen liegen die Karten nebeneinander: dann
+ *  zählt die Zeile und links oder rechts der Kartenmitte. */
+function cardAfter(list, x, y) {
   for (const node of list.querySelectorAll(".task-card:not(.dragging)")) {
     const r = node.getBoundingClientRect();
-    if (y < r.top + r.height / 2) return node;
+    if (!rowsLayout() && y < r.top + r.height / 2) return node;
+    if (rowsLayout() && (y < r.top || (y < r.bottom && x < r.left + r.width / 2))) return node;
   }
   return null;
 }
@@ -235,8 +283,14 @@ function onDragOver(e, list) {
   if (dragging == null) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = "move";
+  const before = cardAfter(list, e.clientX, e.clientY);
+  if (rowsLayout()) {
+    // Karten nebeneinander: Ein eingeschobener Strich würde sie verrücken, deshalb die Karte markieren
+    clearMarker();
+    (before ?? list).classList.add(before ? "drop-before" : "drop-end");
+    return;
+  }
   marker ??= el("div", { class: "drop-marker", "aria-hidden": "true" });
-  const before = cardAfter(list, e.clientY);
   if (before) list.insertBefore(marker, before);
   else list.append(marker);
 }
@@ -245,7 +299,7 @@ async function onDrop(e, m, list) {
   if (dragging == null) return;
   e.preventDefault();
   const id = dragging;
-  const before = cardAfter(list, e.clientY);
+  const before = cardAfter(list, e.clientX, e.clientY);
   clearMarker();
   // Stelle in der ganzen Spalte (Filter blenden Karten aus): vor der Karte „before“, sonst ans Ende
   const order = m.tasks.map((t) => t.id).filter((x) => x !== id);
@@ -263,36 +317,98 @@ async function move(id, milestoneId, index) {
   }
 }
 
-// --- Offene Änderungen ----------------------------------------------------------------------------
+// --- Erledigte Aufgaben ---------------------------------------------------------------------------
 
-function renderOpenChanges() {
-  const rows = openChangeRows;
+function renderDoneTasks() {
+  const done = doneMilestone();
+  const all = done?.tasks ?? [];
+  const rows = all.filter(visible).sort((a, b) => (b.done_at ?? 0) - (a.done_at ?? 0));
+  $("done-count").textContent = rows.length === all.length ? `(${all.length})` : `(${rows.length} von ${all.length})`;
   if (!rows.length) {
-    $("open-changes").replaceChildren(el("p", { class: "empty", text: "Keine offenen Änderungen." }));
+    $("done-tasks").replaceChildren(el("p", { class: "empty", text: all.length ? "Keine passenden erledigten Aufgaben." : "Noch nichts erledigt." }));
     return;
   }
-  const tr = (c) =>
+  const tr = (t) =>
     el(
       "tr",
-      { class: "clickable", tabindex: "0", onclick: () => openChanges(c.article_key, { onChanged: reloadAll }), onkeydown: (e) => e.key === "Enter" && openChanges(c.article_key, { onChanged: reloadAll }) },
-      el("td", { class: "num" }, c.article_key),
-      el("td", { class: "num" }, c.label),
-      el("td", { class: "wrap" }, c.description),
-      el("td", {}, c.worker ?? "—"),
-      el("td", { class: "r" }, fmtDate(c.created_at)),
-      el("td", { class: "r num" }, c.images.length === 1 ? "1 Bild" : c.images.length ? `${c.images.length} Bilder` : ""),
+      { class: "clickable", tabindex: "0", onclick: () => openEditor(t), onkeydown: (e) => e.key === "Enter" && e.target === e.currentTarget && openEditor(t) },
+      el("td", { class: "r" }, t.done_at ? fmtDate(t.done_at) : "—"),
+      el("td", { class: "wrap" }, t.title),
+      el("td", { class: "num" }, [t.article_key, t.order_title].filter(Boolean).join(" · ") || "—"),
+      el("td", {}, t.worker ?? "—"),
+      el(
+        "td",
+        { class: "r" },
+        el("button", { type: "button", class: "btn small", onclick: (e) => (e.stopPropagation(), reopen(t.id)), text: "Wieder öffnen" }),
+      ),
     );
-  $("open-changes").replaceChildren(
+  $("done-tasks").replaceChildren(
     el(
       "div",
       { class: "table-wrap" },
       el(
         "table",
         { class: "change-table" },
-        el("thead", {}, el("tr", {}, ["Artikel", "Stand", "Was wird geändert", "Bearbeiter", "Seit", "Bilder"].map((h, i) => el("th", { class: i >= 4 ? "r" : null, text: h })))),
+        el("thead", {}, el("tr", {}, ["Erledigt", "Aufgabe", "Artikel", "Bearbeiter", ""].map((h, i) => el("th", { class: i === 0 || i === 4 ? "r" : null, text: h })))),
         el("tbody", {}, rows.map(tr)),
       ),
     ),
+  );
+}
+
+// --- Offene und umgesetzte Änderungen ----------------------------------------------------------------
+
+function changeTable(rows, dateLabel, dateOf) {
+  const show = (c) => openChanges(c.article_key, { onChanged: reloadAll });
+  const tr = (c) =>
+    el(
+      "tr",
+      { class: "clickable", tabindex: "0", onclick: () => show(c), onkeydown: (e) => e.key === "Enter" && show(c) },
+      el("td", { class: "num" }, c.article_key),
+      el("td", { class: "num", title: c.setup != null ? `nur Spannung ${c.setup}` : "alle Spannungen" }, c.setup != null ? `${c.label} · Sp. ${c.setup}` : c.label),
+      el("td", { class: "wrap" }, c.description),
+      el("td", {}, c.worker ?? "—"),
+      el("td", { class: "r" }, fmtDate(dateOf(c))),
+      el("td", { class: "r num" }, c.images.length === 1 ? "1 Bild" : c.images.length ? `${c.images.length} Bilder` : ""),
+    );
+  return el(
+    "div",
+    { class: "table-wrap" },
+    el(
+      "table",
+      { class: "change-table" },
+      el("thead", {}, el("tr", {}, ["Artikel", "Stand", "Was wird geändert", "Bearbeiter", dateLabel, "Bilder"].map((h, i) => el("th", { class: i >= 4 ? "r" : null, text: h })))),
+      el("tbody", {}, rows.map(tr)),
+    ),
+  );
+}
+
+function renderOpenChanges() {
+  const rows = openChangeRows;
+  $("open-changes").replaceChildren(
+    rows.length ? changeTable(rows, "Seit", (c) => c.created_at) : el("p", { class: "empty", text: "Keine offenen Änderungen." }),
+  );
+}
+
+/** Umgesetzte Änderungen, neueste zuerst; ältere auf Wunsch. */
+function renderDoneChanges() {
+  const rows = doneChangeRows;
+  $("done-changes-count").textContent = `(${rows.length})`;
+  if (!rows.length) {
+    $("done-changes").replaceChildren(el("p", { class: "empty", text: "Noch keine Änderung umgesetzt." }));
+    return;
+  }
+  const shown = showAllDoneChanges ? rows : rows.slice(0, DONE_CHANGES_SHOWN);
+  $("done-changes").replaceChildren(
+    changeTable(shown, "Umgesetzt", (c) => c.done_at),
+    rows.length > DONE_CHANGES_SHOWN
+      ? el("button", {
+          type: "button",
+          class: "link-button board-more",
+          onclick: () => ((showAllDoneChanges = !showAllDoneChanges), renderDoneChanges()),
+          text: showAllDoneChanges ? `nur die neuesten ${DONE_CHANGES_SHOWN}` : `alle ${rows.length} zeigen`,
+        })
+      : null,
   );
 }
 
@@ -319,18 +435,24 @@ function openEditor(task = null) {
     ...data.workers.map((w) => el("option", { value: String(w.id), text: w.name })),
   );
   $("t-worker").value = task?.worker_id != null ? String(task.worker_id) : state.worker !== "all" && state.worker !== "none" ? state.worker : "";
-  $("t-milestone").replaceChildren(...data.milestones.map((m) => el("option", { value: String(m.id), text: m.name })));
-  $("t-milestone").value = String(task ? task.milestone_id : data.milestones.find((m) => !m.done)?.id ?? data.milestones[0]?.id);
+  $("t-milestone").replaceChildren(
+    ...data.milestones.map((m) => el("option", { value: String(m.id), text: m.done ? "✓ Erledigt (nicht im Board)" : m.name })),
+  );
+  $("t-milestone").value = String(task ? task.milestone_id : firstMilestone()?.id);
   $("t-priority").value = String(task?.priority ?? 2);
   $("t-due").value = task?.due_date ?? "";
   $("t-note").value = task?.note ?? "";
-  $("t-move").hidden = !task;
+  const isDone = task != null && task.milestone_id === doneMilestone()?.id;
+  $("t-move").hidden = !task || isDone;
   $("t-delete").hidden = !task;
+  $("t-done").hidden = !task;
+  $("t-done").textContent = isDone ? "Wieder öffnen" : "✓ Erledigt";
   $("t-change").hidden = !task?.change;
   $("t-change").textContent = task?.change
-    ? `Gehört zur Änderung ${task.change} von ${task.article_key}: In „Fertig“ gilt sie als umgesetzt, sonst als offen.`
+    ? `Gehört zur Änderung ${task.change} von ${task.article_key}: Ist die Aufgabe erledigt, gilt die Änderung als umgesetzt, sonst als offen.`
     : "";
-  updateChangesButton();
+  showTab("task");
+  updateChangesTab();
   setEditorError(null);
   if (!$("editor").open) $("editor").showModal();
   if (!task) $("t-title").focus();
@@ -338,14 +460,46 @@ function openEditor(task = null) {
 
 function onArticleInput() {
   if (!titleTouched) $("t-order-title").value = orderTitleOf($("t-article").value);
-  updateChangesButton();
+  updateChangesTab();
 }
 
-function updateChangesButton() {
+/** Artikel der Aufgabe, für den der Reiter „Änderungsliste“ gilt (null = keine gültige Nummer). */
+function editorArticle() {
+  const key = normKey($("t-article").value);
+  return key && articleHint(key).valid ? key : null;
+}
+
+/** Reiter „Änderungsliste (2 offen)“: nur mit Artikel an der Aufgabe. */
+function updateChangesTab(openCount) {
   const hint = articleHint($("t-article").value);
   $("t-article-hint").textContent = hint.text;
   $("t-article-hint").classList.toggle("is-error", !hint.valid);
-  $("t-changes").hidden = !hint.valid || !normKey($("t-article").value);
+  const key = editorArticle();
+  const open = openCount ?? openChangeRows.filter((c) => c.article_key === key).length;
+  const tab = $("tab-changes");
+  tab.disabled = !key;
+  tab.title = key ? `Änderungen von ${key}` : "Erst eine Artikelnummer eintragen";
+  tab.textContent = key && open ? `Änderungsliste (${open} offen)` : "Änderungsliste";
+}
+
+/** Reiter wechseln. Die Änderungsliste wird beim Öffnen frisch geladen und beim Verlassen abgemeldet,
+ *  dann lädt das Board neu, falls sich dort etwas geändert hat. */
+function showTab(name) {
+  const changes = name === "changes";
+  $("tab-task").setAttribute("aria-selected", String(!changes));
+  $("tab-changes").setAttribute("aria-selected", String(changes));
+  $("editor-form").hidden = changes;
+  $("changes-panel").hidden = !changes;
+  if (!changes) {
+    unmountChanges($("changes-panel"));
+    return;
+  }
+  mountChanges($("changes-panel"), editorArticle(), {
+    onChanged: reloadAll,
+    onLoad: (d) => updateChangesTab(d.changes.filter((c) => c.status === "open").length),
+    onBack: () => showTab("task"),
+    active: () => $("editor").open && !$("changes-panel").hidden,
+  });
 }
 
 function payload() {
@@ -397,6 +551,21 @@ async function step(delta) {
   }
 }
 
+/** Knopf im Dialog: erledigen bzw. wieder öffnen; ungespeicherte Eingaben gehen dabei nicht verloren,
+ *  weil zuerst gespeichert wird. */
+async function toggleDone() {
+  const isDone = editing.milestone_id === doneMilestone()?.id;
+  try {
+    await send("PUT", `/api/planning/tasks/${editing.id}`, payload());
+    const target = isDone ? firstMilestone() : doneMilestone();
+    await send("POST", `/api/planning/tasks/${editing.id}/move`, { milestone_id: target.id, index: 0 });
+    $("editor").close();
+    await reloadAll();
+  } catch (err) {
+    setEditorError(err.message);
+  }
+}
+
 async function removeTask() {
   const note = editing.change ? `\n\nDie Änderung ${editing.change} bleibt in der Änderungsliste von ${editing.article_key}.` : "";
   if (!confirm(`Aufgabe „${editing.title}“ entfernen?${note}`)) return;
@@ -438,16 +607,33 @@ async function main() {
   $("overdue").checked = state.overdue;
   $("overdue").addEventListener("change", (e) => ((state.overdue = e.target.checked), saveFilter(), render()));
   $("search").addEventListener("input", (e) => ((state.search = e.target.value), render()));
+  const applyLayout = () => {
+    $("board").dataset.layout = state.layout;
+    for (const b of $("layout").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout));
+  };
+  applyLayout();
+  $("layout").addEventListener("click", (e) => {
+    const layout = e.target.closest("button")?.dataset.layout;
+    if (!layout || layout === state.layout) return;
+    state.layout = layout;
+    saveFilter();
+    applyLayout();
+  });
   $("add-task").addEventListener("click", () => openEditor());
   $("add-change").addEventListener("click", () => openPicker());
   $("editor-form").addEventListener("submit", saveEditor);
   $("t-cancel").addEventListener("click", () => $("editor").close());
   $("t-delete").addEventListener("click", removeTask);
+  $("t-done").addEventListener("click", toggleDone);
+  $("done-changes-box").open = loadOpen(DONE_CHANGES_KEY, true);
+  $("done-changes-box").addEventListener("toggle", () => saveOpen(DONE_CHANGES_KEY, $("done-changes-box").open));
   $("t-up").addEventListener("click", () => step(-1));
   $("t-down").addEventListener("click", () => step(1));
   $("t-article").addEventListener("input", onArticleInput);
   $("t-order-title").addEventListener("input", () => (titleTouched = true));
-  $("t-changes").addEventListener("click", () => openChanges(normKey($("t-article").value), { onChanged: reloadAll }));
+  $("tab-task").addEventListener("click", () => showTab("task"));
+  $("tab-changes").addEventListener("click", () => editorArticle() && showTab("changes"));
+  $("editor").addEventListener("close", () => showTab("task"));
   $("p-article").addEventListener("input", () => {
     $("p-error").hidden = true;
     const hint = articleHint($("p-article").value);
