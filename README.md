@@ -40,6 +40,16 @@ spätere Laufzeitauswertungen:
     [Palettenprogramm](#palettenprogramm-ablaufliste).
 - **Auswertung:** Laufzeit und Auslastung je Tag und Maschine, Zeitleiste, Programme mit Stückzeiten,
   CSV-Export für Excel.
+  - Die Kennzahlenkarte je Maschine zeigt die Auslastung zusätzlich als zwei Ringe: **Auslastung**
+    (Laufzeit ÷ Einschaltzeit) und **Auslastung Kalenderzeit** (Laufzeit ÷ ganzer Zeitraum), siehe
+    [Begriffe](#begriffe-der-auswertung). Die Zahl steht in der Mitte.
+  - **Jahresansicht:** Laufzeit je Monat als Balken, je Maschine, das Jahr wählst du neben der Überschrift. Über
+    jedem Balken steht die Auslastung des Monats, z. B. „61 %“. Fährst du über einen Monat, nennt der
+    Tooltip Laufzeit, Einschaltzeit, Auslastung Kalenderzeit und Gestoppt/Fehler. Alle Maschinen
+    haben dieselbe Skala, damit du sie vergleichen kannst. Die Zahlen gibt es auch als Tabelle
+    („Monatswerte als Tabelle“). Der Zeitraum oben gilt hier nicht, die Maschinenauswahl schon.
+  - **Programme** sind zugeklappt. Ein Klick auf „Programme“ klappt sie auf, der Browser merkt sich
+    deine Wahl.
 - **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
   Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
 - **Artikel:** je Auftrag und Version ein Artikel mit Rohling, Material- und Fräskosten, EK, VK, Marge
@@ -864,6 +874,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 |---|---|
 | `GET /api/machines` | Live-Status aller Maschinen |
 | `GET /api/stats?from=&to=` | Zeiten je Zustand, Tag und Programm, Auslastung |
+| `GET /api/stats/year?year=2026` | Jahresansicht: je Maschine und Monat Laufzeit, Gestoppt/Fehler, Einschaltzeit und Auslastung; `years` = Jahre mit Daten |
 | `GET /api/machines/{id}/timeline?from=&to=` | Zustandsabschnitte für die Zeitleiste |
 | `GET /api/runs?machine=&from=&to=` | Programmdurchläufe |
 | `GET /api/events?machine=&from=&to=` | Ereignisse |

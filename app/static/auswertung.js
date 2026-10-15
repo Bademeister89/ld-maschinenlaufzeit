@@ -30,6 +30,9 @@ import {
 
 const MAX_TIMELINE_DAYS = 31;
 const MAX_RUN_ROWS = 300;
+const PROGRAMS_KEY = "ldm-auswertung-programme"; // auf- oder zugeklappt, je Browser
+const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const $ = (id) => document.getElementById(id);
 
 const query = new URLSearchParams(location.search);
@@ -39,8 +42,10 @@ const state = {
   to: query.get("to"),
   machine: query.get("machine") ?? "",
   view: query.get("view") ?? "sum",
+  year: query.get("year") ?? "",
 };
 let meta = null;
+let yearData = null;
 
 // --- Zeitraum -----------------------------------------------------------------
 
@@ -88,6 +93,7 @@ function syncControls(from, to) {
   }
   if (state.machine) q.set("machine", state.machine);
   if (state.view !== "sum") q.set("view", state.view);
+  if (state.year) q.set("year", state.year);
   history.replaceState(null, "", `?${q}`);
 }
 
@@ -144,6 +150,28 @@ function tile(label, value, sub) {
   );
 }
 
+const RING_R = 42;
+const RING_W = 10;
+
+/** Auslastung als Ring (Inline-SVG), die Zahl steht immer in der Mitte – nie nur die Farbe. */
+function ring(value, label, hint) {
+  const circumference = 2 * Math.PI * RING_R;
+  // unter 0,5 % kein Bogen, passend zur gerundeten Zahl „0 %“
+  const share = value == null || value < 0.005 ? 0 : Math.min(1, value);
+  // Runde Enden ragen je eine halbe Strichbreite über: um eine Strichbreite kürzen, damit die Länge stimmt
+  const dash = Math.max(share * circumference - RING_W, 0.01);
+  const node = el("div", { class: "ring", role: "img", "aria-label": `${label}: ${fmtPct(value)}`, title: hint });
+  node.innerHTML =
+    `<svg viewBox="0 0 100 100" width="96" height="96" aria-hidden="true">`
+    + `<circle class="ring-track" cx="50" cy="50" r="${RING_R}"></circle>`
+    + (share > 0
+      ? `<circle class="ring-value" cx="50" cy="50" r="${RING_R}" stroke-dasharray="${dash} ${circumference}" transform="rotate(-90 50 50)"></circle>`
+      : "")
+    + `</svg>`;
+  node.append(el("span", { class: "ring-pct num", text: fmtPct(value) }), el("span", { class: "ring-label", text: label }));
+  return node;
+}
+
 function renderKpis(stats, machines, programs) {
   $("kpis").replaceChildren(
     ...machines.map((m) => {
@@ -155,6 +183,12 @@ function renderKpis(stats, machines, programs) {
         "div",
         { class: "card kpi-card" },
         el("div", { class: "card-title" }, machineThumb(m, "small"), el("h2", { text: m.name })),
+        el(
+          "div",
+          { class: "kpi-rings" },
+          ring(s.utilization, "Auslastung", `Laufzeit ÷ Einschaltzeit (${fmtHours(s.powered_on_s)})`),
+          ring(s.utilization_calendar, "Auslastung Kalenderzeit", `Laufzeit ÷ ganzer Zeitraum (${fmtHours(s.period_s)})`),
+        ),
         el(
           "div",
           { class: "kpi-tiles" },
@@ -242,6 +276,128 @@ function renderDays(stats, machines, timelines) {
       return cardNode;
     }),
   );
+}
+
+// --- Jahresansicht ------------------------------------------------------------
+
+async function loadYear() {
+  const box = $("year-charts");
+  box.classList.add("stale");
+  try {
+    yearData = await api("/api/stats/year", { year: state.year });
+    renderYear();
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "empty", text: `Jahresansicht konnte nicht geladen werden: ${err.message}` }));
+  } finally {
+    box.classList.remove("stale");
+  }
+}
+
+/** Runde Skala für die Stunden-Achse: höchstens vier Schritte zu 1, 2 oder 5 × 10ⁿ ganzen Stunden. */
+function niceScale(max) {
+  if (!(max > 0)) return { max: 100, step: 50 };
+  const raw = max / 4;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const step = Math.max(1, [1, 2, 5, 10].map((f) => f * pow).find((s) => s >= raw));
+  return { max: Math.ceil(max / step) * step, step };
+}
+
+/** Hat der Monat überhaupt Daten? Nicht in der Zukunft und nicht ganz vor Beginn der Erfassung. */
+const hasData = (row) => row.period_s > 0 && row.no_data_s < row.period_s - 1;
+
+function monthTip(row, index) {
+  const title = `${MONTH_NAMES[index]} ${yearData.year}`;
+  if (!hasData(row)) {
+    const why = row.period_s ? "Keine Daten" : "liegt in der Zukunft";
+    return [el("div", { class: "tt-value", text: title }), el("div", { class: "tt-row", text: why })];
+  }
+  return tipContent("RUNNING", fmtHours(row.running_s), [
+    title,
+    `Auslastung ${fmtPct(row.utilization)} (bezogen auf ${fmtHours(row.powered_on_s)} Einschaltzeit)`,
+    `Auslastung Kalenderzeit ${fmtPct(row.utilization_calendar)}`,
+    `Gestoppt / Fehler ${fmtHours(row.stopped_s)}`,
+  ]);
+}
+
+function yearCard(m, months, scale) {
+  const ticks = [];
+  for (let v = 0; v <= scale.max + 1e-9; v += scale.step) ticks.push(v);
+  const pos = (hours) => `${(hours / scale.max) * 100}%`;
+  const running = months.reduce((sum, r) => sum + r.running_s, 0);
+  const powered = months.reduce((sum, r) => sum + r.powered_on_s, 0);
+  const plot = el(
+    "div",
+    { class: "month-plot" },
+    ticks.map((v) => el("span", { class: "month-grid", style: { bottom: pos(v) } })),
+    el(
+      "div",
+      { class: "month-cols" },
+      months.map((row, i) => {
+        const hours = row.running_s / 3600;
+        const col = el(
+          "div",
+          { class: "month-col", "data-tip": "", tabindex: "0", "aria-label": `${MONTH_NAMES[i]}: ${fmtHours(row.running_s)}, Auslastung ${fmtPct(row.utilization)}` },
+          hours > 0 ? el("span", { class: "month-bar", style: { height: pos(hours) } }) : null,
+          row.utilization != null
+            ? el("span", { class: "month-pct num", style: { bottom: pos(hours) } }, String(Math.round(row.utilization * 100)), el("span", { class: "pct-sign", text: " %" }))
+            : null,
+        );
+        col._tip = () => monthTip(row, i);
+        return col;
+      }),
+    ),
+  );
+  const cardNode = el(
+    "div",
+    { class: "card year-card" },
+    el(
+      "div",
+      { class: "card-title" },
+      machineThumb(m, "small"),
+      el("h2", { text: m.name }),
+      el("span", { class: "muted", text: `${fmtHours(running)} im Jahr · Auslastung ${fmtPct(powered > 0 ? running / powered : null)}` }),
+    ),
+    el(
+      "div",
+      { class: "month-chart" },
+      el("div", { class: "month-yaxis" }, ticks.map((v) => el("span", { class: "num", style: { bottom: pos(v) }, text: `${fmtInt(v)} h` }))),
+      plot,
+      el("span"),
+      el("div", { class: "month-xaxis" }, MONTHS.map((name) => el("span", { text: name }))),
+    ),
+  );
+  tooltip().bind(cardNode);
+  return cardNode;
+}
+
+function renderYear() {
+  if (!yearData) return;
+  const select = $("year");
+  const years = [...new Set([...yearData.years, yearData.year])].sort((a, b) => b - a);
+  select.replaceChildren(...years.map((y) => el("option", { value: String(y), text: String(y) })));
+  select.value = String(yearData.year);
+  const machines = state.machine ? meta.machines.filter((m) => m.id === state.machine) : meta.machines;
+  const rows = machines.map((m) => yearData.machines[m.id] ?? []);
+  // Eine Skala für alle Maschinen, damit die Balken vergleichbar sind
+  const scale = niceScale(Math.max(0, ...rows.flat().map((r) => r.running_s / 3600)));
+  $("year-charts").replaceChildren(...machines.map((m, i) => yearCard(m, rows[i], scale)));
+  renderMonthTable(machines);
+}
+
+function renderMonthTable(machines) {
+  const rows = machines.flatMap((m) =>
+    (yearData.machines[m.id] ?? []).map((r, i) => ({ machine: m, index: i, ...r })).filter(hasData),
+  );
+  const columns = [
+    { label: "Monat", value: (r) => `${MONTH_NAMES[r.index]} ${yearData.year}` },
+    ...(state.machine ? [] : [{ label: "Maschine", value: (r) => r.machine.name }]),
+    { label: "Laufzeit", value: (r) => fmtHours(r.running_s), cls: "r" },
+    { label: "Gestoppt / Fehler", value: (r) => fmtHours(r.stopped_s), cls: "r" },
+    { label: "Einschaltzeit", value: (r) => fmtHours(r.powered_on_s), cls: "r" },
+    { label: "Auslastung", value: (r) => fmtPct(r.utilization), cls: "r" },
+    { label: "Auslastung Kalenderzeit", value: (r) => fmtPct(r.utilization_calendar), cls: "r" },
+  ];
+  $("month-table").replaceChildren(table(columns, rows, "Keine Monate in diesem Jahr."));
 }
 
 // --- Tabellen -----------------------------------------------------------------
@@ -345,8 +501,28 @@ async function main() {
   select.addEventListener("change", () => {
     state.machine = select.value;
     load();
+    renderYear();
   });
-  await load();
+  $("year").addEventListener("change", () => {
+    state.year = $("year").value === String(new Date().getFullYear()) ? "" : $("year").value;
+    syncControls(...range());
+    loadYear();
+  });
+  // Programme: standardmäßig zugeklappt, die Wahl merkt sich der Browser
+  const programsBox = $("programs-box");
+  try {
+    programsBox.open = localStorage.getItem(PROGRAMS_KEY) === "open";
+  } catch {
+    /* privates Fenster: wie Standard */
+  }
+  programsBox.addEventListener("toggle", () => {
+    try {
+      localStorage.setItem(PROGRAMS_KEY, programsBox.open ? "open" : "closed");
+    } catch {
+      /* privates Fenster: nur für diese Sitzung */
+    }
+  });
+  await Promise.all([load(), loadYear()]);
 }
 
 main().catch((err) => {

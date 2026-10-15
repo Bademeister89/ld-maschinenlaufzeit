@@ -46,6 +46,34 @@ def test_days_are_split_at_local_midnight_and_handle_dst(db, make_collector):
         assert sum(d["states"].values()) == pytest.approx(d["period_s"])
 
 
+def test_year_splits_runtime_into_months(db, make_collector):
+    """Jahresansicht: Ein Lauf über den Monatswechsel zählt anteilig, der laufende Monat bis jetzt,
+    spätere Monate haben keinen Zeitraum."""
+    c = make_collector()
+    feed(
+        c,
+        (ts("2026-01-31 22:00"), snap("STARTED")),
+        (ts("2026-02-01 02:00"), snap("FINISHED")),  # 2 h im Januar, 2 h im Februar
+        (ts("2026-03-10 08:00"), snap("STARTED")),
+        (ts("2026-03-10 09:00"), snap("STOPPED")),
+        (ts("2026-03-10 09:30"), snap("FINISHED")),
+    )
+    now = ts("2026-03-10 10:00")
+    result = stats.year(db, ["m1"], 2026, TZ, now)
+    jan, feb, mar, apr, *_ = result["machines"]["m1"]
+    assert len(result["machines"]["m1"]) == 12
+    assert (jan["month"], jan["running_s"], feb["running_s"]) == ("2026-01", 7200, 7200)
+    assert (mar["running_s"], mar["stopped_s"]) == (3600, 1800)
+    assert mar["period_s"] == pytest.approx(now - ts("2026-03-01 00:00"))
+    assert jan["utilization_calendar"] == pytest.approx(7200 / (31 * 86400))
+    # Februar: Bereit vom 01.02. 02:00 bis zum nächsten Kontakt am 10.03. – Einschaltzeit bis Monatsende
+    assert feb["utilization"] == pytest.approx(7200 / feb["powered_on_s"])
+    assert (apr["period_s"], apr["utilization"], apr["running_s"]) == (0, None, 0)
+    assert jan["no_data_s"] == pytest.approx(ts("2026-01-31 22:00") - ts("2026-01-01 00:00"))
+    assert result["years"] == [2026]
+    assert stats.year(db, ["m1"], 2025, TZ, now)["machines"]["m1"][0]["running_s"] == 0
+
+
 def test_range_is_capped_at_now(db, make_collector):
     t0 = ts("2026-09-21 00:00")
     result = stats.summarize(db, ["m1"], t0, t0 + 86400, TZ, now=t0 + 3600)

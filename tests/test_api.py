@@ -71,6 +71,17 @@ def test_runs_and_events(client):
     assert sorted(e["type"] for e in events) == ["tool_change", "tool_created", "tool_created"]
 
 
+def test_stats_year(client):
+    data = client.get("/api/stats/year").json()
+    this_year = data["year"]
+    assert data["years"][-1] == this_year
+    assert sorted(data["machines"]) == ["m1", "m2"]
+    months = data["machines"]["m1"]
+    assert [m["month"] for m in months][:2] == [f"{this_year}-01", f"{this_year}-02"]
+    assert sum(m["running_s"] for m in months) == pytest.approx(1200)
+    assert client.get("/api/stats/year", params={"year": 1999}).status_code == 422
+
+
 def test_iso_time_parameters(client):
     r = client.get("/api/stats", params={"from": "2026-01-01T00:00:00", "to": "2026-01-02"})
     assert r.status_code == 200

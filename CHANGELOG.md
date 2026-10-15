@@ -10,6 +10,20 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.33.0] – 2026-10-15
+
+### Neu
+- **Auswertung: Jahresansicht.** Laufzeit je Monat als Balken, je Maschine, das Jahr ist wählbar.
+  Über jedem Balken steht die Auslastung des Monats (Laufzeit ÷ Einschaltzeit). Der Tooltip nennt
+  dazu Einschaltzeit, Auslastung Kalenderzeit und Gestoppt/Fehler. Alle Maschinen haben dieselbe
+  Skala. Die Werte gibt es auch als Tabelle („Monatswerte als Tabelle“).
+- **Auslastung als Ringe:** Die Kennzahlenkarte je Maschine zeigt Auslastung und Auslastung
+  Kalenderzeit zusätzlich als zwei Ringe mit der Prozentzahl in der Mitte.
+
+### Geändert
+- **Programme einklappbar:** Der Abschnitt „Programme“ ist zugeklappt und lässt sich mit einem Klick
+  aufklappen. Der Browser merkt sich die Wahl.
+
 ## [1.32.0] – 2026-10-15
 
 ### Geändert

@@ -6,6 +6,7 @@ die Summe aller Zustände immer genau dem Zeitraum entspricht.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import datetime, time, timedelta
 from typing import Any
@@ -99,6 +100,43 @@ def summarize(
         "machines": machines,
         "programs": programs(db, intervals, t0, t1) if period_s else [],
     }
+
+
+def year(db: Database, machine_ids: list[str], year: int, tz: ZoneInfo, now: float) -> dict[str, Any]:
+    """Jahresansicht: je Maschine und Monat Laufzeit und Auslastung. Ein Monat in der Zukunft hat keinen
+    Zeitraum (Auslastung None), der laufende zählt bis jetzt. ``years``: Jahre mit Daten bis heute."""
+    bounds = [datetime(year + m // 12, m % 12 + 1, 1, tzinfo=tz).timestamp() for m in range(13)]
+    t0, t1 = bounds[0], min(bounds[-1], now)
+    months = {mid: [dict.fromkeys(STATE_KEYS, 0.0) for _ in range(12)] for mid in machine_ids}
+    # Nur Maschine, Zustand, Beginn, Ende: Ein Jahr hat schnell Hunderttausende Abschnitte
+    for iv in db.interval_spans(t0, t1) if t1 > t0 else []:
+        totals = months.get(iv["machine_id"])
+        if totals is None:
+            continue
+        start, end = max(iv["start"], t0), min(iv["end"], t1)
+        index = bisect_right(bounds, start) - 1
+        while end > start:  # über einen Monatswechsel hinweg aufteilen
+            chunk = min(end, bounds[index + 1])
+            totals[index][iv["state"]] = totals[index].get(iv["state"], 0.0) + chunk - start
+            start, index = chunk, index + 1
+    machines = {}
+    for mid, totals in months.items():
+        rows = []
+        for index, month in enumerate(totals):
+            period_s = max(0.0, min(bounds[index + 1], t1) - bounds[index])
+            month[NO_DATA] = max(0.0, period_s - sum(v for k, v in month.items() if k != NO_DATA))
+            rows.append({
+                "month": f"{year}-{index + 1:02d}",
+                "running_s": month[MachineState.RUNNING.value],
+                "stopped_s": month[MachineState.STOPPED.value] + month[MachineState.ERROR.value],
+                "no_data_s": month[NO_DATA],  # z. B. vor Beginn der Erfassung
+                **_kpis(month, period_s),
+            })
+        machines[mid] = rows
+    current = datetime.fromtimestamp(now, tz).year
+    first = db.first_interval_at()
+    since = min(datetime.fromtimestamp(first, tz).year, current) if first is not None else current
+    return {"year": year, "years": list(range(since, current + 1)), "machines": machines}
 
 
 def programs(db: Database, intervals: list[dict[str, Any]], t0: float, t1: float) -> list[dict[str, Any]]:

@@ -172,6 +172,14 @@ def get_stats(request: Request, from_: str | None = FromQuery, to: str | None = 
     return stats.summarize(ctx.db, list(ctx.collectors), t0, t1, ctx.tz, time.time())
 
 
+@router.get("/stats/year")
+def get_stats_year(request: Request, year: int | None = Query(None, ge=2000, le=2100)) -> dict[str, Any]:
+    """Jahresansicht: Laufzeit und Auslastung je Monat und Maschine (ohne Angabe: dieses Jahr)."""
+    ctx = _ctx(request)
+    now = time.time()
+    return stats.year(ctx.db, list(ctx.collectors), year or datetime.fromtimestamp(now, ctx.tz).year, ctx.tz, now)
+
+
 @router.get("/runs")
 def runs(
     request: Request, machine: str | None = None, from_: str | None = FromQuery, to: str | None = ToQuery

@@ -593,6 +593,18 @@ class Database:
             params.append(machine_id)
         return self._query(sql + " ORDER BY i.machine_id, i.started_at", params)
 
+    def interval_spans(self, t0: float, t1: float) -> list[dict[str, Any]]:
+        """Wie ``intervals``, aber nur Maschine, Zustand, Beginn und Ende (Jahresansicht)."""
+        return self._query(
+            f"SELECT machine_id, state, started_at AS start, {_END} AS end FROM state_intervals i "
+            f"WHERE i.started_at < ? AND {_END} > ?",
+            (t1, t0),
+        )
+
+    def first_interval_at(self) -> float | None:
+        rows = self._query("SELECT MIN(started_at) AS t FROM state_intervals")
+        return rows[0]["t"] if rows else None
+
     # --- Programmdurchläufe --------------------------------------------------------
 
     def start_run(

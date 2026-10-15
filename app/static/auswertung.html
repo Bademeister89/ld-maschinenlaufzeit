@@ -69,10 +69,27 @@
         <div class="small-multiples" id="days"></div>
       </section>
 
+      <section class="section">
+        <div class="section-head">
+          <h2>Jahresansicht</h2>
+          <label class="field">Jahr <select id="year"></select></label>
+          <p class="muted">Laufzeit je Monat, darüber die Auslastung (Laufzeit ÷ Einschaltzeit)</p>
+        </div>
+        <div class="small-multiples" id="year-charts"></div>
+      </section>
+
       <section class="section card">
-        <div class="section-head"><h2>Programme</h2>
-          <p class="muted">Ø-Zeiten nur aus vollständig erfassten, fertigen Läufen</p></div>
-        <div class="table-wrap" id="programs"></div>
+        <details>
+          <summary>Monatswerte als Tabelle</summary>
+          <div class="table-wrap" id="month-table"></div>
+        </details>
+      </section>
+
+      <section class="section card">
+        <details id="programs-box">
+          <summary>Programme <span class="summary-note">Ø-Zeiten nur aus vollständig erfassten, fertigen Läufen</span></summary>
+          <div class="table-wrap" id="programs"></div>
+        </details>
       </section>
 
       <section class="section card">
