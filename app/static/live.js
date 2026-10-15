@@ -152,7 +152,7 @@ function progressBlock(m) {
   return el(
     "div",
     { class: `progress${f?.overdue_s ? " overdue" : ""}` },
-    el("div", { class: "progress-row" }, el("span", { class: "progress-head", text: headline }), el("span", { class: "num secondary", text: blocksText(b) ?? "" })),
+    el("div", { class: "progress-row" }, el("span", { class: "progress-head", text: headline, title: f ? FORECAST_HINT : null }), el("span", { class: "num secondary", text: blocksText(b) ?? "" })),
     pct != null
       ? el(
           "div",
@@ -313,10 +313,11 @@ function palletMarker(m, now) {
   const cur = m.pallet ? currentPallet(palletGroups(m.pallet.entries)) : null;
   if (!cur) return null;
   const name = palletLabel(cur.group.pallet) || programsOf(cur.group.entries.filter((e) => e.status === "current"));
-  const since = cur.since != null ? ` · seit ${fmtTime(cur.since)} Uhr (${cur.observed ? "" : "≥ "}${fmtDuration(now - cur.since)})` : "";
+  // wie Balken und Programmfeld: „seit <Uhrzeit> · <Dauer>“
+  const since = cur.since != null ? ` seit ${fmtEta(cur.since, now)} · ${cur.observed ? "" : "≥ "}${fmtDuration(now - cur.since)}` : "";
   return el(
     "div",
-    { class: "pallet-marker" },
+    { class: "pallet-marker", title: PALLET_HINT },
     el("span", { class: "pallet-marker-icon", "aria-hidden": "true", text: "▶" }),
     el("span", {}, el("strong", { text: name }), `${since} · ${cur.number} von ${cur.count}`),
   );
@@ -427,7 +428,7 @@ function statusBand(m, now) {
     s ? streakTime(m, s, now) : m.state_since != null
       ? el(
           "span",
-          { class: "mc-status-time" },
+          { class: "mc-status-time", title: STATE_HINT },
           el("span", { class: "mc-status-duration num", text: fmtDuration(now - m.state_since) }),
           el("span", { class: "mc-status-since num", text: `seit ${fmtTime(m.state_since)} Uhr` }),
         )
@@ -444,7 +445,7 @@ function streakTime(m, s, now) {
     : breaks >= 60 ? `davon ${fmtDuration(breaks)} Stopps/Pausen` : null;
   return el(
     "span",
-    { class: "mc-status-time" },
+    { class: "mc-status-time", title: PRODUCTION_HINT },
     el("span", { class: "mc-status-duration num", text: fmtDuration(now - s.since) }),
     el("span", { class: "mc-status-since num", text: `in Produktion seit ${fmtEta(s.since, now)}` }),
     pause ? el("span", { class: "mc-status-pause num", text: pause }) : null,
@@ -477,13 +478,39 @@ function streakBar(s, now) {
   );
 }
 
-/** Laufzeit des Programmlaufs – nur wenn sie von der Zustandsdauer abweicht (z. B. nach einem Stopp). */
-function runText(m, now) {
+const PRODUCTION_HINT =
+  "Produktionszeit: seit Beginn der zusammenhängenden Produktion, über alle Programme und Paletten. "
+  + "NC-Stopps, Palettenwechsel und Pausen unter 15 min zählen mit.";
+const STATE_HINT = "Wie lange die Maschine schon in diesem Zustand ist.";
+const PALLET_HINT = "Palettenzeit: seit Beginn des ersten Programms dieser Palette, nach der Uhr (mit Stopps).";
+const FORECAST_HINT = "Prognose aus der reinen Laufzeit. Stopps verlängern die Restzeit.";
+
+/** Programmzeit: seit dem Start dieses Programmlaufs nach der Uhr, mit Stopp und Unterbrechung.
+ *  Steht immer, solange ein Lauf aktiv ist. Nach einem Satzvorlauf liegt der Start oft am Vortag;
+ *  die Zeit zwischen Laufende und Satzvorlauf ist kein Stopp, sondern „unterbrochen“. */
+function programTime(m, now) {
   const run = m.run;
   if (!run || !RUN_STATES.has(m.state)) return null;
-  if (m.state === "RUNNING" && run.start_observed && Math.abs(run.started_at - (m.state_since ?? 0)) < 5) return null;
-  const prefix = run.start_observed ? "" : "≥ ";
-  return `Lauf ${prefix}${fmtDuration(now - run.started_at)} · seit ${fmtTime(run.started_at)} Uhr`;
+  const total = Math.max(now - run.started_at, 0);
+  const stop = run.stop_s ?? 0;
+  const gap = total - (run.run_s ?? 0) - stop;
+  const parts = [stop >= 60 ? `${fmtDuration(stop)} Stopp` : null, gap >= 60 ? `${fmtDuration(gap)} unterbrochen` : null].filter(Boolean);
+  const text = `Programm seit ${fmtEta(run.started_at, now)} · ${run.start_observed ? "" : "≥ "}${fmtDuration(total)}`
+    + (parts.length ? `, davon ${parts.join(", ")}` : "");
+  const hint = [
+    "Programmzeit: seit dem Start dieses Programmlaufs, nach der Uhr.",
+    "Stopp: Zeit im Zustand Gestoppt oder Fehler.",
+    gap >= 60 ? "Unterbrochen: Der Lauf ruhte (z. B. Abbruch bis zum Satzvorlauf) oder es bestand keine Verbindung." : null,
+    run.start_observed ? null : "≥: Das Programm lief schon, als die Erfassung begann. Die Zeit ist eine Mindestzeit.",
+  ].filter(Boolean).join(" ");
+  return el(
+    "div",
+    { class: "program-run num", title: hint },
+    el("span", { text }),
+    run.resumed_at != null
+      ? el("span", { class: "program-resumed", text: `↻ per Satzvorlauf fortgesetzt seit ${fmtEta(run.resumed_at, now)} · ${fmtDuration(now - run.resumed_at)}` })
+      : null,
+  );
 }
 
 function renderLive(m, now) {
@@ -533,7 +560,6 @@ function renderLive(m, now) {
     const callerFile = !cf ? null
       : cf.calls ? `${baseName(m.caller)} ruft auf: ${cf.calls.length ? cf.calls.join(", ") : "– (kein Programmaufruf erkannt)"}`
       : `${baseName(m.caller)} nicht gelesen: ${cf.error}`;
-    const run = runText(m, now);
     const orderThumb = orderThumbFor(c, m);
     parts.push(
       el(
@@ -546,7 +572,7 @@ function renderLive(m, now) {
             "div",
             { class: "program-top" },
             el("div", { class: "program-name", text: programName ?? "Kein Programm angewählt" }),
-            run ? el("div", { class: "program-run num", text: run, title: m.run.start_observed ? null : "Start vor Beginn der Erfassung" }) : null,
+            programTime(m, now),
           ),
           m.program ? el("div", { class: "program-path", text: [m.program, current, caller].filter(Boolean).join(" · ") }) : null,
           callerFile ? el("div", { class: "program-path", text: callerFile }) : null,

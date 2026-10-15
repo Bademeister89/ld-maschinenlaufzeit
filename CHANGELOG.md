@@ -10,6 +10,23 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.32.0] – 2026-10-15
+
+### Geändert
+- **Live-Karte: die Zeiten sind klar beschriftet.**
+  - Im Programmfeld steht jetzt **immer**, solange ein Lauf aktiv ist, die Programmzeit, z. B.
+    „Programm seit 06:10 Uhr · 1 h 25 min, davon 5 min Stopp“. Bisher erschien sie erst nach dem
+    ersten Stopp und hieß „Lauf“, obwohl die Stopps mitzählen.
+  - **Satzvorlauf:** Setzt ein Satzvorlauf einen früheren Lauf fort, steht darunter
+    „↻ per Satzvorlauf fortgesetzt seit 06:05 Uhr · 25 min“. Die Zeit zwischen Laufende und
+    Satzvorlauf ist kein Stopp. Sie heißt „unterbrochen“, ebenso Zeit ohne Verbindung.
+  - Liegt ein Beginn nicht am selben Tag, steht der Wochentag bzw. das Datum dabei
+    („Programm seit Mo 22:10 Uhr“). Das gilt auch für den Palettenmarker.
+  - Balken, Programmfeld und Palettenmarker heißen einheitlich „… seit <Uhrzeit> · <Dauer>“, z. B.
+    „▶ Palette 8 seit 16:49 Uhr · 23 min · 1 von 4“.
+  - Jede Zeit hat einen Tooltip mit einem Satz Erklärung (Produktionszeit, Programmzeit,
+    Palettenzeit, Prognose).
+
 ## [1.31.1] – 2026-10-14
 
 ### Behoben

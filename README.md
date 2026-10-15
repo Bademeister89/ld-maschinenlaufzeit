@@ -17,6 +17,20 @@ spätere Laufzeitauswertungen:
     - Unten im Balken liegt ein Zeitstreifen seit Beginn: hell = Lauf, gelb = Stopp, Lücke = Pause.
       Der Tooltip nennt die Summen.
     - Im Stopp steht darunter, wie lange schon („Gestoppt seit 2 min“).
+  - Im Programmfeld steht, solange ein Lauf aktiv ist, die **Programmzeit**: „Programm seit
+    06:10 Uhr · 1 h 25 min, davon 5 min Stopp“.
+    - Sie gilt nur für diesen einen Programmlauf und zählt nach der Uhr, also mit Stopps. „Stopp“ ist
+      die Zeit im Zustand Gestoppt oder Fehler.
+    - „≥“ heißt: Das Programm lief schon, als die Erfassung begann. Die Zeit ist dann eine
+      Mindestzeit.
+    - **Satzvorlauf:** Setzt ein Satzvorlauf einen früheren Lauf fort (siehe
+      [Begriffe](#begriffe-der-auswertung)), steht darunter „↻ per Satzvorlauf fortgesetzt seit
+      06:05 Uhr · 25 min“. Der Start liegt dann oft am Vortag („Programm seit Mo 22:10 Uhr“). Die Zeit
+      zwischen Laufende und Satzvorlauf ist kein Stopp, sie steht als „unterbrochen“ dabei. Das gilt
+      auch für Zeit ohne Verbindung.
+  - Alle Zeiten heißen gleich: „… seit <Uhrzeit> · <Dauer>“. Liegt der Beginn nicht heute, steht der
+    Wochentag bzw. das Datum davor. Fährst du mit der Maus über eine Zeit, erklärt ein Tooltip, was
+    sie zählt.
   - Die Poti-Stellung für Vorschub, Spindel und Eilgang (unter dem Vorschub) steht als Balken auf
     der Karte: Skala 0–150 %, ein Strich markiert 100 %.
   - Farben: unter 50 % rot, unter 100 % gelb, 100–120 % grün, über 120 % orange. Im Hintergrund des
@@ -191,8 +205,9 @@ abarbeitet:
 - Eine Zeile je Palette mit ihren Programmen, z. B. „Palette 3 · 26-21053-01-01 · DREH · ca. 16 min“.
   - ✓ heißt fertig, ▶ heißt läuft (das laufende Programm ist unterstrichen, darunter „seit 16:49 Uhr“).
   - Im Programmfeld oben auf der Karte steht dazu ein grüner **Marker**, z. B.
-    „▶ Palette 8 · seit 16:49 Uhr (23 min) · 1 von 4“: die laufende Palette, seit wann sie bearbeitet
-    wird (Beginn ihres ersten Programms) und die wievielte der nicht gesperrten Paletten sie ist.
+    „▶ Palette 8 seit 16:49 Uhr · 23 min · 1 von 4“: die laufende Palette, seit wann sie bearbeitet
+    wird (Beginn ihres ersten Programms, nach der Uhr mit Stopps) und die wievielte der nicht
+    gesperrten Paletten sie ist.
   - Durchgestrichen und „gesperrt“ sind Zeilen, die die Steuerung überspringt: `*` in der Spalte
     `LOCK` (bei einer Palette oder einem Spannmittel alles darunter) oder `EMPTY`/`SKIP` in `W-STATE`.
 - **Zeiten:**

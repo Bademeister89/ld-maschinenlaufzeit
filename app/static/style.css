@@ -457,7 +457,8 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 
 .program-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
 .program-name { font-weight: 650; font-size: 18px; overflow-wrap: anywhere; }
-.program-run { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.program-run { display: grid; justify-items: end; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.program-resumed { font-weight: 500; color: var(--muted); }
 .program-path { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .program .order-link { margin-top: 2px; }
 .program-text { display: grid; gap: 4px; min-width: 0; }

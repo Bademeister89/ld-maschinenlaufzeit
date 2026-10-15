@@ -180,6 +180,7 @@ class _Run:
     last_active: float
     run_s: float = 0.0  # reine Laufzeit (Zustand LÄUFT) seit Start
     max_line: int | None = None  # höchste Satznummer im Programm seit Start (None = unbekannt, z. B. nach Neustart)
+    resumed_at: float | None = None  # zuletzt per Satzvorlauf fortgesetzt (Live-Karte)
 
 
 @dataclass(frozen=True)
@@ -294,6 +295,7 @@ class MachineCollector:
             start_observed=bool(row["start_observed"]),
             last_active=row["last_active"],
             run_s=row["run_s"],
+            resumed_at=self._db.run_resumed_at(self.machine.id, row["id"], row["started_at"]),
         )
 
     # --- Zustandslogik (synchron, direkt testbar) ------------------------------------
@@ -515,8 +517,8 @@ class MachineCollector:
         ) if mid_start else None
         if ended is not None:
             self._db.reopen_run(ended.id)
-            self._run = self._load_open_run()
             self._db.add_event(self.machine.id, now, "run_resumed", {"run": ended.id, "program": snap.program, "line": line})
+            self._run = self._load_open_run()
             log.info("%s: Lauf %d fortgesetzt (Satzvorlauf bis Satz %d)", self.machine.name, ended.id, line)
             self._ended.remove(ended)
             return
@@ -1167,12 +1169,20 @@ class MachineCollector:
                     "start_observed": run.start_observed,
                     "had_error": run.had_error,
                     "run_s": run.run_s,
+                    # Zeit im Zustand Gestoppt/Fehler innerhalb des Laufs; was zur Dauer seit Start dann
+                    # noch fehlt, war Unterbrechung (Satzvorlauf nach Laufende, keine Verbindung)
+                    "stop_s": self._run_stop_s(run.id),
+                    "resumed_at": run.resumed_at,
                 }
                 if run
                 else None
             ),
             "forecast": forecast,
         }
+
+    def _run_stop_s(self, run_id: int) -> float:
+        row = self._db.run(run_id)
+        return row["stop_s"] if row else 0.0
 
     def _order_info(self, snap: Snapshot | None) -> dict[str, Any] | None:
         """Auftrag des Programms; ``changes``: offene Änderungen genau dieses Artikels (Version), die

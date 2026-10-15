@@ -199,6 +199,35 @@ def test_satzvorlauf_after_a_fault_continues_the_run(db, make_collector):
     assert len(resumed) == 2
 
 
+def test_live_run_has_stop_time_and_satzvorlauf(db, make_collector):
+    """Live-Karte: Stoppzeit des Laufs und Zeitpunkt des Satzvorlaufs. Die Zeit zwischen Laufende und
+    Satzvorlauf ist kein Stopp."""
+    c = make_collector()
+    db.save_program_file("m1", "P1", 5000, 1.0, 92281, None, 0, ())
+    feed(
+        c,
+        (0, snap("IDLE")),
+        (10, snap("STARTED", line_no=15)),
+        (1000, snap("STOPPED", line_no=50_000)),
+        (1300, snap("STARTED", line_no=50_000)),
+        (2000, snap("STARTED", line_no=91049)),
+    )
+    run = c.live()["run"]
+    assert (run["run_s"], run["stop_s"], run["resumed_at"]) == (990 + 700, 300, None)
+    feed(
+        c,
+        (2100, snap("IDLE", line_no=0)),  # abgebrochen
+        (5000, snap("STARTED", line_no=91049)),  # Satzvorlauf
+        (5100, snap("STARTED", line_no=91100)),
+    )
+    run = c.live()["run"]
+    assert (run["started_at"], run["resumed_at"]) == (10, 5000)
+    assert run["run_s"] == pytest.approx(990 + 700 + 100 + 100)
+    assert run["stop_s"] == pytest.approx(300)
+    # Nach einem Neustart der Erfassung ist der Satzvorlauf noch bekannt
+    assert make_collector()._run.resumed_at == 5000
+
+
 def test_mid_program_start_elsewhere_is_a_partial_run(db, make_collector):
     c = make_collector()
     db.save_program_file("m1", "P1", 5000, 1.0, 92281, None, 0, ())

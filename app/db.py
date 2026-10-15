@@ -1263,6 +1263,15 @@ class Database:
             row["payload"] = json.loads(row["payload"])
         return rows
 
+    def run_resumed_at(self, machine_id: str, run_id: int, since: float) -> float | None:
+        """Wann der Lauf zuletzt per Satzvorlauf fortgesetzt wurde (Ereignis ``run_resumed``), sonst None."""
+        rows = self._query(
+            "SELECT ts, payload FROM events WHERE machine_id = ? AND type = 'run_resumed' AND ts >= ? "
+            "ORDER BY ts DESC, id DESC",
+            (machine_id, since),
+        )
+        return next((row["ts"] for row in rows if json.loads(row["payload"]).get("run") == run_id), None)
+
     def nc_errors(self, machine_id: str, t0: float, limit: int = 5000) -> list[dict[str, Any]]:
         """Meldungen der Steuerung (Ereignis ``nc_error``) seit ``t0``, neueste zuerst."""
         rows = self._query(
