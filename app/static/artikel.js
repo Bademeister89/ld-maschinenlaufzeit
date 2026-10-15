@@ -1,8 +1,11 @@
 // Tab „Artikel“: je Auftrag und Version (bzw. Felge) ein Artikel mit Rohling, Kosten, Preisen und
-// Produktionsdaten. Bearbeiten im Dialog, Export als Excel-Datei.
+// Produktionsdaten. Klick auf eine Zeile öffnet das Artikel-Fenster (artikel-detail.js) mit den Reitern
+// Laufzeiten, Rohling und Preise; Material, Rohling, EK und VK lassen sich auch direkt in der Zelle
+// bearbeiten. Excel-Export, CAM-Import (Tebis-Doku).
 
 import { openChanges } from "./aenderungen.js";
-import { api, el, fmtDuration, fmtHours, loadMeta, send, zoomThumb } from "./common.js";
+import { TAB_IDS, openArticle } from "./artikel-detail.js";
+import { api, el, fmtDateTime, fmtDuration, fmtHours, loadMeta, send, stateBadge, zoomThumb } from "./common.js";
 
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 60000;
@@ -22,7 +25,6 @@ const parseNum = (text) => {
 
 const state = loadFilter();
 let data = { articles: [], materials: [] };
-let editing = null;
 const selected = new Set(); // angehakte Artikel für den Excel-Export
 
 function loadFilter() {
@@ -47,6 +49,16 @@ function showError(err) {
 }
 
 const name = (a) => a.title || a.rim?.label || "";
+const STATUS_LABELS = { open: "offen", closed: "abgeschlossen" };
+
+/** Läuft gerade ein Programm des Artikels? Dann der Zustand mit Maschine, sonst offen/abgeschlossen. */
+function statusCell(a) {
+  if (a.active?.length) {
+    const [x] = a.active;
+    return el("span", { class: "art-status", title: a.active.map((r) => `${r.machine}: ${r.program}`).join("\n") }, stateBadge(x.state), el("span", { class: "art-sub", text: x.machine }));
+  }
+  return el("span", { class: `order-status ${a.status}`, text: STATUS_LABELS[a.status] ?? a.status });
+}
 const estimated = (text, flag, why) => (flag ? el("span", { class: "estimated", title: why, text: `≈ ${text}` }) : text);
 
 // --- Liste ---------------------------------------------------------------------------------------
@@ -110,13 +122,19 @@ const COLUMNS = [
         {},
         el(
           "a",
-          { class: "art-key", href: `auftraege.html?status=all&order=${encodeURIComponent(a.order_key)}`, title: "Auftrag öffnen", onclick: (e) => e.stopPropagation() },
+          {
+            class: "art-key",
+            href: `artikel.html?article=${encodeURIComponent(a.key)}`,
+            title: "Artikel öffnen (Laufzeiten, Rohling, Preise)",
+            onclick: (e) => (e.preventDefault(), e.stopPropagation(), show(a.key)),
+          },
           a.order_key,
           a.version ? el("span", { class: "art-version", text: a.version }) : null,
         ),
         el("span", { class: "art-sub", text: [name(a), a.kind === "rim" ? "Felge" : ""].filter(Boolean).join(" · ") || "ohne Bezeichnung" }),
       ),
   },
+  { label: "Status", cls: "art-status-cell", value: statusCell },
   { label: "Material", cls: "wrap", edit: "material", value: (a) => a.material ?? "—" },
   { label: "Rohling (Maße)", cls: "wrap", edit: "dims", value: dimsCell },
   { label: "€ je kg", cls: "r", value: (a) => fmtEur(a.price_per_kg) },
@@ -180,6 +198,7 @@ const COLUMNS = [
   { label: "Stück", cls: "r", value: (a) => String(a.parts) },
   { label: "Gesamtlaufzeit", cls: "r", value: (a) => fmtHours(a.running_s) },
   { label: "Letzte Produktion", cls: "r", value: (a) => fmtDate(a.last_production) },
+  { label: "Letzte Aktivität", cls: "r", value: (a) => (a.last_activity ? fmtDateTime(a.last_activity) : "—") },
   {
     label: "Änderung",
     cls: "art-change-cell",
@@ -191,19 +210,6 @@ const COLUMNS = [
         "aria-label": `Änderungsliste ${a.key}`,
         onclick: (e) => (e.stopPropagation(), openChanges(a.key, { onChanged: load })),
         text: !a.change ? "+" : a.change.open ? `${a.change.label} · ${a.change.open} offen` : `${a.change.label} ✓`,
-      }),
-  },
-  {
-    label: "",
-    cls: "r art-actions",
-    value: (a) =>
-      el("button", {
-        type: "button",
-        class: "btn small art-edit",
-        title: "Bearbeiten",
-        "aria-label": `Artikel ${a.key} bearbeiten`,
-        onclick: (e) => (e.stopPropagation(), openEditor(a)),
-        text: "✎",
       }),
   },
 ];
@@ -218,7 +224,14 @@ let inline = 0; // offene Zelleneditoren (dann nicht neu zeichnen)
 function rowOf(a) {
   return el(
     "tr",
-    { class: a.status === "closed" ? "is-closed" : null, "data-key": a.key },
+    {
+      class: a.status === "closed" ? "is-closed" : null,
+      "data-key": a.key,
+      // Klick auf die Zeile öffnet das Fenster – nicht in bearbeitbaren Zellen, Haken, Knöpfen, Links
+      onclick: (e) => {
+        if (!e.target.closest("td.editable, input, select, button, a, .cell-pop")) show(a.key);
+      },
+    },
     COLUMNS.map((c) => {
       const v = c.value(a);
       const props = { class: c.cls, "data-label": c.label };
@@ -502,10 +515,8 @@ async function load() {
       el("a", { href: "konfiguration.html#maschinen", text: "Konfiguration → Maschinen → Bearbeiten" }),
     );
   }
-  if (!editing && !inline) render();  // nicht unter offenen Eingaben neu zeichnen
+  if (!inline) render();  // nicht unter offenen Eingaben neu zeichnen
 }
-
-// --- Bearbeiten ----------------------------------------------------------------------------------
 
 function volume(shape, a, b, c) {
   if (shape === "block" && a > 0 && b > 0 && c > 0) return (a * b * c) / 1e6;
@@ -513,91 +524,80 @@ function volume(shape, a, b, c) {
   return null;
 }
 
-function renderShape() {
-  const round = $("f-shape").value === "round";
-  $("l-a").textContent = round ? "Durchmesser (mm)" : "Länge (mm)";
-  $("l-b").textContent = round ? "Länge (mm)" : "Breite (mm)";
-  $("w-c").hidden = round;
-  $("f-dims").hidden = !$("f-shape").value;
-  renderPreview();
+// --- Artikel-Fenster -----------------------------------------------------------------------------
+// Adresse artikel.html?article=21053V1&tab=laufzeiten öffnet das Fenster gleich beim Laden. Gibt es
+// keinen eigenen Artikel (z. B. 21054, wenn die Grundversion nur gemeinsame Vorstufe ihrer Versionen
+// ist), zeigt die Liste stattdessen alle Artikel dieser Nummer.
+
+/** Adresse an das offene Fenster anpassen (``key`` null: Fenster zu). */
+function syncUrl(key, tab) {
+  const q = new URLSearchParams();
+  if (key) q.set("article", key);
+  if (key && tab && tab !== "laufzeiten") q.set("tab", tab);
+  history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
 }
 
-function renderPreview() {
-  const shape = $("f-shape").value;
-  const v = volume(shape, parseNum($("f-a").value), parseNum($("f-b").value), parseNum($("f-c").value));
-  const material = data.materials.find((m) => String(m.id) === $("f-material").value);
-  const parts = [];
-  const kg = v != null && material?.density != null ? v * material.density : null;
-  if (v != null) parts.push(kg != null ? `Gewicht ${num.format(kg)} kg (${num.format(v)} l)` : `Volumen ${num.format(v)} l`);
-  if (material && material.density == null) parts.push("Dichte des Materials fehlt");
-  if (material?.price_per_kg != null) parts.push(`${fmtEur(material.price_per_kg)} je kg`);
-  if (kg != null && material?.price_per_kg != null) parts.push(`Materialpreis ${fmtEur(kg * material.price_per_kg)}`);
-  $("f-preview").textContent = parts.join(" · ") || "Material, Form und Maße eintragen – dann rechnet die App den Materialpreis.";
+async function show(key, tab = "laufzeiten") {
+  const opened = await openArticle(key, { tab, onChanged: load, onNavigate: syncUrl });
+  if (opened) return;
+  syncUrl(null);
+  const number = /^\d+/.exec(key)?.[0] ?? key;
+  state.search = number;
+  $("search").value = number;
+  render();
+  showNotice([`Zu ${key} gibt es keinen eigenen Artikel – hier alle Artikel zur Nummer ${number}.`], false);
 }
 
-function openEditor(a) {
-  editing = a;
-  $("editor-title").textContent = `Artikel ${a.key}`;
-  $("f-info").textContent = [name(a), a.kind === "rim" ? "Felge" : a.version ? `Version ${a.version}` : "Grundversion", `${a.parts} Stück produziert`]
-    .filter(Boolean)
-    .join(" · ");
-  $("f-material").replaceChildren(
-    el("option", { value: "", text: data.materials.length ? "—" : "— (noch keine Materialien angelegt)" }),
-    ...data.materials.map((m) => el("option", { value: String(m.id), text: m.price_per_kg != null ? `${m.name} (${fmtEur(m.price_per_kg)}/kg)` : m.name })),
+function showNotice(lines, failed) {
+  const notice = $("cam-notice");
+  notice.classList.toggle("warn", failed);
+  notice.replaceChildren(
+    ...lines.map((line) => el("div", { text: line })),
+    el("button", { type: "button", class: "link-button", onclick: () => (notice.hidden = true), text: "Schließen" }),
   );
-  $("f-material").value = a.material_id != null ? String(a.material_id) : "";
-  $("f-shape").value = a.shape ?? "";
-  $("f-a").value = toInput(a.dim_a);
-  $("f-b").value = toInput(a.dim_b);
-  $("f-c").value = toInput(a.dim_c);
-  $("f-ek").value = toInput(a.price_ek);
-  $("f-vk").value = toInput(a.price_vk);
-  $("f-note").value = a.note ?? "";
-  $("f-costs").textContent = [
-    a.part_s != null ? `Laufzeit je Teil ${fmtDuration(a.part_s)}` : null,
-    a.mill_cost != null ? `Fräsen ${fmtEur(a.mill_cost)}` : null,
-    a.cost != null ? `Herstellkosten ${a.cost_complete ? "" : "mind. "}${fmtEur(a.cost)}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  $("f-error").hidden = true;
-  renderShape();
-  $("editor").showModal();
+  notice.hidden = false;
 }
 
-async function save(e) {
-  e.preventDefault();
-  const a = editing;
-  try {
-    await send("PUT", `/api/articles/${encodeURIComponent(a.key)}`, {
-      material_id: $("f-material").value || null,
-      shape: $("f-shape").value || null,
-      dim_a: $("f-shape").value ? $("f-a").value : null,
-      dim_b: $("f-shape").value ? $("f-b").value : null,
-      dim_c: $("f-shape").value === "block" ? $("f-c").value : null,
-      price_ek: $("f-ek").value,
-      price_vk: $("f-vk").value,
-      note: $("f-note").value,
-    });
-  } catch (err) {
-    $("f-error").textContent = err.message;
-    $("f-error").hidden = false;
-    return;
-  }
-  $("editor").close();
+// --- CAM-Doku importieren -------------------------------------------------------------------------
+
+/** Artikel zum ersten Programm eines importierten Auftrags: 26-21053V1-02-01 → 21053V1, Felge → Nummer. */
+function articleOf(o) {
+  const match = /^\d{2}[-_](\d{4,5})([Vv]\d{1,2})?[-_]/.exec(o.programs?.[0]?.program ?? "");
+  return match ? `${match[1]}${(match[2] ?? "").toUpperCase()}` : o.key;
 }
 
-async function remove() {
-  const a = editing;
-  if (!confirm(`Stammdaten von Artikel ${a.key} entfernen (Rohling, EK, VK, Notiz)?\n\nHat der Auftrag Läufe oder Planzeiten dieser Version, erscheint der Artikel gleich wieder – ohne diese Angaben. Der Auftrag selbst bleibt.`)) return;
-  try {
-    await send("DELETE", `/api/articles/${encodeURIComponent(a.key)}`);
-  } catch (err) {
-    $("f-error").textContent = err.message;
-    $("f-error").hidden = false;
-    return;
+/** Tebis-Doku (PDF) importieren: legt Aufträge an und übernimmt die Planzeiten der Programme; danach
+ *  öffnet sich das Fenster des ersten importierten Artikels. */
+async function importCam(e) {
+  const files = [...e.target.files];
+  e.target.value = "";
+  if (!files.length) return;
+  const lines = [];
+  let failed = false;
+  let open = null;
+  for (const file of files) {
+    try {
+      const r = await send("POST", "/api/orders/import-cam", new Blob([file], { type: "application/pdf" }), {
+        "X-File-Name": encodeURIComponent(file.name),
+      });
+      const where = [r.setup != null ? `Spannung ${String(r.setup).padStart(2, "0")}` : null, r.machine].filter(Boolean).join(", ");
+      for (const o of r.orders) {
+        const programs = o.programs.map((p) => `${p.program} ${fmtDuration(p.planned_s)}`).join(", ");
+        lines.push(
+          `${file.name}: ${o.kind === "rim" ? "Felge" : "Auftrag"} ${o.key}${o.created ? " angelegt" : ""}` +
+            `${where ? ` (${where})` : ""} – Planzeit: ${programs}`,
+        );
+        open ??= articleOf(o);
+      }
+      if (r.ignored.length) lines.push(`${file.name}: ohne Auftragsnummer übergangen: ${r.ignored.join(", ")}`);
+    } catch (err) {
+      failed = true;
+      lines.push(err.message);
+    }
   }
-  $("editor").close();
+  showNotice(lines, failed);
+  await load();
+  if (open) await show(open);
 }
 
 function openAdder() {
@@ -613,8 +613,7 @@ async function addArticle(e) {
     const r = await send("POST", "/api/articles", { key: $("a-key").value, title: $("a-title").value || null });
     $("adder").close();
     await load();
-    const a = data.articles.find((x) => x.key === r.key);
-    if (a) openEditor(a);
+    await show(r.key, "rohling");
   } catch (err) {
     $("a-error").textContent = err.message;
     $("a-error").hidden = false;
@@ -695,19 +694,15 @@ async function main() {
   });
   $("adder-form").addEventListener("submit", addArticle);
   $("a-cancel").addEventListener("click", () => $("adder").close());
-  $("editor-form").addEventListener("submit", save);
-  $("f-cancel").addEventListener("click", () => $("editor").close());
-  $("f-delete").addEventListener("click", remove);
-  $("editor").addEventListener("close", () => {
-    editing = null;
-    load();
-  });
-  $("f-shape").addEventListener("change", renderShape);
-  for (const id of ["f-a", "f-b", "f-c"]) $(id).addEventListener("input", renderPreview);
-  $("f-material").addEventListener("change", renderPreview);
+  $("cam-import").addEventListener("click", () => $("cam-input").click());
+  $("cam-input").addEventListener("change", importCam);
   syncFilters();
-  await load();
-  setInterval(load, REFRESH_MS);
+  // Direktlink: artikel.html?article=21053V1&tab=rohling (auch aus der Live-Karte und alten Lesezeichen).
+  // Das Fenster wartet nicht auf die ganze Liste.
+  const query = new URLSearchParams(location.search);
+  const article = query.get("article")?.trim().toUpperCase();
+  await Promise.all([load(), article ? show(article, TAB_IDS.includes(query.get("tab")) ? query.get("tab") : "laufzeiten") : null]);
+  setInterval(() => !document.querySelector("dialog[open]") && load(), REFRESH_MS);
 }
 
 main().catch(showError);

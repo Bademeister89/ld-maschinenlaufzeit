@@ -462,6 +462,75 @@ def order_detail(db: Database, key: str, tz: ZoneInfo) -> dict[str, Any] | None:
     }
 
 
+def article_detail(db: Database, key: str, tz: ZoneInfo, version: str) -> dict[str, Any] | None:
+    """Auftragsdetail für das Artikel-Fenster einer Version (``""`` = Grundversion).
+
+    Bei einem Auftrag mit Versionen zeigt es die eigenen Aufspannungen der Version und, als gemeinsam
+    markiert (``shared``), die Aufspannungen der Grundversion, die sie mitbenutzt: die übernommene
+    Spannung 1 und die Vorrichtung (08/09). Jede Aufspannung der Grundversion nennt in ``shared_with``
+    die Versionen, die sie mitbenutzen. Kacheln (``totals``) gelten für die eigenen Aufspannungen,
+    ``shared_running_s``/``shared_stopped_s`` für die gemeinsamen; Laufzeit je Tag und Läufe für beide
+    (Läufe gemeinsamer Aufspannungen mit ``shared``). Ohne Versionen (und bei Felgen) bleibt alles."""
+    detail = order_detail(db, key, tz)
+    if detail is None:
+        return None
+    versions = detail["versions"]
+    others = [v["version"] for v in versions if v["version"]]
+    blocks = {v["version"]: v for v in versions}
+    base = blocks.get("")
+    for v in versions:
+        for s in v["setups"]:
+            if v["version"] or not others:
+                s["shared_with"] = []
+            elif s["fixture"]:
+                s["shared_with"] = others  # Vorrichtung der Grundversion: für alle Versionen
+            else:
+                s["shared_with"] = [o["version"] for o in versions if o["version"] and s["setup"] in o["inherited"]]
+    detail["version"] = version
+    detail["all_versions"] = [v["version"] for v in versions]  # Abschließen/Löschen gelten für alle
+    if not others:
+        detail["shared"] = []
+        detail["totals"]["shared_running_s"] = detail["totals"]["shared_stopped_s"] = 0.0
+        return detail
+    own = blocks.get(version) or {
+        "version": version, **_empty_totals(), "runs": 0, "finished": 0, "setups": [], "part_complete": False,
+        "part_run_s": None, "plan_part_s": None, "fixture_s": 0.0, "inherited": [], "pre_stage": False, "parts": 0,
+    }
+    shared = [s for s in base["setups"] if version in s["shared_with"]] if base and version else []
+    window = {(s["version"], s["setup"]) for s in own["setups"] + shared}
+
+    def in_window(program: str | None) -> bool:
+        return setup_of(program or "") in window
+
+    runs = [{**r, "shared": setup_of(r["program"] or "")[0] != version} for r in detail["runs"] if in_window(r["program"])]
+    intervals = [iv for iv in db.order_intervals(key, RUN_TIME_STATES) if in_window(iv["program"])]
+    totals = {
+        "running_s": sum(s["running_s"] for s in own["setups"]),
+        "stopped_s": sum(s["stopped_s"] for s in own["setups"]),
+        "shared_running_s": sum(s["running_s"] for s in shared),
+        "shared_stopped_s": sum(s["stopped_s"] for s in shared),
+        "runs": sum(s["runs"] for s in own["setups"]),
+        "finished": sum(s["finished"] for s in own["setups"]),
+        "parts": own["parts"],
+        "part_run_s": own["part_run_s"],
+        "part_complete": own["part_complete"],
+        "plan_part_s": own["plan_part_s"],
+        "fixture_s": own["fixture_s"],
+        "first_activity": min((iv["start"] for iv in intervals), default=None),
+        "last_activity": max((iv["end"] for iv in intervals), default=None),
+        "machines": sorted({iv["machine_id"] for iv in intervals} | {r["machine_id"] for r in runs}),
+    }
+    return {
+        **detail,
+        "totals": totals,
+        "versions": [own],
+        "shared": shared,
+        "setups": own["setups"] + shared,
+        "days": _days(intervals, tz),
+        "runs": runs,
+    }
+
+
 def version_order(version: str) -> tuple[int, int]:
     """Grundversion zuerst, dann V1, V2 … V10 der Zahl nach."""
     return (1, int(version[1:])) if version else (0, 0)

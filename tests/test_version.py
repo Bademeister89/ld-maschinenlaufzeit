@@ -93,9 +93,9 @@ def test_api_version(client):
     assert settings["version"] == app.__version__ and "build" in settings
 
 
-@pytest.mark.parametrize("path", ["/", "/auswertung.html", "/auftraege.html", "/common.js", "/style.css"])
+@pytest.mark.parametrize("path", ["/", "/auswertung.html", "/artikel.html", "/common.js", "/style.css"])
 def test_pages_are_revalidated(client, path):
-    # Ohne Vorgabe zeigten Browser nach einem Update alte Seiten (z. B. ohne Reiter „Aufträge“)
+    # Ohne Vorgabe zeigten Browser nach einem Update alte Seiten (z. B. ohne einen neuen Reiter)
     r = client.get(path)
     assert r.status_code == 200
     assert r.headers["cache-control"] == "no-cache"
@@ -110,7 +110,7 @@ def test_api_is_not_stored(client):
 
 def test_every_page_links_all_tabs():
     static = Path(app.__file__).with_name("static")
-    pages = ["index.html", "auswertung.html", "auftraege.html", "werkzeuge.html", "konfiguration.html"]
+    pages = ["index.html", "auswertung.html", "artikel.html", "planung.html", "werkzeuge.html", "konfiguration.html"]
     for page in pages:
         html = (static / page).read_text(encoding="utf-8")
         for target in ['href="./"', *(f'href="{p}"' for p in pages[1:])]:

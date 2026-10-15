@@ -50,10 +50,10 @@ spätere Laufzeitauswertungen:
     („Monatswerte als Tabelle“). Der Zeitraum oben gilt hier nicht, die Maschinenauswahl schon.
   - **Programme** sind zugeklappt. Ein Klick auf „Programme“ klappt sie auf, der Browser merkt sich
     deine Wahl.
-- **Aufträge:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, Zeit je Auftrag,
-  Aufspannung und Programm, Ø Bearbeitungszeit je Teil.
-- **Artikel:** je Auftrag und Version ein Artikel mit Rohling, Material- und Fräskosten, EK, VK, Marge
-  und Excel-Export, siehe [Artikel](#artikel-tab-artikel).
+- **Artikel:** Aufträge aus dem Programmnamen (`26-21055-01-01`) automatisch anlegen, je Auftrag und
+  Version ein Artikel. Ein Klick öffnet das Artikel-Fenster mit den Reitern Laufzeiten (Zeit je
+  Aufspannung und Programm, Ø Bearbeitungszeit je Teil), Rohling und Preise. Dazu Material- und
+  Fräskosten, Marge und Excel-Export, siehe [Artikel und Aufträge](#artikel-und-aufträge-tab-artikel).
 - **Planung:** Board mit Aufgaben je Meilenstein (Design, CAD, CAM, Fräsen …), Bearbeiter, Priorität,
   Termin. Dazu eine Änderungsliste A01, A02 … je Artikel mit Bildern und einem Alarm auf der
   Live-Karte, solange eine Änderung offen ist, siehe [Planung](#planung-und-änderungen-tab-planung).
@@ -152,7 +152,7 @@ neueste zuerst. Dazu gehören NC-Fehler und Meldungen der Maschine wie „Puffer
   „Standort nicht erreichbar“, und die Zeit wird als „Keine Daten“ gebucht statt als „Offline“.
   Ohne Prüfadresse gilt jede nicht erreichbare Steuerung als „Offline“.
 - **Stundensatz in €/h** (optional), z. B. 92,50: Grundlage für den Preis Fräsen im Tab
-  [Artikel](#artikel-tab-artikel).
+  [Artikel](#artikelliste-rohling-und-preise).
 - **Werkzeugplätze im Magazin** (optional), z. B. 30 oder 60: Die Werkzeugauswertung markiert dann
   so viele meistgebrauchte Werkzeuge dieser Maschine (siehe [Aufrufe](#werkzeugauswertung-tab-werkzeugauswertung)).
 - **▲ ▼:** Reihenfolge der Karten auf der Live-Seite.
@@ -260,7 +260,28 @@ abarbeitet:
 - Den Text der Tabelle hebt die App auf (wenige KB). Die Diagnose-Datei enthält ihn unter
   `paletten/`.
 
-## Aufträge (Tab „Aufträge“)
+## Artikel und Aufträge (Tab „Artikel“)
+
+Seit Version 1.35.0 gibt es keinen eigenen Tab „Aufträge“ mehr. Alles zu einem Auftrag steht im
+**Artikel-Fenster**: In der Artikelliste auf eine Zeile oder die Artikelnummer klicken.
+
+- **Kopf:** Artikelnummer, Auftragsname, Notiz, Bild des Bauteils, Status und die Aktionen
+  „Änderungen“, „Abschließen“ / „Wieder öffnen“, „CSV Läufe“ und Löschen.
+  - Der Auftragsname gilt für alle Versionen, die Notiz nur für diesen Artikel.
+  - Der Status zeigt „▶ Läuft“, solange an einer Maschine ein Programm des Artikels läuft, darunter
+    die Maschine mit Restlaufzeit. Sonst „offen“ oder „abgeschlossen“.
+  - Abschließen, CSV und Löschen gelten für den ganzen Auftrag. Hat er Versionen, steht „(ganzer
+    Auftrag)“ dabei, und der Knopf heißt „Ganzen Auftrag löschen“.
+- **Reiter:** Laufzeiten (siehe unten), Rohling und Preise (siehe
+  [Artikelliste, Rohling und Preise](#artikelliste-rohling-und-preise)). „Stückliste“ ist schon zu
+  sehen, kommt aber erst in einer späteren Version.
+- **Direktlink:** `artikel.html?article=21053V1&tab=laufzeiten` (bzw. `rohling`, `preise`) öffnet das
+  Fenster gleich. Die Live-Karte verlinkt so auf den Artikel ihres Programms.
+- **Alte Lesezeichen** auf `auftraege.html?order=21053` führen zum Artikel 21053. Gibt es zu einer
+  Nummer keinen eigenen Artikel (gemeinsame Vorstufe der Versionen, z. B. 21054), zeigt die
+  Artikelliste stattdessen alle Artikel dieser Nummer.
+
+### Aufträge aus den Programmnamen
 
 Programme nach dem Schema **`JJ-AUFTRAG-AUFSPANNUNG-PROGRAMM`** werden automatisch einem Auftrag
 zugeordnet, z. B. `26-21055-01-01`:
@@ -284,8 +305,8 @@ zugeordnet, z. B. `26-21055-01-01`:
 | `01` | Spannung |
 | ` tasche` | Zusatz (optional): weiteres Programm derselben Spannung, z. B. `einarm`, `normal` |
 
-- Jede Felge (die achtstellige Nummer) ist ein eigener Eintrag im Tab „Aufträge“, z. B.
-  „Felge 999 · einteilig · 10 × 18″“. Der Filter **Alle / Aufträge / Felgen** zeigt nur eine Art.
+- Jede Felge (die achtstellige Nummer) ist ein eigener Artikel, z. B. „Felge 999 · einteilig ·
+  10 × 18″“. Der Filter **Alle / Bauteile / Felgen** in der Artikelliste zeigt nur eine Art.
 - Programme mit Zusatz (`-01`, `-01 tasche`, `-01 einarm`) stehen als eigene Zeilen unter
   „Spannung 1“. Sie laufen nacheinander für dieselbe Felge, deshalb ist die **Ø Bearbeitungszeit je
   Felge** die Summe aller Programme aller Spannungen.
@@ -329,11 +350,9 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
   Version ist eine andere Ausführung des Teils.
   - Die Version steht direkt an der Nummer: `V` und eine ein- oder zweistellige Zahl. Ein kleines
     `v` zählt wie `V`.
-  - In der Liste steht sie hinter der Nummer („21053 · V1, V2“). Die Suche findet den
-    Auftrag auch über `21053V1`.
-  - Laufzeit, Stopps und Läufe des Auftrags sind die Summe aller Versionen.
-  - Im Detail hat jede Version einen eigenen Block („Grundversion“, „Version V1“ …) mit ihren
-    Aufspannungen und ihrer **Ø Bearbeitungszeit je Teil**. Die Kachel nennt sie je Version.
+  - Jede Version ist ein eigener Artikel (`21053V1`). Ihr Fenster zeigt nur ihre Aufspannungen und
+    ihre **Ø Bearbeitungszeit je Teil**, siehe [Reiter Laufzeiten](#reiter-laufzeiten).
+  - Laufzeit, Stopps und Läufe des Auftrags sind die Summe aller Versionen (CSV Läufe).
   - **Gemeinsame Vorstufe:** Fehlen einer Version die ersten Aufspannungen, übernimmt sie sie von der
     Grundversion. Typisch ist Spannung 1 gemeinsam und Spannung 2 je Version (`21-21054-01-01`,
     `21-21054v1-02-01`, `21-21054v2-02-01`).
@@ -376,18 +395,30 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
 - **Gezählt wird die Zeit der Programmdurchläufe:** Laufzeit sowie Stopps und Fehler innerhalb der
   Läufe. Zeit, in der ein Programm nur angewählt ist, zählt nicht, sonst würde ein übers Wochenende
   angewähltes Programm dem Auftrag Tage gutschreiben.
-- **Liste:** Status (läuft gerade / offen / abgeschlossen), Aufspannungen, Programme, Laufzeit,
-  Stopps, fertige Teile, Maschinen, letzte Aktivität. Suche nach Nummer oder Bezeichnung.
 - **Fertige Teile:** die fertigen Läufe des **letzten Programms der letzten Aufspannung**. Erst dort
   ist ein Teil fertig.
   - Beispiel: Bei 02-01, 02-02 und 02-03 zählen die fertigen Läufe von 02-03.
   - Vorrichtungsbau zählt nicht. Bei Versionen zählt jede Version für sich, der Auftrag ist die Summe.
   - Hat das letzte Programm nur eine Planzeit und lief noch nie, ist noch kein Teil fertig.
   - Die Karten der Aufspannungen zeigen weiter ihre fertigen Läufe.
-- **Detail:**
-  - Bezeichnung (z. B. Kunde, Bauteil), Abschließen / Wieder öffnen.
-  - Welche Maschine den Auftrag gerade fährt, mit Restlaufzeit.
-  - Je Aufspannung die Programme mit Läufen, Laufzeit und **Ø Laufzeit je Teil**.
+
+### Reiter „Laufzeiten“
+
+- Kacheln: Laufzeit, Gestoppt/Fehler, fertige Teile und Ø Bearbeitungszeit je Teil.
+- Je Aufspannung die Programme mit Läufen, Laufzeit und **Ø Laufzeit je Teil**.
+- **Versionen:** Das Fenster einer Version (z. B. `21053V1`) zeigt nur ihre eigenen Aufspannungen.
+  - Darunter stehen, deutlich markiert („Gemeinsam mit V2“), die Aufspannungen der Grundversion, die
+    sie mitbenutzt: die gemeinsame Spannung 1 und die Vorrichtung (08/09).
+  - Planzeit ändern, Ø zurücksetzen, Löschen und Bild wirken dort auf **alle** Versionen. Das steht
+    über den Karten und in jeder Rückfrage.
+  - Die Kacheln zählen die eigenen Aufspannungen, dazu „dazu gemeinsam … (alle Versionen)“. Die
+    Ø Bearbeitungszeit je Teil enthält die übernommene Spannung 1.
+  - Laufzeit je Tag und Programmdurchläufe zeigen beides. Läufe der gemeinsamen Spannung tragen
+    „gemeinsam“, weil sie keiner Version gehören.
+  - Im Fenster der Grundversion tragen Aufspannungen, die Versionen mitbenutzen, „gemeinsam mit V1,
+    V2“.
+  - Felgen und Aufträge ohne Versionen zeigen alles.
+- **Programme, Läufe und Löschen:**
   - **Ein Programm ist sein Name, nicht sein Ordner:** Liegt `26-21051-02-01.h` auch als Kopie im
     Ordner eines anderen Auftrags, zählen beide Speicherorte zur selben Zeile. Dort steht dann
     „· 2 Ordner“, der Tooltip nennt die Pfade. Das gilt genauso für die Auswertung je Programm und
@@ -423,9 +454,10 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
     - **Programm:** „Löschen“ am Ende der Programmzeile. Gelöscht werden alle Läufe des Programms in
       diesem Auftrag (gleich aus welchem Ordner) und seine Planzeit.
     - **Aufspannung:** „Aufspannung löschen“ (Felgen: „Spannung löschen“) im Kopf der Karte, mit
-      allen ihren Programmen. Bei Versionen nur die Aufspannung dieser Version.
-    - **Auftrag:** „Auftrag löschen“ bzw. „Felge löschen“ oben neben „Abschließen“. Gelöscht werden
-      Läufe, Planzeiten, Bezeichnung und Bild.
+      allen ihren Programmen. Bei Versionen nur die Aufspannung dieser Version; eine gemeinsame
+      Aufspannung der Grundversion gilt für alle.
+    - **Auftrag:** „Auftrag löschen“ (bei Versionen „Ganzen Auftrag löschen“) bzw. „Felge löschen“ im
+      Kopf des Fensters. Gelöscht werden Läufe, Planzeiten, Bezeichnung und Bild aller Versionen.
     - Es gilt dasselbe wie beim einzelnen Lauf: Die App fragt vorher nach, die Laufzeit der Maschine
       bleibt in der Auswertung, jeder Lauf wird als `run_deleted` festgehalten, und rückgängig
       machen geht nicht.
@@ -433,9 +465,9 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
     - Läuft ein Programm später wieder oder ist es an einer Maschine noch angewählt, wird es neu
       erfasst. Ein gelöschter Auftrag entsteht dann neu, ohne die gelöschten Daten.
 - **Bild je Auftrag** (fertiges Bauteil):
-  - Am PC im Detail „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“.
+  - Am PC im Kopf des Artikel-Fensters „Bild hinzufügen“, später „Bild ersetzen“ oder „Bild entfernen“.
   - **Aus der Zwischenablage:** ein Bild kopieren (z. B. Screenshot mit Win+Umschalt+S oder
-    „Bild kopieren“ im Browser) und im geöffneten Auftrag Strg+V drücken. Ist schon ein Bild da,
+    „Bild kopieren“ im Browser) und im Artikel-Fenster (Reiter Laufzeiten) Strg+V drücken. Ist schon ein Bild da,
     fragt die App vor dem Ersetzen. Text einfügen (z. B. in die Bezeichnung) funktioniert weiter
     wie gewohnt.
     - Der Button „Aus Zwischenablage“ erscheint nur, wenn der Browser ihn erlaubt: bei
@@ -450,9 +482,9 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
     dabei entfernt.
   - Kann der Browser eine Datei nicht als Bild lesen, erscheint ein Hinweis; ein vorhandenes
     Bild bleibt dann unverändert.
-  - Das Vorschaubild steht in der Auftragsliste und auf der Live-Karte, solange der Auftrag an
+  - Das Vorschaubild steht in der Artikelliste und auf der Live-Karte, solange der Auftrag an
     einer Maschine angewählt ist (außer die Aufspannung hat ein eigenes Bild, siehe unten). Das
-    große Bild erscheint nur im Detail; ein Klick öffnet es in voller Größe.
+    große Bild erscheint im Artikel-Fenster; ein Klick öffnet es in voller Größe.
 - **Bild je Aufspannung** (Spannsituation; bei Felgen je Spannung, bei Versionen je Aufspannung der
   Version):
   - Jede Karte einer Aufspannung hat oben einen Bildbereich mit denselben Buttons wie das
@@ -466,7 +498,7 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
     Bildschirme laden das Vorschaubild, Bildschirme mit hoher Pixeldichte das große Bild.
   - Löschen der Aufspannung oder des Auftrags löscht auch ihre Bilder.
 - **Automatisch abgeschlossen:** Läuft eine bestimmte Zeit lang kein Programm eines Auftrags, schließt
-  die App ihn selbst ab. Im Detail steht dann „abgeschlossen … (automatisch, ohne Programmlauf)“.
+  die App ihn selbst ab. Im Artikel-Fenster steht dann „abgeschlossen … (automatisch, ohne Programmlauf)“.
   - Die Frist steht unter **Konfiguration → Artikel**. Standard sind 7 Tage, 0 = nie automatisch.
     Eine geänderte Frist gilt sofort.
   - Gezählt wird ab dem Ende des letzten Laufs. Hat ein Auftrag noch nie ein Programm laufen
@@ -482,7 +514,7 @@ Programmnamen ohne eines dieser Schemata (z. B. `GEHAEUSE_A12.h`) zählen zu kei
 Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die Planzeit aus dem CAM
 (Tebis) schließt diese Lücke: für die Restlaufzeit, die Palettenliste und als Vergleich im Auftrag.
 
-- **Auftrag vorab anlegen:** Im Tab „Aufträge“ auf **CAM-Doku importieren** klicken und die
+- **Auftrag vorab anlegen:** In der Artikelliste oben auf **CAM-Doku importieren** klicken und die
   Tebis-Doku einer Aufspannung als PDF wählen. Mehrere Dateien auf einmal gehen auch, z. B.
   `doku_sp_1.pdf` und `doku_sp_2.pdf`.
   - Die App liest aus der Doku:
@@ -491,21 +523,21 @@ Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die 
     - den Namen der CAD-Datei. Er wird zur Bezeichnung des Auftrags, solange diese leer ist:
       „21053 abdeckung rechts 1 cvo.cad“ ergibt „Abdeckung rechts 1 cvo“.
   - Danach legt sie Aufträge bzw. Felgen an, die es noch nicht gibt, speichert die Planzeiten und
-    öffnet den Auftrag. Oben steht eine Meldung, was übernommen wurde.
+    öffnet das Fenster des ersten importierten Artikels. Oben steht eine Meldung, was übernommen wurde.
   - Programme ohne Auftrags- oder Felgennummer werden übergangen und in der Meldung genannt.
   - Ein erneuter Import, z. B. nach einer Änderung im CAM, überschreibt die Planzeiten dieser
     Programme. Eine schon vorhandene Bezeichnung bleibt.
   - War die Doku falsch benannt, lassen sich die angelegten Programme, Aufspannungen oder der ganze
-    Auftrag im Detail wieder löschen.
+    Auftrag im Artikel-Fenster wieder löschen.
   - Die PDF selbst speichert die App nicht, nur den Dateinamen als Herkunft. Höchstens 10 MB je Datei.
   - Läuft ein vorab angelegter Auftrag innerhalb der Frist nicht an, schließt die App ihn wie gewohnt. Beim ersten
     Lauf öffnet er sich wieder, die Planzeiten bleiben.
-- **Von Hand:** Im Auftrag hat jede Programmzeile die Spalte **Plan (CAM)** mit „ändern“.
+- **Von Hand:** Im Reiter Laufzeiten hat jede Programmzeile die Spalte **Plan (CAM)** mit „ändern“.
   - Eingabe in Stunden (`4,5`), als `h:mm` (`4:30`) oder `h:mm:ss`. Leer lassen entfernt die
     Planzeit.
   - Für ein Programm, das noch keine Zeile hat (z. B. eine Version ohne Tebis-Doku), gibt es unter
     den Aufspannungen das Feld „Planzeit (CAM) für ein weiteres Programm eintragen“.
-- **Im Auftrag:**
+- **Im Reiter Laufzeiten:**
   - Programme mit Planzeit stehen schon vor dem ersten Lauf in ihrer Aufspannung.
   - Hat jedes Programm einer Aufspannung eine Planzeit, steht darunter „Plan (CAM) …“. Ebenso je
     Version und in der Kachel „Ø Bearbeitungszeit je Teil“. So lassen sich Plan und Ist vergleichen.
@@ -516,16 +548,17 @@ Für ein Programm, das noch nie gelaufen ist, kennt die App keine Laufzeit. Die 
   [Restlaufzeit](#restlaufzeit-und-satzanzahl)). Die Planzeit sortiert dann nur noch Testanläufe aus,
   also Läufe unter 25 % der Planzeit.
 
-## Artikel (Tab „Artikel“)
+### Artikelliste, Rohling und Preise
 
-Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise und Produktionsdaten.
+Die Liste ist die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise und
+Produktionsdaten.
 
 - **Je Auftrag und Version ein Artikel:** `21053`, `21053V1` und `21053V2` sind drei Artikel, weil eine
   Version eine andere Ausführung des Teils ist. Eine Felge (`10101018`) ist ein Artikel.
   - **Nur Endartikel:** Ist die Grundversion nur die gemeinsame Spannung 1 der Versionen, steht sie
     nicht in der Liste.
     - Jede Version rechnet die Spannung 1 in Laufzeit je Teil und Fräsen mit („inkl. Sp. 1“).
-    - Mehr dazu unter [Aufträge → Versionen](#aufträge-tab-aufträge).
+    - Mehr dazu unter [Aufträge aus den Programmnamen](#aufträge-aus-den-programmnamen).
   - Die Artikel entstehen automatisch, sobald eine Version in Läufen oder Planzeiten vorkommt. Die
     App gleicht beim Öffnen des Tabs ab und stündlich.
   - **+ Artikel anlegen** (z. B. `21060` oder `21060V1`) legt den Auftrag mit an, falls es ihn noch
@@ -536,6 +569,7 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
   |---|---|
   | Bild | aus der letzten Spannung des Artikels (je Version eigenes), sonst Spannung 1 der Grundversion, sonst der Auftrag |
   | Bezeichnung | aus dem Auftrag |
+  | Status | „▶ Läuft“ mit Maschine, solange ein Programm des Artikels läuft (auch die übernommene Spannung 1), sonst offen/abgeschlossen |
   | Material | aus der Materialliste (Konfiguration → Artikel) |
   | Rohling (Maße) | Block L × B × H oder Rund Ø × L in mm, darunter das Gewicht in kg |
   | € je kg, Materialpreis | Preis je kg des Materials. Gewicht = Volumen × Dichte (g/cm³ = kg je Liter), Materialpreis = Gewicht × Preis je kg |
@@ -549,6 +583,7 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
   | Stück | fertige Teile (letztes Programm der letzten Aufspannung) |
   | Gesamtlaufzeit | Laufzeit aller Läufe der Version |
   | Letzte Produktion | Ende des letzten fertigen Teils |
+  | Letzte Aktivität | Datum und Uhrzeit des letzten Laufs eines Programms der Version (mit übernommener Spannung) |
 
 - **Geschätzte Werte (≈):**
   - Hat ein Programm noch keine Ø-Zeit, gilt seine CAM-Planzeit.
@@ -573,19 +608,21 @@ Die kaufmännische Sicht auf die Aufträge: je Artikel Rohling, Kosten, Preise u
     - Enter oder Verlassen der Zelle speichert.
     - Esc verwirft.
     - Tab speichert und springt zur nächsten Zelle der Zeile (Material → Rohling → EK → VK).
-- **Bearbeiten-Dialog (✎):**
-  - Felder: Material, Form, Maße, EK, VK und Notiz, alles auf einmal.
-  - Die Artikelnummer selbst öffnet den Auftrag.
-  - „Entfernen“ löscht nur diese Angaben. Hat die Version Läufe oder Planzeiten, erscheint der
-    Artikel gleich wieder, ohne die Angaben. Der Auftrag bleibt.
+- **Reiter „Rohling“ und „Preise“** im Artikel-Fenster:
+  - Rohling: Material, Form und Maße. Gewicht und Materialpreis rechnet das Fenster beim Tippen mit.
+  - Preise: EK und VK, darunter Laufzeit je Teil, Material, Fräsen, Herstellkosten und Marge.
+  - Die Notiz steht im Kopf des Fensters.
+  - „Stammdaten entfernen“ löscht nur diese Angaben. Hat die Version Läufe oder Planzeiten, erscheint
+    der Artikel gleich wieder, ohne die Angaben. Der Auftrag bleibt.
   - Wer einen Auftrag löscht, löscht auch seine Artikel.
+  - Den früheren Stift ✎ gibt es nicht mehr: Zeile anklicken, dann den Reiter wählen.
 - **Materialien:** Die Liste mit Dichte (g/cm³) und Preis je kg pflegst du unter Konfiguration →
   Artikel, z. B. Alu 7075 mit 2,81 g/cm³. Ein neuer Preis gilt sofort für alle Artikel mit diesem
   Material. Ohne Dichte gibt es kein Gewicht und keinen Materialpreis.
 - **Excel-Export:** eine Arbeitsmappe zum Weiterrechnen.
   - **Auswahl per Haken:** Jede Zeile hat links ein Kästchen, die Kopfzeile eines für alle angezeigten.
     Mit Haken exportiert „Excel-Export (n angehakt)“ genau diese Artikel. Ohne Haken exportiert er
-    alles, was die Liste zeigt, mit Status, Art (Aufträge/Felgen) und Suche. Die Haken bleiben beim
+    alles, was die Liste zeigt, mit Status, Art (Bauteile/Felgen) und Suche. Die Haken bleiben beim
     Filtern erhalten, „Auswahl aufheben“ entfernt sie. Dateiname `artikel_<Datum>.xlsx`.
   - **Aufbau:**
     - Bild des Artikels in jeder Zeile
@@ -628,8 +665,8 @@ und die Bearbeiter pflegst du unter Konfiguration → Planung.
   Notiz. Ist der Termin vorbei und die Aufgabe nicht fertig, ist sie rot als überfällig markiert.
 - **Auftragsname:** Neben der Nummer steht das Feld „Auftragsname“, also die Bezeichnung des
   Auftrags. Bei bekannter Nummer ist es vorausgefüllt, bei neuer Nummer trägt man den Namen gleich
-  mit ein. Er steht auf der Karte im Board und überall, wo der Auftrag erscheint (Aufträge,
-  Artikel, Live-Karte), und gilt für alle Versionen. Ändert man ihn hier, ändert er sich dort mit.
+  mit ein. Er steht auf der Karte im Board und überall, wo der Auftrag erscheint (Artikel,
+  Live-Karte), und gilt für alle Versionen. Ändert man ihn hier, ändert er sich dort mit.
 - **Neue Auftragsnummer:** Auftragsnummern werden fortlaufend vergeben. Trägt man an einer Aufgabe oder
   Änderung eine Nummer ein, die es noch nicht gibt (z. B. `14025` oder die Version `21053V3`), legt die
   App beim Speichern den Auftrag samt Artikel an. Der Dialog zeigt das schon beim Eintippen an.
@@ -653,9 +690,8 @@ und die Bearbeiter pflegst du unter Konfiguration → Planung.
 **Änderungsliste:** Je Artikel gibt es eigene Änderungsstände A01, A02 … Die Version 21053V1 hat eine
 eigene Liste neben 21053.
 
-- Öffnen über „+ Änderung“ im Tab Planung, über den Knopf „+ Änderung“ im Auftrag (Tab Aufträge; bei
-  Versionen je Version), über die Spalte „Änderung“ in der Artikelliste oder über die Marke
-  „Änderung A03“ auf einer Karte.
+- Öffnen über „+ Änderung“ im Tab Planung, über den Knopf „Änderungen“ im Kopf des Artikel-Fensters,
+  über die Spalte „Änderung“ in der Artikelliste oder über die Marke „Änderung A03“ auf einer Karte.
 - Im Dialog einer Aufgabe mit Artikel ist die Liste ein eigener Reiter: „Änderungsliste (2 offen)“.
   Ohne Artikelnummer an der Aufgabe ist der Reiter grau.
 - **Spannung:** Beim Anlegen und Bearbeiten wählst du „alle Aufspannungen“ oder eine bestimmte, z. B.
@@ -911,7 +947,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET/PUT /api/config/orders` | Frist bis zum automatischen Abschließen: `{"close_days": 7}`, 0 = nie |
 | `GET /api/articles?status=`, `POST /api/articles` | Artikel mit Kosten und Preisen; anlegen mit `{"key": "21060V1"}` |
 | `PUT/DELETE /api/articles/{key}` | Rohling (Material, Form, Maße), EK, VK, Notiz bzw. diese Angaben entfernen |
-| `GET /api/articles/export.xlsx?status=&kind=` | Excel-Export der Artikel (`kind`: `all`, `order` = ohne Felgen, `rim` = nur Felgen) |
+| `GET /api/articles/export.xlsx?status=&kind=` | Excel-Export der Artikel (`kind`: `all`, `order` = Bauteile ohne Felgen, `rim` = nur Felgen) |
 | `POST /api/articles/export.xlsx` | Excel-Export genau dieser Artikel: `{"keys": ["21053", "10101018"], "selection": "2 angehakte Artikel"}` |
 | `GET/POST/PUT/DELETE /api/config/materials` | Materialliste: `{"name", "density" (g/cm³), "price_per_kg"}` |
 | `GET/POST/PUT/DELETE /api/config/milestones`, `POST …/milestones/order` | Meilensteine (Spalten der Planung): `{"name", "done", "milling"}` (`milling` = Spalte für laufende Programme), Reihenfolge `{"ids": […]}` |
@@ -923,7 +959,8 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `PUT/DELETE /api/planning/changes/{id}` | Text, Bearbeiter, `setup`, `status` (`open`/`done`) bzw. entfernen |
 | `PUT /api/planning/changes/{id}/images`, `GET/DELETE /api/planning/images/{id}` | Bild zur Änderung (Upload wie beim Auftragsbild) |
 | `GET /api/export.csv?kind=intervals\|runs&from=&to=` | CSV für Excel (`;`, Dezimalkomma) |
-| `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status) |
+| `GET /api/orders?status=`, `GET/PUT /api/orders/{key}` | Aufträge (Liste, Detail, Bezeichnung/Status); `GET /api/orders/21053?version=V1` = Sicht des Artikel-Fensters (eigene und gemeinsame Aufspannungen, `shared`) |
+| `GET /api/articles/{key}` | Ein Artikel (Artikel-Fenster) mit Materialliste; 404 für eine Grundversion, die nur gemeinsame Vorstufe ist |
 | `GET /api/orders/{key}/export.csv` | Läufe eines Auftrags als CSV |
 | `POST /api/orders/import-cam` | Tebis-Doku importieren: PDF als Rumpf, Kopfzeile `X-File-Name` (URL-kodiert). Legt Aufträge an und übernimmt die Planzeiten |
 | `PUT /api/orders/{key}/plans` | Planzeit von Hand: `{"program": "26-21053-02-01", "time": "4,5"}`, leere Zeit entfernt sie |

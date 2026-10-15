@@ -17,9 +17,11 @@ from dataclasses import dataclass, field
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import BUILD, __version__, api, articles, articles_api, config_api, orders, orders_api, planning_api, tools_api
@@ -166,6 +168,14 @@ def create_app(settings: Settings | None = None, run_collectors: bool = True) ->
     app.include_router(articles_api.router)
     app.include_router(planning_api.router)
     app.include_router(tools_api.router)
+
+    @app.get("/auftraege.html", include_in_schema=False)
+    def old_orders_tab(request: Request, order: str | None = None) -> RedirectResponse:
+        """Den Tab „Aufträge“ gibt es seit 1.35.0 nicht mehr: alte Lesezeichen (``?order=21053``) führen
+        zum Artikel bzw. zur Artikelliste mit Suche nach der Nummer."""
+        target = f"artikel.html?article={quote(order.strip())}" if order and order.strip() else "artikel.html"
+        return RedirectResponse(target, status_code=302)
+
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
 

@@ -13,7 +13,7 @@ from app.main import create_app
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "app" / "static"
-PAGES = ["index.html", "auswertung.html", "auftraege.html", "werkzeuge.html", "konfiguration.html"]
+PAGES = ["index.html", "auswertung.html", "artikel.html", "planung.html", "werkzeuge.html", "konfiguration.html"]
 ICON_URL = re.compile(r"https://raw\.githubusercontent\.com/Bademeister89/ld-maschinenlaufzeit/main/(\S+?\.png)")
 
 

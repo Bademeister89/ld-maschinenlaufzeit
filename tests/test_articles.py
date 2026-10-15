@@ -358,7 +358,7 @@ def test_excel_export_with_or_without_rims(client):
     disposition, rows = keys("all")
     assert rows == ["10101018", "21055"] and 'filename="artikel_' in disposition
     disposition, rows = keys("order")
-    assert rows == ["21055"] and 'filename="artikel_ohne_felgen_' in disposition
+    assert rows == ["21055"] and 'filename="bauteile_' in disposition
     disposition, rows = keys("rim")
     assert rows == ["10101018"] and 'filename="felgen_' in disposition
     assert client.get("/api/articles/export.xlsx", params={"kind": "x"}).status_code == 422

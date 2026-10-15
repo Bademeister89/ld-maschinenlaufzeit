@@ -87,6 +87,10 @@ function orderText(o) {
   return `Auftrag ${o.order}${version} · Aufspannung ${o.setup} · Programm ${String(o.program).padStart(2, "0")}`;
 }
 
+/** Artikel-Fenster zum Programm (Auftrag mit Version bzw. Felge). Gibt es zur Nummer keinen eigenen
+ *  Artikel (gemeinsame Vorstufe der Versionen), zeigt die Artikelliste alle Versionen. */
+const articleHref = (o) => `artikel.html?article=${encodeURIComponent(o.kind === "rim" ? o.key : `${o.key}${o.version ?? ""}`)}`;
+
 /** Bild im Programmfeld: das der laufenden Aufspannung (Spannsituation), sonst das des Bauteils zum
  * Auftrag (falls hinterlegt); ebenfalls wiederverwendet. */
 function orderThumbFor(c, m) {
@@ -100,7 +104,7 @@ function orderThumbFor(c, m) {
     // Der Link daneben führt schon zum Auftrag: Bild nur für die Maus, nicht doppelt für Tastatur/Screenreader
     c.orderThumb = el(
       "a",
-      { class: "program-image", href: `auftraege.html?order=${encodeURIComponent(o.key)}`, tabindex: "-1", "aria-hidden": "true", title: `${what} – ${orderText(o)}` },
+      { class: "program-image", href: articleHref(o), tabindex: "-1", "aria-hidden": "true", title: `${what} – ${orderText(o)}` },
       // So groß wie das Maschinenbild (200 px): das Vorschaubild (256 px) reicht für normale Bildschirme,
       // bei hoher Pixeldichte (Handy, Tablet) nimmt der Browser das große Bild
       el("img", {
@@ -581,7 +585,7 @@ function renderLive(m, now) {
           m.order
             ? el(
                 "a",
-                { class: "order-link", href: `auftraege.html?order=${encodeURIComponent(m.order.key)}` },
+                { class: "order-link", href: articleHref(m.order) },
                 orderText(m.order),
               )
             : null,

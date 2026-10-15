@@ -10,6 +10,37 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.35.0] – 2026-10-15
+
+### Neu
+- **Artikel-Fenster:** Ein Klick auf eine Zeile oder die Artikelnummer in der Artikelliste öffnet ein
+  Fenster mit den Reitern **Laufzeiten**, **Rohling** und **Preise**. „Stückliste“ steht schon grau
+  in der Leiste und kommt später.
+  - Kopf: Auftragsname (alle Versionen), Notiz, Bild des Bauteils, Status mit laufender Maschine und
+    Restlaufzeit, „Änderungen“, Abschließen, CSV Läufe und Löschen. Abschließen, CSV und Löschen
+    gelten für den ganzen Auftrag und sind bei Versionen so beschriftet.
+  - **Laufzeiten** ist das bisherige Auftragsdetail: Kacheln, Aufspannungen mit Programmen, Ø-Zeit,
+    Planzeiten, Bilder je Aufspannung, Laufzeit je Tag, Programmdurchläufe, Löschen.
+  - **Bei einer Version** (z. B. 21053V1) nur ihre eigenen Aufspannungen. Die gemeinsame Spannung 1
+    und die Vorrichtung der Grundversion stehen darunter, deutlich als „gemeinsam mit V2“ markiert:
+    Planzeit, Ø zurücksetzen, Löschen und Bild wirken dort auf alle Versionen. Läufe dieser
+    Aufspannungen tragen „gemeinsam“.
+  - Direktlink `artikel.html?article=21053V1&tab=preise`; die Live-Karte verlinkt auf den Artikel.
+- Artikelliste: neue Spalten **Status** („▶ Läuft“ mit Maschine, sonst offen/abgeschlossen) und
+  **Letzte Aktivität** (Datum und Uhrzeit des letzten Laufs).
+- **CAM-Doku importieren** steht jetzt in der Artikelliste neben „+ Artikel anlegen“. Nach dem Import
+  öffnet sich das Fenster des ersten importierten Artikels.
+
+### Geändert
+- **Der Tab „Aufträge“ entfällt.** Alte Lesezeichen (`auftraege.html?order=21053`) führen zum Artikel.
+  Gibt es zu einer Nummer keinen eigenen Artikel (gemeinsame Vorstufe der Versionen), zeigt die
+  Artikelliste alle Artikel dieser Nummer.
+- Der Art-Umschalter heißt **Alle | Bauteile | Felgen**. Der Excel-Export „Nur Bauteile (ohne
+  Felgen)“ heißt jetzt `bauteile_<Datum>.xlsx`.
+- Den Stift ✎ und den Dialog „Artikel bearbeiten“ gibt es nicht mehr: Rohling und Preise stehen im
+  Fenster, die Notiz in seinem Kopf. Material, Rohling, EK und VK lassen sich weiter direkt in der
+  Zelle ändern.
+
 ## [1.34.0] – 2026-10-15
 
 ### Neu

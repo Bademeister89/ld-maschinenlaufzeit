@@ -152,6 +152,52 @@ def test_versions_belong_to_the_base_order(db, make_collector):
     assert [s["version"] for s in detail["setups"]] == ["", "V1", "V2", "V2"]
 
 
+def test_article_window_shows_the_version_with_its_shared_setups(db, make_collector):
+    """Artikel-Fenster 21054V1: eigene Spannung 2 und – als gemeinsam markiert – Spannung 1 und die
+    Vorrichtung der Grundversion. Läufe der gemeinsamen Spannung sind gekennzeichnet, Kacheln gelten für
+    die eigenen Aufspannungen."""
+    c = make_collector()
+    t = run_part(c, 0, "TNC:\\AUFTRAG\\26-21054-01-01.H", 300)  # gemeinsame Vorstufe
+    t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21054-08-01.H", 900)  # Vorrichtung
+    t = run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21054V1-02-01.H", 200)
+    run_part(c, t + 10, "TNC:\\AUFTRAG\\26-21054V2-02-01.H", 100)
+    v1 = orders.article_detail(db, "21054", TZ, "V1")
+    assert [(s["version"], s["setup"]) for s in v1["setups"]] == [("V1", 2), ("", 1), ("", 8)]
+    assert [(s["setup"], s["shared_with"]) for s in v1["shared"]] == [(1, ["V1", "V2"]), (8, ["V1", "V2"])]
+    assert [(r["program"].split("\\")[-1], r["shared"]) for r in v1["runs"]] == [
+        ("26-21054-01-01.H", True), ("26-21054-08-01.H", True), ("26-21054V1-02-01.H", False),
+    ]
+    t = v1["totals"]
+    assert (t["running_s"], t["shared_running_s"], t["parts"], t["part_run_s"]) == (200, 1200, 1, 500)  # inkl. Spannung 1
+    assert sum(d["running_s"] for d in v1["days"]) == 1400  # Laufzeit je Tag: eigene und gemeinsame
+    assert v1["all_versions"] == ["", "V1", "V2"]
+    # Ohne Versionen bleibt alles beim Alten
+    run_part(c, 10_000, P11, 50)
+    plain = orders.article_detail(db, "21055", TZ, "")
+    assert (plain["shared"], [s["setup"] for s in plain["setups"]]) == ([], [1])
+
+
+def test_api_article_window(tmp_path):
+    settings = Settings(machines=(MachineConfig("m1", "DMG 1", "10.0.0.1"),), db_path=tmp_path / "a.db", simulate=True)
+    app = create_app(settings, run_collectors=False)
+    with TestClient(app) as client:
+        col = app.state.ctx.collectors["m1"]
+        t = run_part(col, 1000, "TNC:\\AUFTRAG\\26-21054-01-01.H", 300)
+        t = run_part(col, t + 10, "TNC:\\AUFTRAG\\26-21054V1-02-01.H", 200)
+        feed(col, (t + 10, snap("IDLE", "TNC:\\AUFTRAG\\26-21054-01-01.H")), (t + 20, snap("STARTED", "TNC:\\AUFTRAG\\26-21054-01-01.H")))
+        detail = client.get("/api/orders/21054", params={"version": "v1"}).json()
+        assert (detail["version"], [s["setup"] for s in detail["shared"]]) == ("V1", [1])
+        assert [a["program"] for a in detail["active"]] == ["26-21054-01-01"]  # läuft die gemeinsame Spannung
+        assert client.get("/api/orders/21054", params={"version": "x"}).status_code == 422
+        article = client.get("/api/articles/21054v1").json()
+        assert (article["article"]["key"], "materials" in article) == ("21054V1", True)
+        assert article["article"]["active"][0]["machine"] == "DMG 1"
+        assert article["article"]["last_activity"] == t + 20
+        # Grundversion als gemeinsame Vorstufe: kein eigener Artikel, die Seite zeigt dann die Liste
+        assert client.get("/api/articles/21054").status_code == 404
+        assert client.get("/api/articles/export.xlsx").status_code == 200  # nicht vom Einzelabruf geschluckt
+
+
 def test_year_in_the_program_name_does_not_split_the_order(db, make_collector):
     """DMU 70, 7.10.: 21-21053v1-02-01 (Jahr 21) gehört wie 26-21053-01-01 zum Auftrag 21053."""
     c = make_collector()
@@ -675,7 +721,15 @@ def test_order_without_runs_closes_7_days_after_creation(db, make_collector):
 def test_meta_has_version_and_page(client):
     assert client.get("/api/meta").json()["version"]
     assert client.get("/api/config").json()["settings"]["version"]
-    assert "Aufträge" in client.get("/auftraege.html").text
+    assert "Artikel" in client.get("/artikel.html").text
+
+
+def test_old_orders_tab_redirects_to_the_article(client):
+    """Den Tab „Aufträge“ gibt es nicht mehr: Alte Lesezeichen führen zum Artikel-Fenster (bzw. zur Liste)."""
+    r = client.get("/auftraege.html", params={"status": "all", "order": "21053"}, follow_redirects=False)
+    assert (r.status_code, r.headers["location"]) == (302, "artikel.html?article=21053")
+    assert client.get("/auftraege.html", follow_redirects=False).headers["location"] == "artikel.html"
+    assert client.get("/auftraege.html").status_code == 200  # landet auf der Artikelseite
 
 
 # --- Simulation --------------------------------------------------------------------------

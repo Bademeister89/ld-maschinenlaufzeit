@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import Response
 
-from . import articles
+from . import articles, orders
+from .orders_api import active_orders
 
 if TYPE_CHECKING:
     from .main import AppContext
@@ -29,13 +30,20 @@ def _ctx(request: Request) -> AppContext:
 
 
 def _rows(
-    ctx: AppContext, status: str, thumbs: dict[str, bytes] | None = None, kind: str = "all"
+    ctx: AppContext, status: str, thumbs: dict[str, bytes] | None = None, kind: str = "all", order_key: str | None = None
 ) -> list[dict[str, Any]]:
-    """Artikel mit Bild-Adressen, auf Wunsch nur Aufträge (``order``) oder Felgen (``rim``); ``thumbs``
-    (falls übergeben) bekommt je Artikel das Vorschaubild als JPEG für den Excel-Export."""
+    """Artikel mit Bild-Adressen, auf Wunsch nur Bauteile (``order``) oder Felgen (``rim``); ``thumbs``
+    (falls übergeben) bekommt je Artikel das Vorschaubild als JPEG für den Excel-Export. ``active``: An
+    welcher Maschine läuft gerade ein Programm des Artikels (auch eine übernommene Spannung)?"""
     files = ctx.order_images.files()
-    rows = [r for r in articles.list_articles(ctx.db, ctx.tz, status) if kind == "all" or r["kind"] == kind]
+    rows = [r for r in articles.list_articles(ctx.db, ctx.tz, status, order_key) if kind == "all" or r["kind"] == kind]
+    running = active_orders(ctx)
     for row in rows:
+        row["active"] = [
+            {"machine": a["machine"], "state": a["state"], "program": a["program"]}
+            for a in running.get(row["order_key"], [])
+            if _runs_for(row, a["program"])
+        ]
         # Bild der Spannung (je Version das eigene), sonst das Bild des Auftrags
         image = row.pop("image")
         setup = row.pop("setup_image")
@@ -52,6 +60,12 @@ def _rows(
             except OSError:
                 pass  # Bild fehlt: Zeile ohne Bild
     return rows
+
+
+def _runs_for(row: dict[str, Any], program: str) -> bool:
+    """Gehört das laufende Programm zum Artikel? Eigene Version oder übernommene Spannung der Grundversion."""
+    version, setup = orders.setup_of(program)
+    return version == row["version"] or (version == "" and setup in row["inherited"])
 
 
 @router.get("")
@@ -137,7 +151,7 @@ def update_article(request: Request, key: str, payload: dict[str, Any] = Body(..
     except articles.ArticleError as exc:
         raise HTTPException(400, str(exc)) from None
     ctx.db.update_article(key, fields, time.time())
-    return next((r for r in _rows(ctx, "all") if r["key"] == key), {"key": key})
+    return next((r for r in _rows(ctx, "all", order_key=current["order_key"]) if r["key"] == key), {"key": key})
 
 
 @router.delete("/{key}", status_code=204)
@@ -149,3 +163,20 @@ def delete_article(request: Request, key: str) -> Response:
         raise HTTPException(404, f"Unbekannter Artikel: {key}")
     log.info("Artikel %s entfernt", key)
     return Response(status_code=204)
+
+
+# nach /export.xlsx, sonst finge /{key} den Export ab
+@router.get("/{key}")
+def get_article(request: Request, key: str) -> dict[str, Any]:
+    """Ein Artikel (Artikel-Fenster: Kopf, Rohling, Preise) mit der Materialliste. 404 auch für die
+    Grundversion, die nur gemeinsame Vorstufe ihrer Versionen ist (kein eigener Artikel)."""
+    ctx = _ctx(request)
+    try:
+        order_key, version, _ = articles.parse_key(key)
+    except articles.ArticleError as exc:
+        raise HTTPException(404, str(exc)) from None
+    key = articles.article_key(order_key, version)
+    row = next((r for r in _rows(ctx, "all", order_key=order_key) if r["key"] == key), None)
+    if row is None:
+        raise HTTPException(404, f"Unbekannter Artikel: {key}")
+    return {"article": row, "materials": ctx.db.materials()}

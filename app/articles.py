@@ -273,6 +273,8 @@ def _version_row(
     inherited = set((version or {}).get("inherited", []))
     shared = [s for s in (base or {}).get("setups", []) if not s["fixture"] and s["setup"] in inherited]
     programs = [p for s in shared + setups for p in s["programs"]]
+    # Letzte Aktivität: letzter Laufbeginn eines Programms der Version (mit übernommener Spannung)
+    last_run = max((p["last_run"] for p in programs if p["last_run"]), default=None)
     part_s: float | None = 0.0 if programs else None
     part_estimated = False
     mill: float | None = 0.0 if programs else None
@@ -310,6 +312,7 @@ def _version_row(
         "parts": (version or {}).get("parts", 0),
         "running_s": (version or {}).get("running_s", 0.0),
         "last_production": last,
+        "last_activity": last_run,
     }
 
 
@@ -338,10 +341,11 @@ def _change_info(row: dict[str, Any] | None) -> dict[str, Any] | None:
     return {"label": planning.change_label(row["number"]), "open": row["open"] or 0}
 
 
-def list_articles(db: Database, tz: ZoneInfo, status: str = "all") -> list[dict[str, Any]]:
-    """Alle Artikel mit Rohling, Kosten, Preisen und Produktionsdaten (je Auftrag einmal ausgewertet)."""
+def list_articles(db: Database, tz: ZoneInfo, status: str = "all", order_key: str | None = None) -> list[dict[str, Any]]:
+    """Alle Artikel mit Rohling, Kosten, Preisen und Produktionsdaten (je Auftrag einmal ausgewertet);
+    mit ``order_key`` nur die Artikel dieses Auftrags (Artikel-Fenster)."""
     sync(db)
-    order_rows = {o["key"]: o for o in db.orders(status)}
+    order_rows = {o["key"]: o for o in db.orders(status) if order_key is None or o["key"] == order_key}
     materials = {m["id"]: m for m in db.materials()}
     machines = db.machines(include_removed=True)
     changes = db.latest_changes()
@@ -428,7 +432,7 @@ THUMB_PX = (96, 72)  # Vorschaubild in der Tabelle (4:3)
 SHAPE_NAMES = {"block": "Block", "round": "Rund"}
 # Auswahl beim Export: Art → (Beschriftung, Anfang des Dateinamens)
 EXPORT_KINDS = {
-    "order": ("Nur Artikel (ohne Felgen)", "artikel_ohne_felgen"),
+    "order": ("Nur Bauteile (ohne Felgen)", "bauteile"),
     "all": ("Artikel und Felgen", "artikel"),
     "rim": ("Nur Felgen", "felgen"),
 }

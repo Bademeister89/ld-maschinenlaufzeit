@@ -35,7 +35,7 @@ def _ctx(request: Request) -> AppContext:
     return request.app.state.ctx
 
 
-def _active(ctx: AppContext) -> dict[str, list[dict[str, Any]]]:
+def active_orders(ctx: AppContext) -> dict[str, list[dict[str, Any]]]:
     """Welche Aufträge laufen gerade auf welcher Maschine (live)?"""
     active: dict[str, list[dict[str, Any]]] = {}
     for collector in ctx.manager.ordered_collectors():
@@ -57,7 +57,7 @@ def _active(ctx: AppContext) -> dict[str, list[dict[str, Any]]]:
 @router.get("")
 def list_orders(request: Request, status: str = Query("all", pattern="^(all|open|closed)$")) -> dict[str, Any]:
     ctx = _ctx(request)
-    active = _active(ctx)
+    active = active_orders(ctx)
     files = ctx.order_images.files()
     rows = [ctx.order_images.public(row, files) for row in orders.list_orders(ctx.db, status)]
     for row in rows:
@@ -66,9 +66,16 @@ def list_orders(request: Request, status: str = Query("all", pattern="^(all|open
 
 
 @router.get("/{key}")
-def order_detail(request: Request, key: str) -> dict[str, Any]:
+def order_detail(
+    request: Request, key: str, version: str | None = Query(None, pattern="^([Vv][0-9]{1,2})?$")
+) -> dict[str, Any]:
+    """Ganzer Auftrag; mit ``version`` (``V1``, leer = Grundversion) nur die Sicht des Artikel-Fensters
+    dieser Version samt der gemeinsam benutzten Aufspannungen der Grundversion (``orders.article_detail``)."""
     ctx = _ctx(request)
-    detail = orders.order_detail(ctx.db, key, ctx.tz)
+    if version is None:
+        detail = orders.order_detail(ctx.db, key, ctx.tz)
+    else:
+        detail = orders.article_detail(ctx.db, key, ctx.tz, version.upper())
     if detail is None:
         raise HTTPException(404, f"Unbekannter Auftrag: {key}")
     detail["order"] = ctx.order_images.public(detail["order"])
@@ -76,7 +83,12 @@ def order_detail(request: Request, key: str) -> dict[str, Any]:
     for setup in detail["setups"]:  # dieselben Einträge wie in detail["versions"]
         image = images.get((setup["version"], setup["setup"]))
         setup.update(ctx.order_images.setup_urls(key, setup["version"], setup["setup"], image, files))
-    detail["active"] = _active(ctx).get(key, [])
+    active = active_orders(ctx).get(key, [])
+    if version is not None:
+        # Nur Programme, die das Fenster zeigt (eigene und gemeinsame Aufspannungen)
+        window = {(s["version"], s["setup"]) for s in detail["setups"]}
+        active = [a for a in active if orders.setup_of(a["program"]) in window]
+    detail["active"] = active
     detail["changes"] = planning.order_changes(ctx.db, key)
     detail["now"] = time.time()
     return detail
