@@ -51,6 +51,8 @@ mitschnitt_*.csv     Je Maschine jede Änderung der Steuerungsdaten seit dem Sta
 laeufe.csv           Programmläufe mit Ergebnis und dem Programmstatus am Ende bzw. danach
 zustaende.csv        Zustandsabschnitte (Läuft, Gestoppt, Bereit …) mit Programmstatus
 ereignisse.csv       Ereignisse (Verbindung, Werkzeugwechsel, NC-Fehler, Aufträge …)
+                     pallet_line: Satz der Steuerung beim Palettenwechsel mit dem Inhalt dieser Zeile
+                     der Palettentabelle (Prüfung der Palettenerkennung)
 programmdateien.csv  Gelesene Programmdateien mit Satzanzahl, aufgerufenen Programmen und Fehlern
 planzeiten.csv       CAM-Planzeiten je Programm (Quelle pdf = Tebis-Doku, manual = von Hand)
 paletten/            Palettentabellen (.P) je Maschine, wie zuletzt von der Steuerung gelesen

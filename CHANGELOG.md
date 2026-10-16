@@ -10,6 +10,18 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.36.1] – 2026-10-16
+
+### Geändert
+- **Diagnose Palettenprogramm:** Beim Palettenwechsel (und wenn die Steuerung die Palettentabelle
+  selbst abarbeitet) wird der Satz der Steuerung aufgezeichnet, zusammen mit dem Inhalt dieser
+  Zeile der Tabelle: als Ereignis `pallet_line` (in `ereignisse.csv` der Diagnose-Datei) und im
+  Log, z. B. „Satz 18 → Zeile 18: PAL 7“. Damit lässt sich prüfen, ob die Steuerung so die Palette
+  verrät, bei der jemand eingestiegen ist. Hintergrund: DMU 70, 15.10., Einstieg bei Palette 7 von
+  pal1sp.p, die Live-Karte zeigte Palette 1. An der Oberfläche ändert sich nichts.
+- Der Mitschnitt in der Diagnose-Datei hat während eines Palettenwechsels bei jedem neuen Satz eine
+  Zeile.
+
 ## [1.36.0] – 2026-10-16
 
 ### Neu

@@ -47,7 +47,7 @@ from .articles import article_key
 from .config import MachineConfig
 from .db import Database
 from .forecast import Forecaster
-from .nc_program import PalletEntry, call_name, pallet_entries
+from .nc_program import PalletEntry, call_name, pallet_entries, table_row
 from .orders import parse_program
 from .state import MANUAL_MODES, RUN_ACTIVE_STATES, MachineState, classify, run_result
 from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, is_call, parse_tool, spindle_number
@@ -158,6 +158,8 @@ def production_streak(
 # längeres Bereit trennt zwei Durchgänge (zwischen den Paletten meldet die Steuerung nur Sekunden)
 PALLET_LOOKBACK_S = 7 * 86_400
 PALLET_PAUSE_S = 300
+# Diagnose: Satz der Steuerung beim Palettenwechsel (Ereignis pallet_line), höchstens so viele je Stunde
+PALLET_LINE_MAX_PER_HOUR = 120
 
 
 @dataclass
@@ -200,6 +202,17 @@ class _Ended:
     program: str | None
     ended_at: float
     last_line: int | None
+
+
+def _pallet_table_phase(raw: Snapshot) -> bool:
+    """Arbeitet die Steuerung gerade die Palettentabelle selbst ab (Palettenwechsel per PLC-Makro,
+    Übergang zwischen zwei Zeilen)? Dann ist ``line_no`` womöglich die Zeile der Tabelle."""
+    table, current = raw.program or "", raw.current_program or ""
+    return (
+        table.upper().endswith(".P")
+        and raw.exec_mode not in MANUAL_MODES
+        and (not current or current == table or current.upper().startswith("PLC:"))
+    )
 
 
 @dataclass
@@ -290,6 +303,9 @@ class MachineCollector:
         self._raw: deque[dict[str, Any]] = deque(maxlen=RAW_LOG_KEEP)
         self._raw_key: tuple[Any, ...] | None = None
         self._raw_last: Snapshot | None = None
+        self._pallet_line_key: tuple[Any, ...] | None = None  # zuletzt aufgezeichneter Satz beim Wechsel
+        self._pallet_line_hour = -1
+        self._pallet_line_count = 0
         self.started_at = clock()
 
     def _load_open_run(self) -> _Run | None:
@@ -391,7 +407,11 @@ class MachineCollector:
         key = (
             (state.value, reason)
             if raw is None
-            else (raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors, state.value)
+            else (
+                raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors, state.value,
+                # beim Palettenwechsel auch jeder neue Satz (Prüfung der Palettenerkennung)
+                raw.line_no if _pallet_table_phase(raw) else None,
+            )
         )
         if key != self._raw_key:
             self._activity_at = now
@@ -885,6 +905,7 @@ class MachineCollector:
             if p is not None:
                 p.entry_observed = False  # Lücke: diese Zeile nicht messen
             return
+        self._log_pallet_line(raw, state, now)
         table = raw.program
         if not table or not table.upper().endswith(".P"):
             self._pallet = None
@@ -934,6 +955,41 @@ class MachineCollector:
         observed = self._start_seen(now)
         p.pos, p.entry_run_s, p.entry_observed = index, 0.0, observed
         p.started[index] = (now, observed)
+
+    def _log_pallet_line(self, raw: Snapshot, state: MachineState, now: float) -> None:
+        """Diagnose: Satz der Steuerung, solange sie die Palettentabelle selbst abarbeitet bzw. die
+        Palette wechselt – als Ereignis und im Log, mit dem Inhalt dieser Zeile der Tabelle. Prüft, ob
+        der Satz die Zeile der Tabelle ist (DMU 70, 15.10.: Einstieg bei Palette 7 von pal1sp.p mit
+        zehnmal demselben Programm, die Live-Karte zeigte Palette 1)."""
+        if not _pallet_table_phase(raw):
+            self._pallet_line_key = None
+            return
+        table, current = raw.program or "", raw.current_program or None
+        key = (table, current, raw.line_no, raw.pgm_state)
+        if key == self._pallet_line_key:
+            return
+        self._pallet_line_key = key
+        hour = int(now // 3600)
+        if hour != self._pallet_line_hour:
+            self._pallet_line_hour, self._pallet_line_count = hour, 0
+        self._pallet_line_count += 1
+        if self._pallet_line_count > PALLET_LINE_MAX_PER_HOUR:
+            if self._pallet_line_count == PALLET_LINE_MAX_PER_HOUR + 1:
+                log.warning("%s: mehr als %d Sätze beim Palettenwechsel in dieser Stunde – Aufzeichnung pausiert",
+                            self.machine.name, PALLET_LINE_MAX_PER_HOUR)
+            return
+        row = self._program_row(table)
+        found = table_row(row["content"], raw.line_no) if row and row["content"] and raw.line_no is not None else None
+        payload: dict[str, Any] = {
+            "table": table, "current": current, "line": raw.line_no, "pgm_state": raw.pgm_state, "state": state.value,
+        }
+        if found:
+            payload["row_type"], payload["row_name"] = found
+        self._db.add_event(self.machine.id, now, "pallet_line", payload)
+        log.info(
+            "%s: Palettentabelle %s – %s, Satz %s%s", self.machine.name, table, current or "kein Programm",
+            raw.line_no, f" → Zeile {raw.line_no}: {found[0]} {found[1]}".rstrip() if found else "",
+        )
 
     def _recover_pallet(self, p: _PalletRun, entries: tuple[PalletEntry, ...], now: float) -> None:
         """Die App kam mitten in ein laufendes Palettenprogramm (Neustart, Update): Die Läufe dieses

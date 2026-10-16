@@ -7,7 +7,7 @@ import pytest
 
 from app.collector import MachineCollector
 from app.db import SCHEMA_VERSION, Database
-from app.nc_program import PalletEntry, ProgramFile, pallet_entries, program_calls
+from app.nc_program import PalletEntry, ProgramFile, pallet_entries, program_calls, table_row
 
 from .conftest import MACHINE, NullAdapter, feed, snap
 
@@ -414,3 +414,61 @@ def test_real_pallet_table_of_the_dmu_70():
         ("0", "Dreh.h", False), ("0", "P-Ende.h", False),
     ]
     assert program_calls("TNC:\\pal2sp.p", REAL_TABLE) == ("8", "26-21051-02-01", "DREH", "9", "10", "0", "P-ENDE")
+
+
+# --- Diagnose 1.36.1: Satz der Steuerung beim Palettenwechsel ---------------------------------
+
+
+def pallet_lines(db):
+    rows = [e for e in db.events(0, 1e12, "m1", limit=10_000) if e["type"] == "pallet_line"]
+    return [e["payload"] for e in reversed(rows)]
+
+
+def test_table_row_counts_like_the_control():
+    text = table([("PAL", "1"), ("FIX", "SPANNER"), ("PGM", ORDER), ("PAL", "0"), ("PGM", "P-ENDE.H")])
+    assert table_row(text, 0) == ("PAL", "1")
+    assert table_row(text, 1) == ("FIX", "SPANNER")
+    assert table_row(text, 2) == ("PGM", ORDER)
+    assert table_row(text, 4) == ("PGM", "P-ENDE.H")
+    assert table_row(text, 5) is None
+    assert table_row(REAL_TABLE, 3) == ("PAL", "9")  # Tabelle von der DMU 70 (Spalte PAL/PGM)
+
+
+def test_pallet_change_records_the_line_once(db, make_collector):
+    """DMU 70, 15.10.: Einstieg bei Palette 7 von pal1sp.p, die Live-Karte zeigte Palette 1. Ist der
+    Satz während des Palettenwechsels die Zeile der Tabelle? Bis zur Klärung wird er aufgezeichnet."""
+    c = make_collector()
+    text = table(FIELD_ROWS)
+    db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+    feed(
+        c,
+        (0, pal("IDLE", None, 0)),  # angewählt
+        (10, pal("STARTED", MACRO, 3)),  # Palette 2 einwechseln
+        (12, pal("STARTED", MACRO, 3)),  # gleicher Satz: kein zweiter Eintrag
+        (14, pal("STARTED", MACRO, 3)),
+        (70, pal("STARTED", ORDER, 15)),  # Auftragsprogramm: kein Eintrag
+        (90, pal("STARTED", ORDER, 900)),
+        (900, pal("STARTED", MACRO, 6)),  # Palette 3
+        (960, snap("IDLE", TABLE, exec_mode="MANUAL", current_program=MACRO, line_no=7)),  # Handbetrieb
+    )
+    lines = pallet_lines(db)
+    assert [(x["current"], x["line"], x.get("row_type"), x.get("row_name")) for x in lines] == [
+        (None, 0, "PAL", "1"),
+        (MACRO, 3, "PAL", "2"),
+        (MACRO, 6, "PAL", "3"),
+    ]
+    assert lines[1]["pgm_state"] == "STARTED" and lines[1]["state"] == "RUNNING" and lines[1]["table"] == TABLE
+    # Mitschnitt: auch ein neuer Satz allein während des Wechsels gibt eine Zeile
+    raw = [r for r in c.raw_log() if r["current_program"] == MACRO]
+    assert [r["line_no"] for r in raw] == [3, 6, 7]
+
+
+def test_pallet_line_without_read_table_and_limit_per_hour(db, make_collector, caplog):
+    c = make_collector()
+    feed(c, (0, pal("STARTED", MACRO, 18)))  # Tabelle noch nicht gelesen: nur der Satz
+    assert pallet_lines(db) == [{"table": TABLE, "current": MACRO, "line": 18, "pgm_state": "STARTED", "state": "RUNNING"}]
+    feed(c, *((1 + i, pal("STARTED", MACRO, i % 2)) for i in range(200)))
+    assert len(pallet_lines(db)) == 120  # höchstens 120 je Stunde
+    assert "Aufzeichnung pausiert" in caplog.text
+    feed(c, (3600, pal("STARTED", MACRO, 5)))  # neue Stunde
+    assert pallet_lines(db)[-1]["line"] == 5
