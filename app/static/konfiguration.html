@@ -228,6 +228,11 @@
         <label class="form-field">Standort / Notiz
           <input type="text" id="f-note" maxlength="200" autocomplete="off" placeholder="z. B. Halle 2, Baujahr 2016">
         </label>
+        <label class="form-field">Pausengrenze der Produktionszeit in Minuten
+          <input type="number" id="f-pause" min="1" max="120" step="1" inputmode="numeric" autocomplete="off" placeholder="2" class="slots-input">
+          <span class="field-hint">Live-Karte: Läuft so lange kein Programm (Bereit, Handbetrieb), beginnt die Produktionszeit
+            von vorn. Kürzere Pausen und NC-Stopps zählen mit und stehen orange bzw. rot darunter. Standard 2 min.</span>
+        </label>
         <label class="form-field">Stundensatz in €/h (optional)
           <input type="text" id="f-rate" inputmode="decimal" autocomplete="off" placeholder="z. B. 85 oder 92,50" class="slots-input">
           <span class="field-hint">Für den Preis Fräsen im Tab Artikel: Laufzeit je Teil × Stundensatz der Maschine.</span>

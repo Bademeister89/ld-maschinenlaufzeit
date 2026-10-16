@@ -23,6 +23,9 @@
   --st-offline: #898781;
   --st-unknown: #b4b2a9;
   --st-nodata: #d9d7cf;
+  /* Stopps und Pausen in der Produktionszeit (weiße Schrift) */
+  --loss-stop: #c62828;
+  --loss-pause: #c25400;
 
   --radius: 10px;
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -430,22 +433,27 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 .mc-status-duration { font-size: 22px; font-weight: 700; }
 .mc-status-since { font-size: 13px; font-weight: 600; opacity: 0.92; }
 .mc-status-pause { font-size: 12px; font-weight: 600; opacity: 0.85; }
-/* Zeitstreifen der Produktion: über die ganze Breite unten im Statusbalken */
-.mc-status.has-streak { padding-bottom: 12px; }
-.streak-bar {
-  flex-basis: 100%;
-  position: relative;
-  height: 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.28);
-  overflow: hidden;
+/* Stopps (rot) und Pausen (orange) in der Produktionszeit: auf Grün und Gelb gut zu sehen, immer
+   mit Text – nie Farbe allein */
+.losses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 4px 6px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
 }
-.streak-seg { position: absolute; top: 0; bottom: 0; }
-.streak-seg.run { background: rgba(255, 255, 255, 0.9); }
-.streak-seg.stop { background: var(--st-stopped); }
-.mc-status.st-STOPPED .streak-bar { background: rgba(0, 0, 0, 0.16); }
-.mc-status.st-STOPPED .streak-seg.run { background: color-mix(in srgb, var(--st-running) 85%, #000); }
-.mc-status.st-STOPPED .streak-seg.stop { background: rgba(26, 26, 25, 0.75); }
+.loss {
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.loss.stop { background: var(--loss-stop); }
+.loss.pause { background: var(--loss-pause); }
 
 .mc-message { margin: 0; color: var(--ink-2); }
 
@@ -460,8 +468,7 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 
 .program-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
 .program-name { font-weight: 650; font-size: 18px; overflow-wrap: anywhere; }
-.program-run { display: grid; justify-items: end; font-size: 13px; font-weight: 600; color: var(--ink-2); }
-.program-resumed { font-weight: 500; color: var(--muted); }
+.program-resumed { font-size: 13px; font-weight: 500; color: var(--muted); }
 .program-path { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .program .order-link { margin-top: 2px; }
 .program-text { display: grid; gap: 4px; min-width: 0; }

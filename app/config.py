@@ -40,6 +40,12 @@ class MachineConfig:
     check_host: str = ""  # Prüfadresse am Standort (z. B. Router vor Ort), optional
     tool_slots: int | None = None  # Werkzeugplätze im Magazin (Top-Werkzeuge nach Aufrufen), optional
     hourly_rate: float | None = None  # Stundensatz in €/h (Preis Fräsen der Artikel), optional
+    # Pausengrenze der Produktionszeit (Live-Karte): so lange ohne Programmlauf beginnt sie von vorn
+    pause_limit_min: int = 2
+
+    @property
+    def pause_limit_s(self) -> float:
+        return self.pause_limit_min * 60.0
 
     @property
     def image_url(self) -> str | None:
@@ -58,6 +64,7 @@ class MachineConfig:
             "check_host": self.check_host,
             "tool_slots": self.tool_slots,
             "hourly_rate": self.hourly_rate,
+            "pause_limit_min": self.pause_limit_min,
         }
 
 

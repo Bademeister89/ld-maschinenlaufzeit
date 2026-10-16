@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 TOOL_SLOTS_MAX = 1000  # wie der Nummernkreis der Werkzeuge
 HOURLY_RATE_MAX = 10_000.0  # €/h
+PAUSE_LIMIT_MAX = 120  # min
 _HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 AdapterFactory = Callable[[MachineConfig], MachineAdapter]
@@ -83,7 +84,21 @@ def validate_machine(data: dict[str, Any]) -> dict[str, Any]:
         "check_host": check_host,
         "tool_slots": _tool_slots(data.get("tool_slots")),
         "hourly_rate": _hourly_rate(data.get("hourly_rate")),
+        "pause_limit_min": _pause_limit(data.get("pause_limit_min")),
     }
+
+
+def _pause_limit(value: Any) -> int:
+    """Pausengrenze der Produktionszeit in ganzen Minuten, leer = Standard (2 min)."""
+    if value is None or str(value).strip() == "":
+        return MachineConfig.pause_limit_min
+    try:
+        minutes = int(str(value).strip())
+    except ValueError:
+        minutes = 0
+    if not 1 <= minutes <= PAUSE_LIMIT_MAX:
+        raise ConfigError(f"Pausengrenze: bitte eine ganze Zahl von 1 bis {PAUSE_LIMIT_MAX} Minuten eintragen.")
+    return minutes
 
 
 def _hourly_rate(value: Any) -> float | None:
@@ -153,6 +168,7 @@ class MachineManager:
             check_host=row["check_host"],
             tool_slots=row["tool_slots"],
             hourly_rate=row["hourly_rate"],
+            pause_limit_min=row["pause_limit_min"],
         )
 
     def machines(self) -> list[MachineConfig]:

@@ -10,6 +10,24 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.36.0] – 2026-10-16
+
+### Neu
+- **Pausengrenze je Maschine:** Konfiguration → Bearbeiten → „Pausengrenze der Produktionszeit in
+  Minuten“. Läuft so lange kein Programm, beginnt die Produktionszeit auf der Live-Karte von vorn.
+  Standard **2 min** (bisher fest 15 min). Datenbank-Schema 21; vorhandene Maschinen bekommen 2 min.
+- **Stopps und Pausen hervorgehoben:** Im Statusbalken stehen unter der Produktionszeit „davon
+  Stopps 12 min“ rot und „Pausen 1 h 06 min“ orange, jeweils nur, wenn es welche gab. Der Tooltip
+  nennt die reine Laufzeit.
+
+### Geändert
+- Der **Zeitstreifen** unten im Statusbalken entfällt.
+- Die **Programmzeit** im Programmfeld („Programm seit 02:44 Uhr · 4 h 49 min“) entfällt. Palette und
+  Produktionszeit zeigen dieselbe Zeit. Der Hinweis „↻ per Satzvorlauf fortgesetzt“ bleibt.
+- Fehlen mitten in einem Lauf nur Daten (keine Verbindung, App aus) und läuft danach derselbe Lauf
+  weiter, beginnt die Produktionszeit nicht von vorn – auch wenn die Lücke länger als die
+  Pausengrenze war.
+
 ## [1.35.0] – 2026-10-15
 
 ### Neu

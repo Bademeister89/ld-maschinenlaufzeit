@@ -11,23 +11,21 @@ spätere Laufzeitauswertungen:
   - Der große Balken oben zeigt den Zustand und, solange produziert wird, die **Produktionszeit**:
     „5 h 12 min · in Produktion seit 04:52 Uhr“.
     - NC-Stopps, Palettenwechsel und kurzes „Bereit“ zwischen zwei Programmen zählen mit. Erst eine
-      Pause von 15 min ohne Programmlauf beginnt von vorn.
+      Pause ohne Programmlauf ab der **Pausengrenze** beginnt von vorn. Sie ist je Maschine
+      einstellbar (Konfiguration → Bearbeiten), Standard 2 min.
+    - Fehlen mitten in einem Lauf nur Daten (keine Verbindung, App aus) und geht danach derselbe Lauf
+      weiter, beginnt die Produktionszeit nicht von vorn.
     - Die Produktionszeit läuft auch über mehrere Tage weiter („55 h 07 min · in Produktion seit Sa
       00:10 Uhr“).
-    - Unten im Balken liegt ein Zeitstreifen seit Beginn: hell = Lauf, gelb = Stopp, Lücke = Pause.
-      Der Tooltip nennt die Summen.
+    - Darunter steht, was davon Stillstand war: **Stopps** rot (Gestoppt oder Fehler im Lauf) und
+      **Pausen** orange (kein Programmlauf, jeweils kürzer als die Pausengrenze). Der Tooltip nennt
+      die reine Laufzeit.
     - Im Stopp steht darunter, wie lange schon („Gestoppt seit 2 min“).
-  - Im Programmfeld steht, solange ein Lauf aktiv ist, die **Programmzeit**: „Programm seit
-    06:10 Uhr · 1 h 25 min, davon 5 min Stopp“.
-    - Sie gilt nur für diesen einen Programmlauf und zählt nach der Uhr, also mit Stopps. „Stopp“ ist
-      die Zeit im Zustand Gestoppt oder Fehler.
-    - „≥“ heißt: Das Programm lief schon, als die Erfassung begann. Die Zeit ist dann eine
-      Mindestzeit.
+  - Im Programmfeld steht keine eigene Programmzeit: Palette („▶ Palette 4 seit 02:44 Uhr · 4 h
+    49 min“) und Produktionszeit zeigen sie schon.
     - **Satzvorlauf:** Setzt ein Satzvorlauf einen früheren Lauf fort (siehe
-      [Begriffe](#begriffe-der-auswertung)), steht darunter „↻ per Satzvorlauf fortgesetzt seit
-      06:05 Uhr · 25 min“. Der Start liegt dann oft am Vortag („Programm seit Mo 22:10 Uhr“). Die Zeit
-      zwischen Laufende und Satzvorlauf ist kein Stopp, sie steht als „unterbrochen“ dabei. Das gilt
-      auch für Zeit ohne Verbindung.
+      [Begriffe](#begriffe-der-auswertung)), steht dort „↻ per Satzvorlauf fortgesetzt seit
+      06:05 Uhr · 25 min“.
   - Alle Zeiten heißen gleich: „… seit <Uhrzeit> · <Dauer>“. Liegt der Beginn nicht heute, steht der
     Wochentag bzw. das Datum davor. Fährst du mit der Maus über eine Zeit, erklärt ein Tooltip, was
     sie zählt.

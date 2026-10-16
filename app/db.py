@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS machines (
     removed    INTEGER NOT NULL DEFAULT 0,
     check_host TEXT NOT NULL DEFAULT '',
     tool_slots INTEGER,
-    hourly_rate REAL
+    hourly_rate REAL,
+    pause_limit_min INTEGER NOT NULL DEFAULT 2
 );
 CREATE TABLE IF NOT EXISTS program_runs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -283,6 +284,7 @@ class Database:
             ("check_host", "TEXT NOT NULL DEFAULT ''"),
             ("tool_slots", "INTEGER"),
             ("hourly_rate", "REAL"),  # v16 → v17: Stundensatz (Preis Fräsen der Artikel)
+            ("pause_limit_min", "INTEGER NOT NULL DEFAULT 2"),  # v20 → v21: Pausengrenze der Produktionszeit
         ):
             if name not in columns:
                 self._con.execute(f"ALTER TABLE machines ADD COLUMN {name} {ddl}")
@@ -484,7 +486,9 @@ class Database:
 
     # --- Maschinen -----------------------------------------------------------------
 
-    _MACHINE_COLUMNS = "id, name, host, port, note, sort_order, image, removed, check_host, tool_slots, hourly_rate"
+    _MACHINE_COLUMNS = (
+        "id, name, host, port, note, sort_order, image, removed, check_host, tool_slots, hourly_rate, pause_limit_min"
+    )
 
     def ensure_machine(self, machine_id: str, name: str, host: str, port: int) -> None:
         """Maschine anlegen, falls es sie noch nicht gibt (bestehende Einträge bleiben unverändert)."""
@@ -512,21 +516,22 @@ class Database:
         check_host: str = "",
         tool_slots: int | None = None,
         hourly_rate: float | None = None,
+        pause_limit_min: int = 2,
     ) -> None:
         self._execute(
-            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host, tool_slots, hourly_rate) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (machine_id, name, host, port, note, sort_order, check_host, tool_slots, hourly_rate),
+            "INSERT INTO machines(id, name, host, port, note, sort_order, check_host, tool_slots, hourly_rate, "
+            "pause_limit_min) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (machine_id, name, host, port, note, sort_order, check_host, tool_slots, hourly_rate, pause_limit_min),
         )
 
     def update_machine(
         self, machine_id: str, name: str, host: str, port: int, note: str, check_host: str = "",
-        tool_slots: int | None = None, hourly_rate: float | None = None,
+        tool_slots: int | None = None, hourly_rate: float | None = None, pause_limit_min: int = 2,
     ) -> None:
         self._execute(
             "UPDATE machines SET name = ?, host = ?, port = ?, note = ?, check_host = ?, tool_slots = ?, "
-            "hourly_rate = ? WHERE id = ?",
-            (name, host, port, note, check_host, tool_slots, hourly_rate, machine_id),
+            "hourly_rate = ?, pause_limit_min = ? WHERE id = ?",
+            (name, host, port, note, check_host, tool_slots, hourly_rate, pause_limit_min, machine_id),
         )
 
     def set_machine_order(self, machine_ids: list[str]) -> None:

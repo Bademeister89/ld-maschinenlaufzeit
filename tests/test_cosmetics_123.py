@@ -2,6 +2,7 @@
 Produktionszeit im Statusbalken."""
 
 import time
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -114,28 +115,50 @@ def test_streak_bridges_stops_pallet_changes_and_short_pauses():
         ("RUNNING", 1, 2000, 5000),
         ("STOPPED", 1, 5000, 5300),  # NC-Stopp
         ("RUNNING", 1, 5300, 8000),
-        ("READY", None, 8000, 8200),  # Palettenwechsel
-        ("RUNNING", 2, 8200, 9000),
+        ("READY", None, 8000, 8060),  # Palettenwechsel
+        ("RUNNING", 2, 8060, 9000),
     ]
-    s = production_streak(states, 9000)
-    assert (s["since"], s["run_s"], s["stop_s"], s["idle_s"]) == (2000, 6500, 300, 200)
-    assert [x["kind"] for x in s["segments"]] == ["run", "stop", "run", "idle", "run"]
+    s = production_streak(states, 9000, 120)
+    assert (s["since"], s["run_s"], s["stop_s"], s["idle_s"]) == (2000, 6640, 300, 60)
+    assert "segments" not in s  # kein Zeitstreifen mehr (1.36.0)
 
 
 def test_streak_survives_a_short_pause_but_not_a_long_one():
-    states = [("RUNNING", 1, 0, 3600), ("READY", None, 3600, 3600 + 600)]
-    s = production_streak(states, 3600 + 600)  # 10 min Pause: läuft weiter
-    assert (s["since"], s["idle_s"]) == (0, 600)
-    assert production_streak(states, 3600 + 15 * 60) is None  # ab 15 min: vorbei
-    assert production_streak([("READY", None, 0, 100)], 100) is None
+    states = [("RUNNING", 1, 0, 3600), ("READY", None, 3600, 3600 + 90)]
+    s = production_streak(states, 3600 + 90, 120)  # 90 s Pause: läuft weiter
+    assert (s["since"], s["idle_s"]) == (0, 90)
+    assert production_streak(states, 3600 + 120, 120) is None  # ab der Pausengrenze: vorbei
+    assert production_streak(states, 3600 + 600, 15 * 60)["since"] == 0  # andere Grenze je Maschine
+    assert production_streak([("READY", None, 0, 100)], 100, 120) is None
+
+
+def test_streak_does_not_end_on_a_long_stop():
+    """NC-Stopp und Fehler im Lauf sind keine Pause: auch eine Stunde beendet die Produktion nicht."""
+    states = [("RUNNING", 1, 0, 1000), ("ERROR", 1, 1000, 4600), ("RUNNING", 1, 4600, 5000)]
+    s = production_streak(states, 5000, 120)
+    assert (s["since"], s["stop_s"], s["idle_s"]) == (0, 3600, 0)
 
 
 def test_streak_treats_missing_data_as_pause():
-    """Lücke ohne Daten (App aus) zählt wie eine Pause."""
+    """Lücke ohne Daten (App aus) zwischen zwei Läufen zählt wie eine Pause."""
     states = [("RUNNING", 1, 0, 1000), ("RUNNING", 2, 5000, 6000)]
-    assert production_streak(states, 6000)["since"] == 5000
-    states = [("RUNNING", 1, 0, 1000), ("RUNNING", 2, 1300, 2000)]
-    assert production_streak(states, 2000)["since"] == 0
+    assert production_streak(states, 6000, 120)["since"] == 5000
+    states = [("RUNNING", 1, 0, 1000), ("RUNNING", 2, 1100, 2000)]
+    assert production_streak(states, 2000, 120)["since"] == 0
+
+
+def test_streak_bridges_missing_data_within_the_same_run():
+    """Keine Verbindung oder App aus, danach läuft derselbe Lauf weiter: kein neuer Beginn."""
+    gap = [("RUNNING", 1, 0, 1000), ("RUNNING", 1, 1600, 2000)]
+    s = production_streak(gap, 2000, 120)
+    assert (s["since"], s["run_s"], s["idle_s"]) == (0, 1400, 600)
+    offline = [("RUNNING", 1, 0, 1000), ("OFFLINE", 1, 1000, 1600), ("STOPPED", 1, 1600, 2000)]
+    assert production_streak(offline, 2000, 120)["since"] == 0
+    # Bereit dazwischen ist eine echte Pause – auch wenn derselbe Lauf weitergeht (Satzvorlauf)
+    ready = [("RUNNING", 1, 0, 1000), ("OFFLINE", 1, 1000, 1100), ("READY", None, 1100, 1600), ("RUNNING", 1, 1600, 2000)]
+    assert production_streak(ready, 2000, 120)["since"] == 1600
+    # Ohne Verbindung bis jetzt: offen, ob es weitergeht – wie eine Pause
+    assert production_streak([("RUNNING", 1, 0, 1000), ("OFFLINE", 1, 1000, 1600)], 1600, 120) is None
 
 
 def test_live_card_has_the_streak(db, make_collector):
@@ -166,7 +189,7 @@ def test_streak_is_not_capped_at_24_hours(db, make_collector):
     assert s["since"] == 10
     assert s["run_s"] + s["stop_s"] == pytest.approx(2.5 * DAY - 10)
     # danach lädt es nur noch ab kurz vor dem Beginn – und zählt weiter
-    assert c._streak_from == pytest.approx(10 - 15 * 60 - 60)
+    assert c._streak_from == pytest.approx(10 - 120 - 60)
     _shift(c, 2.5 * DAY, 3 * DAY)
     assert c.live()["streak"]["since"] == 10
 
@@ -178,3 +201,31 @@ def test_long_streak_still_starts_after_the_last_long_pause(db, make_collector):
     feed(c, (1 * DAY + 100, snap("IDLE", "P1")))  # 20 min Pause: neue Produktion
     _shift(c, 1 * DAY + 1300, 2.5 * DAY)
     assert c.live()["streak"]["since"] == 1 * DAY + 1300
+
+
+def test_pause_limit_comes_from_the_machine(db, make_collector):
+    """Version 1.36.0: Pausengrenze je Maschine (Standard 2 min) statt fest 15 min."""
+    c = make_collector()
+    feed(c, (0, snap("IDLE", "P1")), (10, snap("STARTED", "P1")), (1000, snap("IDLE", "P1")))
+    feed(c, (1300, snap("STARTED", "P2")), (2000, snap("STARTED", "P2")))  # 5 min Pause
+    assert c.live()["streak"]["since"] == 1300
+    assert c.live()["streak"]["break_s"] == 120
+    c.machine = replace(c.machine, pause_limit_min=10)  # in der Konfiguration geändert
+    s = c.live()["streak"]
+    assert (s["since"], s["break_s"]) == (10, 600)
+    assert s["idle_s"] == pytest.approx(300)
+
+
+def test_pause_limit_in_the_configuration(tmp_path):
+    settings = Settings(db_path=tmp_path / "t.db")
+    with TestClient(create_app(settings, run_collectors=False)) as client:
+        base = {"name": "DMU 70", "host": "192.168.0.30"}
+        m = client.post("/api/config/machines", json=base).json()
+        assert m["pause_limit_min"] == 2  # Standard
+        r = client.put(f"/api/config/machines/{m['id']}", json={**m, "pause_limit_min": "5"})
+        assert r.status_code == 200 and r.json()["pause_limit_min"] == 5
+        for bad in ("0", "121", "zwei", "1,5"):
+            r = client.put(f"/api/config/machines/{m['id']}", json={**m, "pause_limit_min": bad})
+            assert r.status_code == 400 and "Pausengrenze" in r.json()["detail"]
+        assert client.get("/api/config").json()["machines"][0]["pause_limit_min"] == 5
+        assert client.get("/api/machines").json()["machines"][0]["streak"] is None  # noch keine Daten

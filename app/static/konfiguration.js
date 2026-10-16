@@ -70,6 +70,7 @@ function renderList() {
               m.check_host && `Prüfadresse ${m.check_host}`,
               m.tool_slots && `${m.tool_slots} Werkzeugplätze`,
               m.hourly_rate != null ? `${eur.format(m.hourly_rate)}/h` : "kein Stundensatz",
+              `Pausengrenze ${m.pause_limit_min} min`,
             ]
               .filter(Boolean)
               .join(" · "),
@@ -717,6 +718,7 @@ function openEditor(m = null) {
   $("f-check").value = m?.check_host ?? "";
   $("f-slots").value = m?.tool_slots ?? "";
   $("f-rate").value = m?.hourly_rate != null ? String(m.hourly_rate).replace(".", ",") : "";
+  $("f-pause").value = m?.pause_limit_min ?? 2;
   $("img-input").value = "";
   $("f-probe").replaceChildren();
   setError(null);
@@ -736,6 +738,7 @@ async function save(event) {
     check_host: $("f-check").value.trim(),
     tool_slots: $("f-slots").value.trim() || null,
     hourly_rate: $("f-rate").value.trim() || null,
+    pause_limit_min: $("f-pause").value.trim() || null,
   };
   const button = $("f-save");
   button.disabled = true;
