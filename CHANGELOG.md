@@ -10,6 +10,13 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.36.2] – 2026-10-16
+
+### Geändert
+- **Poti-Stellung auf der Live-Karte:** grün schon ab **95 %** (bisher ab 100 %), gelb nur noch unter
+  95 %. Die blassen Zonen im Hintergrund des Balkens sind mit verschoben. Die Farbe richtet sich nach
+  der angezeigten, gerundeten Zahl.
+
 ## [1.36.1] – 2026-10-16
 
 ### Geändert

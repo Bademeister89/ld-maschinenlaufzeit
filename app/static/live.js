@@ -224,11 +224,13 @@ function changeWarning(m) {
 
 const pctText = (v) => (v == null ? "—" : `${Math.round(v)} %`);
 const OVR_MAX = 150; // Potis der iTNC 530 gehen bis 150 %
-/** Farbzone eines Werts: [CSS-Klasse, Text]. Rot unter 50 %, Gelb unter 100 %, Grün 100–120 %, Orange darüber. */
+/** Farbzone eines Werts: [CSS-Klasse, Text]. Rot unter 50 %, Gelb unter 95 %, Grün 95–120 %, Orange darüber.
+ *  Gerechnet mit der angezeigten (gerundeten) Zahl, damit Farbe und Zahl zusammenpassen. */
 function overrideZone(v) {
+  v = Math.round(v);
   if (v < 50) return ["low", "unter 50 %"];
-  if (v < 100) return ["reduced", "unter 100 %"];
-  if (v <= 120) return ["normal", "100–120 %"];
+  if (v < 95) return ["reduced", "unter 95 %"];
+  if (v <= 120) return ["normal", "95–120 %"];
   return ["high", "über 120 %"];
 }
 

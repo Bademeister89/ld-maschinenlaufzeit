@@ -505,7 +505,7 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 }
 
 /* Poti-Stellung Vorschub/Spindel nebeneinander, Eilgang darunter (unter dem Vorschub), Skala 0–150 %, Strich bei 100 %.
-   Im Hintergrund blass die Zonen (Länge 0–50–100–120–150 % = 33,3 / 66,7 / 80 %), die Füllung in der
+   Im Hintergrund blass die Zonen (Länge 0–50–95–120–150 % = 33,3 / 63,3 / 80 %), die Füllung in der
    Farbe der Zone des aktuellen Werts. Der Wert steht immer als Zahl daneben. */
 .overrides {
   --ovr-low: var(--st-error);
@@ -533,8 +533,8 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
   background: linear-gradient(
     to right,
     color-mix(in srgb, var(--ovr-low) var(--tint), var(--surface-2)) 0 33.333%,
-    color-mix(in srgb, var(--ovr-reduced) var(--tint), var(--surface-2)) 33.333% 66.667%,
-    color-mix(in srgb, var(--ovr-normal) var(--tint), var(--surface-2)) 66.667% 80%,
+    color-mix(in srgb, var(--ovr-reduced) var(--tint), var(--surface-2)) 33.333% 63.333%,
+    color-mix(in srgb, var(--ovr-normal) var(--tint), var(--surface-2)) 63.333% 80%,
     color-mix(in srgb, var(--ovr-high) var(--tint), var(--surface-2)) 80% 100%
   );
 }

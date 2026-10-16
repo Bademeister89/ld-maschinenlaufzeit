@@ -31,7 +31,7 @@ spätere Laufzeitauswertungen:
     sie zählt.
   - Die Poti-Stellung für Vorschub, Spindel und Eilgang (unter dem Vorschub) steht als Balken auf
     der Karte: Skala 0–150 %, ein Strich markiert 100 %.
-  - Farben: unter 50 % rot, unter 100 % gelb, 100–120 % grün, über 120 % orange. Im Hintergrund des
+  - Farben: unter 50 % rot, unter 95 % gelb, 95–120 % grün, über 120 % orange. Im Hintergrund des
     Balkens sind die Zonen blass zu sehen, der Wert steht immer als Zahl daneben.
   - Bei einem Palettenprogramm (`.P`) steht die Reihenfolge der Paletten und Programme mit
     erwarteter Zeit, Restzeit und voraussichtlichem Ende auf der Karte, siehe
