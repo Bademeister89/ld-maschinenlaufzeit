@@ -7,7 +7,7 @@ import pytest
 
 from app.collector import MachineCollector
 from app.db import SCHEMA_VERSION, Database
-from app.nc_program import PalletEntry, ProgramFile, pallet_entries, program_calls, table_row
+from app.nc_program import PalletEntry, ProgramFile, pallet_entries, program_calls
 
 from .conftest import MACHINE, NullAdapter, feed, snap
 
@@ -416,59 +416,149 @@ def test_real_pallet_table_of_the_dmu_70():
     assert program_calls("TNC:\\pal2sp.p", REAL_TABLE) == ("8", "26-21051-02-01", "DREH", "9", "10", "0", "P-ENDE")
 
 
-# --- Diagnose 1.36.1: Satz der Steuerung beim Palettenwechsel ---------------------------------
+# --- Palette von Hand setzen (Live-Karte) -------------------------------------------------------
+# Die Steuerung meldet nicht, bei welcher Zeile der Tabelle eingestiegen wurde: Der Satz beim
+# Palettenwechsel ist der des Makros Palett.H (Diagnose vom 21.10., pallet_line aus 1.36.1).
 
 
-def pallet_lines(db):
-    rows = [e for e in db.events(0, 1e12, "m1", limit=10_000) if e["type"] == "pallet_line"]
-    return [e["payload"] for e in reversed(rows)]
+def pallet_sets(db):
+    return [e["payload"] for e in db.events(0, 1e12, "m1") if e["type"] == "pallet_set"]
 
 
-def test_table_row_counts_like_the_control():
-    text = table([("PAL", "1"), ("FIX", "SPANNER"), ("PGM", ORDER), ("PAL", "0"), ("PGM", "P-ENDE.H")])
-    assert table_row(text, 0) == ("PAL", "1")
-    assert table_row(text, 1) == ("FIX", "SPANNER")
-    assert table_row(text, 2) == ("PGM", ORDER)
-    assert table_row(text, 4) == ("PGM", "P-ENDE.H")
-    assert table_row(text, 5) is None
-    assert table_row(REAL_TABLE, 3) == ("PAL", "9")  # Tabelle von der DMU 70 (Spalte PAL/PGM)
-
-
-def test_pallet_change_records_the_line_once(db, make_collector):
-    """DMU 70, 15.10.: Einstieg bei Palette 7 von pal1sp.p, die Live-Karte zeigte Palette 1. Ist der
-    Satz während des Palettenwechsels die Zeile der Tabelle? Bis zur Klärung wird er aufgezeichnet."""
+def test_pallet_set_by_hand_while_its_program_runs(db, make_collector):
+    """DMU 70, 15.10.: Einstieg bei Palette 7 von pal1sp.p, die Live-Karte zeigte Palette 1."""
     c = make_collector()
-    text = table(FIELD_ROWS)
-    db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+    history(db, c)
     feed(
         c,
-        (0, pal("IDLE", None, 0)),  # angewählt
-        (10, pal("STARTED", MACRO, 3)),  # Palette 2 einwechseln
-        (12, pal("STARTED", MACRO, 3)),  # gleicher Satz: kein zweiter Eintrag
-        (14, pal("STARTED", MACRO, 3)),
-        (70, pal("STARTED", ORDER, 15)),  # Auftragsprogramm: kein Eintrag
-        (90, pal("STARTED", ORDER, 900)),
-        (900, pal("STARTED", MACRO, 6)),  # Palette 3
-        (960, snap("IDLE", TABLE, exec_mode="MANUAL", current_program=MACRO, line_no=7)),  # Handbetrieb
+        (1000, pal("IDLE", None, 0)),
+        (1010, pal("STARTED", MACRO, 6)),  # eingestiegen bei Palette 3 – die App sieht Palette 1
+        (1080, pal("STARTED", ORDER, 15)),
+        (1500, pal("STARTED", ORDER, 9000)),
     )
-    lines = pallet_lines(db)
-    assert [(x["current"], x["line"], x.get("row_type"), x.get("row_name")) for x in lines] == [
-        (None, 0, "PAL", "1"),
-        (MACRO, 3, "PAL", "2"),
-        (MACRO, 6, "PAL", "3"),
-    ]
-    assert lines[1]["pgm_state"] == "STARTED" and lines[1]["state"] == "RUNNING" and lines[1]["table"] == TABLE
-    # Mitschnitt: auch ein neuer Satz allein während des Wechsels gibt eine Zeile
-    raw = [r for r in c.raw_log() if r["current_program"] == MACRO]
-    assert [r["line_no"] for r in raw] == [3, 6, 7]
+    assert view(c)[1]["position"] == 0
+    info = c.set_pallet(4)  # erste Programmzeile von Palette 3
+    assert (info["position"], info["set_at"]) == (4, 1500)
+    assert [e["status"] for e in info["entries"]] == ["done"] * 4 + ["current", "pending", "pending"]
+    assert [e["started_at"] for e in info["entries"]] == [None] * 4 + [1080, None, None]  # seit Beginn des Programms
+    assert [e["until"] for e in info["entries"][:4]] == [None] * 4  # wann die Paletten davor fertig wurden: unbekannt
+    assert info["remaining_s"] == 840 - 420 + 45  # Rest der Palette 3 (Prognose) + Drehen, P-Ende unbekannt
+    assert pallet_sets(db) == [{
+        "table": TABLE, "index": 4, "running": True, "pallet": "3", "program": ORDER, "from": 0, "from_pallet": "1",
+    }]
+    feed(
+        c,
+        (1920, pal("STARTED", DREH, 1)),
+        (1970, pal("STARTED", MACRO, 6)),
+        (1990, pal("STARTED", P_ENDE, 1)),
+    )
+    entries, info = view(c)
+    assert info["position"] == 6
+    assert entries[4] == ("done", 840, "history")  # von Hand gesetzt: nicht gemessen
+    feed(c, (2000, pal("IDLE", None, 0)))
+    assert [e[0] for e in view(c)[0]] == ["done"] * 7
+    # Neuer Durchgang: wieder von vorn, ohne den Hinweis
+    feed(c, (2100, pal("STARTED", MACRO, 6)), (2170, pal("STARTED", ORDER, 15)))
+    assert (view(c)[1]["position"], view(c)[1]["set_at"]) == (0, None)
 
 
-def test_pallet_line_without_read_table_and_limit_per_hour(db, make_collector, caplog):
+def test_pallet_set_by_hand_during_the_pallet_change(db, make_collector):
+    """Während des Wechsels (oder vor dem Start) läuft noch kein Programm der Palette: Sie beginnt mit
+    dem nächsten Start ihres Programms – an der gesetzten Zeile, nicht an der folgenden."""
     c = make_collector()
-    feed(c, (0, pal("STARTED", MACRO, 18)))  # Tabelle noch nicht gelesen: nur der Satz
-    assert pallet_lines(db) == [{"table": TABLE, "current": MACRO, "line": 18, "pgm_state": "STARTED", "state": "RUNNING"}]
-    feed(c, *((1 + i, pal("STARTED", MACRO, i % 2)) for i in range(200)))
-    assert len(pallet_lines(db)) == 120  # höchstens 120 je Stunde
-    assert "Aufzeichnung pausiert" in caplog.text
-    feed(c, (3600, pal("STARTED", MACRO, 5)))  # neue Stunde
-    assert pallet_lines(db)[-1]["line"] == 5
+    history(db, c)
+    feed(
+        c,
+        (1000, pal("IDLE", None, 0)),
+        (1010, pal("STARTED", MACRO, 6)),
+        (1080, pal("STARTED", ORDER, 15)),
+        (1920, pal("STARTED", DREH, 1)),
+        (1970, pal("STARTED", MACRO, 6)),  # die App erwartet Palette 2, eingewechselt wird Palette 3
+    )
+    info = c.set_pallet(4)
+    assert (info["position"], info["entries"][4]["status"], info["entries"][4]["started_at"]) == (4, "current", None)
+    assert pallet_sets(db)[0]["running"] is False
+    feed(c, (2040, pal("STARTED", ORDER, 15)))
+    entries, info = view(c)
+    assert info["position"] == 4 and info["entries"][4]["started_at"] == 2040
+    assert entries[1] == ("done", 45, "history")  # Drehen der Palette 1: nicht gemessen
+    feed(c, (2880, pal("STARTED", DREH, 1)), (2930, pal("STARTED", MACRO, 6)), (2940, pal("STARTED", P_ENDE, 1)))
+    entries, info = view(c)
+    assert info["position"] == 6
+    assert entries[4] == ("done", 840, "measured")  # ab dem Start der Palette gemessen
+
+
+def test_pallet_set_by_hand_before_the_restart(db, make_collector):
+    """Palettenprogramm angehalten, Palette gesetzt, dann neu gestartet (sonst: dieselbe Zeile)."""
+    c = make_collector()
+    history(db, c)
+    feed(c, (1000, pal("IDLE", None, 0)), (1010, pal("STARTED", MACRO, 6)), (1080, pal("STARTED", ORDER, 15)))
+    feed(c, (1200, pal("STOPPED", ORDER, 500)), (1210, pal("IDLE", None, 0)))
+    info = c.set_pallet(2)
+    assert info["position"] == 2 and [e["status"] for e in info["entries"][:3]] == ["done", "done", "current"]
+    feed(c, (1300, pal("STARTED", MACRO, 6)), (1370, pal("STARTED", ORDER, 15)))
+    info = view(c)[1]
+    assert info["position"] == 2 and info["entries"][2]["started_at"] == 1370
+
+
+def test_pallet_set_by_hand_survives_a_restart_of_the_app(db, make_collector):
+    first = make_collector()
+    history(db, first)
+    feed(
+        first,
+        (1000, pal("IDLE", None, 0)),
+        (1010, pal("STARTED", MACRO, 6)),
+        (1080, pal("STARTED", ORDER, 15)),
+        (1500, pal("STARTED", ORDER, 9000)),
+    )
+    first.set_pallet(4)
+    second = make_collector()  # Update mitten in Palette 3
+    feed(second, (2400, pal("STARTED", ORDER, 12000)))
+    info = view(second)[1]
+    assert (info["position"], info["set_at"]) == (4, 1500)
+    assert info["entries"][4]["started_at"] == 1080
+
+    # Gesetzt während des Wechsels, dann Neustart der App, bevor die Palette begann
+    feed(second, (2900, pal("STARTED", DREH, 1)), (2950, pal("STARTED", MACRO, 6)))
+    second.set_pallet(2)
+    third = make_collector()
+    feed(third, (3020, pal("STARTED", ORDER, 15)))
+    info = view(third)[1]
+    assert info["position"] == 2 and info["entries"][2]["started_at"] == 3020
+
+
+def test_pallet_set_by_hand_refused(db, make_collector):
+    c = make_collector()
+    with pytest.raises(ValueError, match="Kein Palettenprogramm"):
+        c.set_pallet(0)
+    rows = [("PAL", "1"), ("PGM", ORDER), ("PAL", "2", "*"), ("PGM", ORDER), ("PAL", "3"), ("PGM", ORDER)]
+    text = table(rows)
+    db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+    feed(c, (0, pal("IDLE", None, 0)))
+    with pytest.raises(ValueError, match="gesperrt"):
+        c.set_pallet(1)
+    with pytest.raises(ValueError, match="keine Programmzeile 4"):
+        c.set_pallet(3)
+    assert c.set_pallet(2)["position"] == 2
+
+
+def test_pallet_api(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings(machines=(MACHINE,), db_path=tmp_path / "api.db", simulate=True)
+    app = create_app(settings, run_collectors=False)
+    with TestClient(app) as client:
+        ctx = app.state.ctx
+        assert client.post("/api/machines/m1/pallet", json={"index": 0}).status_code == 409  # kein Palettenprogramm
+        text = table(FIELD_ROWS)
+        ctx.db.save_program_file("m1", TABLE, len(text), 1.0, None, None, 0, program_calls(TABLE, text), text)
+        col = ctx.collectors["m1"]
+        feed(col, (0, pal("IDLE", None, 0)), (10, pal("STARTED", MACRO, 6)), (80, pal("STARTED", ORDER, 15)))
+        res = client.post("/api/machines/m1/pallet", json={"index": 2})
+        assert res.status_code == 200 and res.json()["pallet"]["position"] == 2
+        assert client.get("/api/machines").json()["machines"][0]["pallet"]["position"] == 2
+        assert client.post("/api/machines/m1/pallet", json={"index": "2"}).status_code == 400
+        assert client.post("/api/machines/xx/pallet", json={"index": 2}).status_code == 404

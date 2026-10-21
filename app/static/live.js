@@ -19,6 +19,7 @@ import {
   loadMeta,
   machineThumb,
   pgmStateLabel,
+  send,
   startOfDay,
   stateIcon,
   stateLabel,
@@ -351,6 +352,20 @@ function palletWhen(g, cur, entries, now) {
   return parts.length ? parts.join(" · ") : null;
 }
 
+const PICK_HINT = "Läuft eine andere Palette? Anklicken – die Steuerung meldet nicht, bei welcher Palette eingestiegen wurde.";
+
+/** Palette von Hand setzen (z. B. Einstieg bei Palette 7): Ab ihr zählt die Ablaufliste weiter. */
+async function pickPallet(m, p, g) {
+  const name = palletLabel(g.pallet) || programsOf(g.entries);
+  if (!confirm(`${name} läuft gerade bzw. wird gerade eingewechselt?\n\nDie Live-Karte zählt dann ab hier weiter.`)) return;
+  try {
+    await send("POST", `/api/machines/${encodeURIComponent(m.id)}/pallet`, { index: p.entries.indexOf(g.entries[0]) });
+  } catch (err) {
+    alert(`${name} nicht gesetzt: ${err.message}`);
+  }
+  await refreshLive();
+}
+
 /** Welche Programme das Palettenprogramm nacheinander abarbeitet, mit erwarteter Zeit und Restzeit. */
 function palletBlock(m, now) {
   const p = m.pallet;
@@ -377,6 +392,7 @@ function palletBlock(m, now) {
     sources.has("measured") ? "Zeiten mit Palettenwechsel gemessen" : sources.has("history") ? "Zeiten aus früheren Läufen, ohne Palettenwechsel" : null,
     sources.has("plan") ? `${programsOf(active.filter((e) => e.source === "plan"))}: Zeit aus der CAM-Planung` : null,
     estimated ? `${estimated}: geschätzt aus dem laufenden Lauf` : null,
+    p.set_at != null ? `Palette von Hand gesetzt um ${fmtTime(p.set_at)} Uhr` : "Andere Palette läuft? Anklicken",
   ];
   return el(
     "section",
@@ -393,7 +409,10 @@ function palletBlock(m, now) {
       groups.map((g) =>
         el(
           "li",
-          { class: `pal-${g.status}` },
+          // Paletten außer der laufenden lassen sich von Hand setzen
+          g.status === "done" || g.status === "pending"
+            ? { class: `pal-${g.status} pal-pick`, title: PICK_HINT, onclick: () => pickPallet(m, p, g) }
+            : { class: `pal-${g.status}` },
           el("span", { class: "pal-mark", "aria-hidden": "true", text: PAL_MARK[g.status] }),
           el("span", { class: "visually-hidden", text: `${PAL_STATUS[g.status]}: ` }),
           el("span", { class: "pal-name", text: palletLabel(g.pallet) }),

@@ -568,6 +568,8 @@ main.wide, .topbar-inner.wide { max-width: 1880px; }
 .pal-pgm.is-current { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .pal-pgm { display: inline-block; max-width: 100%; overflow-wrap: anywhere; } /* Programmname nicht mitten im Namen umbrechen */
 .pal-skipped { color: var(--muted); }
+.pal-pick { cursor: pointer; }
+.pal-pick:hover { background: var(--accent-wash); }
 .pal-skipped .pal-name, .pal-skipped .pal-programs, .pal-pgm.is-skipped { color: var(--muted); text-decoration: line-through; }
 .pallet-foot { font-size: 13px; color: var(--muted); }
 .pal-since { display: block; font-size: 12px; font-weight: 400; }

@@ -253,6 +253,17 @@ abarbeitet:
   - Startet die App neu, während das Palettenprogramm läuft (z. B. Update), sucht sie die Läufe
     dieses Durchgangs in der Datenbank: rückwärts bis zum letzten Halt (Bereit länger als 5 min,
     Handbetrieb/MDI oder ein anderes Programm). Daraus ergeben sich Palette und Beginn.
+  - **Einstieg mitten in der Tabelle** (z. B. bei Palette 7): Steht dasselbe Programm auf jeder
+    Palette, kann die App das nicht erkennen und zählt ab der ersten Palette bzw. an der Zeile vor
+    dem Halt weiter. Die Steuerung verrät die Zeile nicht: Der Satz beim Palettenwechsel ist der des
+    Makros `Palett.H`, und die Tabelle selbst ändert sie nicht (geprüft mit der Diagnose vom 21.10.).
+  - **Palette von Hand setzen (Probebetrieb):** In der Ablaufliste auf die Palette klicken, die
+    gerade läuft, und bestätigen. Läuft gerade ein Programm dieser Palette, gilt sie ab dessen
+    Beginn; sonst (Palettenwechsel, Halt) beginnt sie mit dem nächsten Start ihres Programms. Die
+    Paletten davor gelten als fertig, die danach folgen wie gewohnt. Die von Hand gesetzte Palette
+    wird nicht gemessen. Der Fuß zeigt „Palette von Hand gesetzt um 10:12 Uhr“, bis ein neuer
+    Durchgang beginnt. Die Angabe steht als Ereignis `pallet_set` in der Datenbank und gilt auch
+    nach einem Neustart der App.
   - Folgt dasselbe Programm ohne anderes Programm dazwischen (nur Palettenwechsel), ist kein
     Wechsel zu sehen. In den bisherigen Tabellen steht immer DREH dazwischen.
 - Den Text der Tabelle hebt die App auf (wenige KB). Die Diagnose-Datei enthält ihn unter
@@ -939,6 +950,7 @@ auch über `/api/diagnose.zip?days=7&db=true`.
 | `GET /api/stats?from=&to=` | Zeiten je Zustand, Tag und Programm, Auslastung |
 | `GET /api/stats/year?year=2026` | Jahresansicht: je Maschine und Monat Laufzeit, Gestoppt/Fehler, Einschaltzeit und Auslastung; `years` = Jahre mit Daten |
 | `GET /api/machines/{id}/timeline?from=&to=` | Zustandsabschnitte für die Zeitleiste |
+| `POST /api/machines/{id}/pallet` | Palette von Hand setzen: `{"index": 4}` = erste Programmzeile der Palette in der Ablaufliste (`pallet.entries`) |
 | `GET /api/runs?machine=&from=&to=` | Programmdurchläufe |
 | `GET /api/events?machine=&from=&to=` | Ereignisse |
 | `GET /api/machines/{id}/errors?days=30` | Fehlersammler: Meldungen der Steuerung, neueste zuerst, und die häufigsten |

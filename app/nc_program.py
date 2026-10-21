@@ -114,24 +114,6 @@ def _pallet_programs(text: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _kind_span(columns: dict[str, Span]) -> Span | None:
-    """Spalte des Zeilentyps PAL/FIX/PGM: "TYPE" bzw. "PAL/PGM"."""
-    return next((span for title, span in columns.items() if title == "TYPE" or "PGM" in title), None)
-
-
-def table_row(text: str, line: int) -> tuple[str, str] | None:
-    """Typ (PAL, FIX, PGM) und NAME der Zeile ``line`` einer Palettentabelle, gezählt wie die Steuerung
-    (Spalte NR, ohne sie ab 0 über alle Zeilen). None, wenn es die Zeile nicht gibt."""
-    columns, rows = _table(text)
-    nr, kind, name = columns.get("NR"), _kind_span(columns), columns.get("NAME")
-    for index, row in enumerate(r for r in rows if r.strip()):
-        number = _cell(row, nr)
-        if (int(number) if number.isdigit() else index) == line:
-            value = _cell(row, name)
-            return (_cell(row, kind).upper() if kind else ("PGM" if _PROGRAM_FILE.search(value) else "")), value
-    return None
-
-
 def pallet_entries(text: str) -> tuple[PalletEntry, ...]:
     """Programmzeilen einer Palettentabelle in der Reihenfolge, in der die Steuerung sie abarbeitet –
     jede Zeile einzeln, auch wenn ein Programm mehrmals vorkommt. Leer, wenn die Tabelle keine
@@ -140,7 +122,8 @@ def pallet_entries(text: str) -> tuple[PalletEntry, ...]:
     name = columns.get("NAME")
     if name is None:
         return ()
-    kind = _kind_span(columns)
+    # Zeilentyp PAL/FIX/PGM: Spalte "TYPE" bzw. "PAL/PGM"
+    kind = next((span for title, span in columns.items() if title == "TYPE" or "PGM" in title), None)
     lock = columns.get("LOCK")
     state = next((span for title, span in columns.items() if title.startswith("W-STAT")), None)
     entries: list[PalletEntry] = []

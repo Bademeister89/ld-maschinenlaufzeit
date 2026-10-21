@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
 from . import BUILD, __version__, changelog, diagnostics, orders, stats, tools
@@ -138,6 +138,21 @@ def machine_image(request: Request, machine_id: str) -> FileResponse:
         raise HTTPException(404, "Kein Bild hinterlegt")
     # Die URL enthält den Dateinamen als Version, daher darf der Browser lange cachen
     return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@router.post("/machines/{machine_id}/pallet")
+async def set_pallet(request: Request, machine_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Palette von Hand setzen (Live-Karte, Ablaufliste): ``{"index": erste Programmzeile der Palette}``.
+    Läuft in der Ereignisschleife wie die Erfassung, damit sich beide nicht in die Quere kommen."""
+    ctx = _ctx(request)
+    _check_machine(ctx, machine_id)
+    index = payload.get("index")
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise HTTPException(400, "Zeile fehlt")
+    try:
+        return {"pallet": ctx.collectors[machine_id].set_pallet(index)}
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/machines/{machine_id}/timeline")

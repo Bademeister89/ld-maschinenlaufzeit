@@ -10,6 +10,26 @@ Alle Versionen von LD-Machine-Viewer, die neueste oben. Die Versionsnummer folgt
 Die laufende Version steht in der Oberfläche oben neben dem Namen und im Tab Konfiguration.
 Dort ist auch dieses Protokoll zu sehen.
 
+## [1.37.0] – 2026-10-21
+
+### Neu
+- **Palette von Hand setzen (Probebetrieb):** In der Ablaufliste des Palettenprogramms auf die
+  Palette klicken, die gerade läuft, und bestätigen. Die Live-Karte zählt dann ab dieser Palette
+  weiter: Marker, Restzeit und „bis ca.“ stimmen wieder. Für den Einstieg mitten in der Tabelle,
+  z. B. bei Palette 7 von pal1sp.p (DMU 70, 15.10.), wo die Live-Karte Palette 1 zeigte.
+  - Läuft gerade ein Programm dieser Palette, gilt sie ab dessen Beginn. Während des
+    Palettenwechsels oder im Halt beginnt sie mit dem nächsten Start ihres Programms.
+  - Die Paletten davor gelten als fertig. Die von Hand gesetzte Palette wird nicht gemessen.
+  - Im Fuß steht „Palette von Hand gesetzt um 10:12 Uhr“, bis ein neuer Durchgang beginnt.
+  - Gilt auch nach einem Neustart der App (Ereignis `pallet_set` in der Datenbank).
+
+### Entfernt
+- Die Aufzeichnung `pallet_line` aus 1.36.1 (Satz der Steuerung beim Palettenwechsel). Ergebnis der
+  Diagnose vom 21.10.: Der Satz ist der des Makros `Palett.H` (fast immer 6) und nie die Zeile der
+  Tabelle. Bei pal1sp5-7.p kamen Palette 5, 6 und 7 alle mit Satz 6. Die Steuerung verrät also nicht,
+  bei welcher Palette eingestiegen wurde. Der Mitschnitt hat beim Palettenwechsel wieder keine Zeile
+  je Satz.
+
 ## [1.36.2] – 2026-10-16
 
 ### Geändert

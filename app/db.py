@@ -1294,6 +1294,20 @@ class Database:
         )
         return next((row["ts"] for row in rows if json.loads(row["payload"]).get("run") == run_id), None)
 
+    def pallet_fixes(self, machine_id: str, table: str, since: float) -> list[dict[str, Any]]:
+        """Von Hand gesetzte Paletten eines Palettenprogramms (Ereignis ``pallet_set``) seit ``since``,
+        älteste zuerst: Zeitpunkt, Zeile und ob ihr Programm da schon lief."""
+        rows = self._query(
+            "SELECT ts, payload FROM events WHERE machine_id = ? AND type = 'pallet_set' AND ts >= ? ORDER BY ts, id",
+            (machine_id, since),
+        )
+        result = []
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if payload.get("table") == table and isinstance(payload.get("index"), int):
+                result.append({"ts": row["ts"], "index": payload["index"], "running": bool(payload.get("running"))})
+        return result
+
     def nc_errors(self, machine_id: str, t0: float, limit: int = 5000) -> list[dict[str, Any]]:
         """Meldungen der Steuerung (Ereignis ``nc_error``) seit ``t0``, neueste zuerst."""
         rows = self._query(

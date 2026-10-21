@@ -47,7 +47,7 @@ from .articles import article_key
 from .config import MachineConfig
 from .db import Database
 from .forecast import Forecaster
-from .nc_program import PalletEntry, call_name, pallet_entries, table_row
+from .nc_program import PalletEntry, call_name, pallet_entries
 from .orders import parse_program
 from .state import MANUAL_MODES, RUN_ACTIVE_STATES, MachineState, classify, run_result
 from .tools import DEFAULT_LIMIT_S, DEFAULT_WARN_S, is_call, parse_tool, spindle_number
@@ -158,8 +158,6 @@ def production_streak(
 # längeres Bereit trennt zwei Durchgänge (zwischen den Paletten meldet die Steuerung nur Sekunden)
 PALLET_LOOKBACK_S = 7 * 86_400
 PALLET_PAUSE_S = 300
-# Diagnose: Satz der Steuerung beim Palettenwechsel (Ereignis pallet_line), höchstens so viele je Stunde
-PALLET_LINE_MAX_PER_HOUR = 120
 
 
 @dataclass
@@ -204,17 +202,6 @@ class _Ended:
     last_line: int | None
 
 
-def _pallet_table_phase(raw: Snapshot) -> bool:
-    """Arbeitet die Steuerung gerade die Palettentabelle selbst ab (Palettenwechsel per PLC-Makro,
-    Übergang zwischen zwei Zeilen)? Dann ist ``line_no`` womöglich die Zeile der Tabelle."""
-    table, current = raw.program or "", raw.current_program or ""
-    return (
-        table.upper().endswith(".P")
-        and raw.exec_mode not in MANUAL_MODES
-        and (not current or current == table or current.upper().startswith("PLC:"))
-    )
-
-
 @dataclass
 class _PalletRun:
     """Stand des angewählten Palettenprogramms (.P) – nur im Speicher."""
@@ -229,6 +216,10 @@ class _PalletRun:
     # die Stelle einmal aus den Läufen in der Datenbank bestimmt.
     joined_running: bool = False
     recovered: bool = False
+    # Palette von Hand gesetzt (Live-Karte), in diesem Durchgang: wann; ``manual`` = ihr Programm hat noch
+    # nicht begonnen – der nächste Start dieses Programms ist die gesetzte Zeile, nicht die folgende
+    set_at: float | None = None
+    manual: bool = False
     # Beginn je Zeile in diesem Durchgang: Zeile → (Zeitpunkt, Beginn beobachtet)
     started: dict[int, tuple[float, bool]] = field(default_factory=dict)
     # Gemessene reine Laufzeit je Programm (``call_name``) von Beginn einer Zeile bis zur nächsten,
@@ -303,9 +294,6 @@ class MachineCollector:
         self._raw: deque[dict[str, Any]] = deque(maxlen=RAW_LOG_KEEP)
         self._raw_key: tuple[Any, ...] | None = None
         self._raw_last: Snapshot | None = None
-        self._pallet_line_key: tuple[Any, ...] | None = None  # zuletzt aufgezeichneter Satz beim Wechsel
-        self._pallet_line_hour = -1
-        self._pallet_line_count = 0
         self.started_at = clock()
 
     def _load_open_run(self) -> _Run | None:
@@ -407,11 +395,7 @@ class MachineCollector:
         key = (
             (state.value, reason)
             if raw is None
-            else (
-                raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors, state.value,
-                # beim Palettenwechsel auch jeder neue Satz (Prüfung der Palettenerkennung)
-                raw.line_no if _pallet_table_phase(raw) else None,
-            )
+            else (raw.pgm_state, raw.exec_mode, raw.program, raw.current_program, raw.errors, state.value)
         )
         if key != self._raw_key:
             self._activity_at = now
@@ -905,7 +889,6 @@ class MachineCollector:
             if p is not None:
                 p.entry_observed = False  # Lücke: diese Zeile nicht messen
             return
-        self._log_pallet_line(raw, state, now)
         table = raw.program
         if not table or not table.upper().endswith(".P"):
             self._pallet = None
@@ -934,8 +917,15 @@ class MachineCollector:
         if p.pos is None and p.joined_running and not p.stopped and not p.recovered:
             p.recovered = True
             self._recover_pallet(p, entries, now)
-            if p.pos is not None and call_name(entries[p.pos].program) == name:
+            if p.pos is not None and not p.manual and call_name(entries[p.pos].program) == name:
                 return  # das laufende Programm ist die zuletzt gelaufene Zeile
+        manual, p.manual = p.manual, False
+        if manual and p.pos < len(entries) and call_name(entries[p.pos].program) == name:
+            # die von Hand gesetzte Palette beginnt (nach dem Palettenwechsel bzw. dem Neustart)
+            observed = self._start_seen(now)
+            p.stopped, p.entry_run_s, p.entry_observed = False, 0.0, observed
+            p.started[p.pos] = (now, observed)
+            return
         index = self._next_entry(entries, name, p.pos, p.stopped)
         if index is None:
             return  # kein Programm der Tabelle
@@ -952,52 +942,20 @@ class MachineCollector:
             p.durations.setdefault(call_name(entries[p.pos].program), []).append(p.entry_run_s)
         if p.pos is None or index < p.pos:
             p.started.clear()  # neuer Durchgang
+            p.set_at = None
         observed = self._start_seen(now)
         p.pos, p.entry_run_s, p.entry_observed = index, 0.0, observed
         p.started[index] = (now, observed)
-
-    def _log_pallet_line(self, raw: Snapshot, state: MachineState, now: float) -> None:
-        """Diagnose: Satz der Steuerung, solange sie die Palettentabelle selbst abarbeitet bzw. die
-        Palette wechselt – als Ereignis und im Log, mit dem Inhalt dieser Zeile der Tabelle. Prüft, ob
-        der Satz die Zeile der Tabelle ist (DMU 70, 15.10.: Einstieg bei Palette 7 von pal1sp.p mit
-        zehnmal demselben Programm, die Live-Karte zeigte Palette 1)."""
-        if not _pallet_table_phase(raw):
-            self._pallet_line_key = None
-            return
-        table, current = raw.program or "", raw.current_program or None
-        key = (table, current, raw.line_no, raw.pgm_state)
-        if key == self._pallet_line_key:
-            return
-        self._pallet_line_key = key
-        hour = int(now // 3600)
-        if hour != self._pallet_line_hour:
-            self._pallet_line_hour, self._pallet_line_count = hour, 0
-        self._pallet_line_count += 1
-        if self._pallet_line_count > PALLET_LINE_MAX_PER_HOUR:
-            if self._pallet_line_count == PALLET_LINE_MAX_PER_HOUR + 1:
-                log.warning("%s: mehr als %d Sätze beim Palettenwechsel in dieser Stunde – Aufzeichnung pausiert",
-                            self.machine.name, PALLET_LINE_MAX_PER_HOUR)
-            return
-        row = self._program_row(table)
-        found = table_row(row["content"], raw.line_no) if row and row["content"] and raw.line_no is not None else None
-        payload: dict[str, Any] = {
-            "table": table, "current": current, "line": raw.line_no, "pgm_state": raw.pgm_state, "state": state.value,
-        }
-        if found:
-            payload["row_type"], payload["row_name"] = found
-        self._db.add_event(self.machine.id, now, "pallet_line", payload)
-        log.info(
-            "%s: Palettentabelle %s – %s, Satz %s%s", self.machine.name, table, current or "kein Programm",
-            raw.line_no, f" → Zeile {raw.line_no}: {found[0]} {found[1]}".rstrip() if found else "",
-        )
 
     def _recover_pallet(self, p: _PalletRun, entries: tuple[PalletEntry, ...], now: float) -> None:
         """Die App kam mitten in ein laufendes Palettenprogramm (Neustart, Update): Die Läufe dieses
         Durchgangs stehen in der Datenbank. Rückwärts durch die Zustandsabschnitte bis zum letzten Halt
         (Bereit länger als PALLET_PAUSE_S, Handbetrieb/MDI oder ein anderes Programm), dann die Läufe
-        der Reihe nach den Zeilen zuordnen wie live."""
+        der Reihe nach den Zeilen zuordnen wie live – samt der Paletten, die dabei von Hand gesetzt
+        wurden (auch während des Halts davor in der Tabelle)."""
         names = {call_name(e.program) for e in entries}
         run_ids: set[int] = set()
+        since = now
         for iv in reversed(self._db.intervals(now - PALLET_LOOKBACK_S, now, self.machine.id)):
             if iv["state"] in (MachineState.OFFLINE.value, MachineState.UNKNOWN.value):
                 continue  # Verbindungslücke: weiter zurück
@@ -1005,22 +963,93 @@ class MachineCollector:
                 if call_name(iv["program"] or "") not in names:
                     break
                 run_ids.add(iv["run_id"])
+                since = iv["start"]
                 continue
-            if iv["program"] != p.table or iv["exec_mode"] in MANUAL_MODES:
+            if iv["program"] != p.table:
+                break
+            since = iv["start"]
+            if iv["exec_mode"] in MANUAL_MODES:
                 break
             if iv["state"] == MachineState.READY.value and iv["end"] - iv["start"] > PALLET_PAUSE_S:
                 break
         runs = sorted(filter(None, map(self._db.run, run_ids)), key=lambda r: r["started_at"])
-        for run in runs:
-            index = self._next_entry(entries, call_name(run["program"] or ""), p.pos, False)
-            if index is None:
+        fixes = [f for f in self._db.pallet_fixes(self.machine.id, p.table, since) if 0 <= f["index"] < len(entries)]
+        steps = sorted([(r["started_at"], False, r) for r in runs] + [(f["ts"], True, f) for f in fixes], key=lambda x: x[:2])
+        last: dict[str, Any] | None = None  # zuletzt begonnener Lauf
+        for _, fix, item in steps:
+            if fix:  # von Hand gesetzt: läuft ein Lauf dieses Programms, begann die Zeile mit ihm
+                same = item["running"] and last is not None and call_name(last["program"] or "") == call_name(entries[item["index"]].program)
+                start = (last["started_at"], bool(last["start_observed"])) if same and last is not None else None
+                self._fix_pallet(p, item["index"], item["running"], start, item["ts"])
                 continue
-            if p.pos is None or index < p.pos:
-                p.started.clear()
+            last = item
+            name = call_name(item["program"] or "")
+            manual, p.manual = p.manual, False
+            if manual and call_name(entries[p.pos].program) == name:
+                index = p.pos
+            else:
+                index = self._next_entry(entries, name, p.pos, False)
+                if index is None:
+                    continue
+                if p.pos is None or index < p.pos:
+                    p.started.clear()
+                    p.set_at = None
             p.pos = index
-            p.started[index] = (run["started_at"], bool(run["start_observed"]))
+            p.started[index] = (item["started_at"], bool(item["start_observed"]))
         if p.pos is not None:
             log.info("%s: Palettenprogramm %s läuft schon – weiter bei Zeile %d", self.machine.name, p.table, p.pos + 1)
+
+    def set_pallet(self, index: int) -> dict[str, Any] | None:
+        """Von Hand (Live-Karte): Diese Palette läuft gerade. Die Steuerung meldet nicht, bei welcher
+        Zeile der Tabelle eingestiegen wurde (der Satz beim Palettenwechsel ist der des Makros
+        Palett.H, Diagnose vom 21.10.) – steht dasselbe Programm auf jeder Palette, zählt die App ab
+        der ersten. ``index`` ist die erste Programmzeile der Palette. Läuft gerade ein Programm dieser
+        Palette, ist es diese Zeile (seit ihrem Beginn), sonst beginnt die Palette mit ihrem nächsten
+        Programm (z. B. während des Palettenwechsels). ValueError, wenn das nicht geht."""
+        p = self._pallet
+        row = self._program_row(p.table) if p is not None else None
+        entries: tuple[PalletEntry, ...] | None = row["pallet"] if row else None
+        if p is None or not entries:
+            raise ValueError("Kein Palettenprogramm mit lesbarer Tabelle angewählt")
+        if not 0 <= index < len(entries):
+            raise ValueError(f"Die Tabelle hat keine Programmzeile {index + 1}")
+        pallet = entries[index].pallet
+        group = [index]
+        while pallet is not None and group[-1] + 1 < len(entries) and entries[group[-1] + 1].pallet == pallet:
+            group.append(group[-1] + 1)
+        rows = [i for i in group if not entries[i].skipped]
+        if not rows:
+            raise ValueError("Die Palette ist gesperrt")
+        running = next((i for i in rows if p.name is not None and call_name(entries[i].program) == p.name), None)
+        old, start = p.pos, None
+        if running is not None:
+            if old is not None and old in p.started and call_name(entries[old].program) == p.name:
+                start = p.started[old]
+            elif self._run is not None and call_name(self._run.program or "") == p.name:
+                start = (self._run.started_at, self._run.start_observed)
+        now = self._last_update if self._last_update is not None else self._clock()
+        self._fix_pallet(p, rows[0] if running is None else running, running is not None, start, now)
+        self._db.add_event(self.machine.id, now, "pallet_set", {
+            "table": p.table, "index": p.pos, "running": running is not None, "pallet": pallet,
+            "program": entries[p.pos].program, "from": old, "from_pallet": entries[old].pallet if old is not None else None,
+        })
+        log.info(
+            "%s: Palette von Hand gesetzt – %s, Zeile %d %s (vorher Zeile %s)", self.machine.name, pallet or "ohne Namen",
+            p.pos + 1, "läuft" if running is not None else "beginnt mit dem nächsten Programm", old + 1 if old is not None else "–",
+        )
+        return self._pallet_info()
+
+    @staticmethod
+    def _fix_pallet(p: _PalletRun, index: int, running: bool, start: tuple[float, bool] | None, t: float) -> None:
+        """Zeile ``index`` von Hand gesetzt: Sie läuft (Beginn ``start``, falls bekannt) bzw. beginnt
+        mit dem nächsten Start ihres Programms. Die Zeilen davor gelten als fertig, ohne Zeiten."""
+        p.pos, p.manual, p.set_at, p.recovered = index, not running, t, True
+        p.started.clear()
+        if start is not None:
+            p.started[index] = start
+        p.entry_observed = False  # von Hand gesetzt: diese Zeile nicht messen
+        if not running:
+            p.entry_run_s = 0.0
 
     @staticmethod
     def _pallet_program(raw: Snapshot, snap: Snapshot | None) -> str | None:
@@ -1089,7 +1118,7 @@ class MachineCollector:
             return None
         pos = p.pos
         last = max((i for i, e in enumerate(entries) if not e.skipped), default=-1)
-        finished = pos is not None and p.stopped and pos >= last
+        finished = pos is not None and p.stopped and pos >= last and not p.manual
         items = []
         for i, entry in enumerate(entries):
             expected, source = self._entry_expected(p, entry)
@@ -1134,10 +1163,11 @@ class MachineCollector:
                     # Ende dieser Zeile, wenn alles davor wie erwartet läuft; fehlt davor eine Zeit, frühestens
                     it["until"] = self._last_update + remaining
                     it["until_min"] = remaining_unknown > 0
-        # Fertige Zeilen: Ende = Beginn der nächsten begonnenen Zeile dieses Durchgangs
+        # Fertige Zeilen: Ende = Beginn der nächsten begonnenen Zeile dieses Durchgangs. Vor der ersten
+        # begonnenen Zeile (Einstieg mitten in der Tabelle, Palette von Hand gesetzt) ist es unbekannt.
         begun = sorted(i for i in p.started if items[i]["status"] in ("done", "current"))
         for i, it in enumerate(items):
-            if it["status"] == "done":
+            if it["status"] == "done" and begun and begun[0] <= i:
                 nxt = next((j for j in begun if j > i), None)
                 it["until"] = p.started[nxt][0] if nxt is not None else None
         return {
@@ -1149,6 +1179,7 @@ class MachineCollector:
             "remaining_s": remaining,
             "remaining_unknown": remaining_unknown,
             "eta": self._last_update + remaining if remaining is not None and self._last_update is not None else None,
+            "set_at": p.set_at,  # Palette in diesem Durchgang von Hand gesetzt
         }
 
     # --- Live-Status ---------------------------------------------------------------
